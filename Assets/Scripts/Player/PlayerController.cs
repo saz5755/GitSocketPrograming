@@ -141,4 +141,9 @@ public class PlayerController : MonoBehaviour
         if (snapshots.Count > 20)
             snapshots.RemoveAt(0);
     }
+    
+    public void ClearSnapshots()
+    {
+        snapshots.Clear();
+    }
 }

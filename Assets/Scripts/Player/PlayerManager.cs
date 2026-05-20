@@ -34,6 +34,7 @@ public class PlayerManager : MonoBehaviour
     public void CreatePlayer(string nickname, Vector3 pos, float rotY, bool isMove)
     {
         Debug.Log($"CreatePlayer 호출 : {nickname}");
+     
         
         // 이미 존재하면 생성 안 함
         if(players.ContainsKey(nickname))
@@ -44,7 +45,10 @@ public class PlayerManager : MonoBehaviour
 
         PlayerController player =
             obj.GetComponent<PlayerController>();
-
+        
+        player.ClearSnapshots();
+        player.AddSnapshot(pos, rotY, isMove);
+        
         player.nickname = nickname;
 
         player.isLocalPlayer =
@@ -64,5 +68,30 @@ public class PlayerManager : MonoBehaviour
         players[nickname] = player;
 
         Debug.Log($"Create Player : {nickname}");
+    }
+    
+    public void RemovePlayer(string nickname)
+    {
+        if(players.ContainsKey(nickname) == false)
+            return;
+
+        PlayerController player = players[nickname];
+
+        players.Remove(nickname);
+
+        Destroy(player.gameObject);
+
+        Debug.Log($"REMOVE PLAYER : {nickname}");
+    }
+    
+    // ??
+    public void ClearPlayers()
+    {
+        foreach(var player in players.Values)
+        {
+            Destroy(player.gameObject);
+        }
+
+        players.Clear();
     }
 }
