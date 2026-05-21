@@ -1,4 +1,4 @@
-class SpawnPacket : Packet
+public class SpawnPacket : Packet
 {
     public string nickname;
 

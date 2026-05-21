@@ -5,65 +5,95 @@ public class PlayerManager : MonoBehaviour
 {
     public GameObject playerPrefab;
 
-    Dictionary<string, PlayerController> players = new();
+    readonly Dictionary<string, PlayerController> players = new();
 
-    public PlayerController GetPlayer(string nickname)
+    void Start()
     {
-        players.TryGetValue(nickname, out PlayerController player);
-        return player;
+        SocketClient sc = NetworkManager.Instance?.socketClient;
+        if (sc == null) { Debug.LogWarning("[PlayerManager] SocketClient not found"); return; }
+        sc.OnSpawn   += HandleSpawn;
+        sc.OnDespawn += HandleDespawn;
+        sc.OnMove    += HandleMove;
     }
 
-    public void CreatePlayer(string nickname, Vector3 pos, Quaternion rot, bool isMove)
+    void OnDestroy()
     {
-        if (players.ContainsKey(nickname))
-            return;
+        SocketClient sc = NetworkManager.Instance?.socketClient;
+        if (sc != null)
+        {
+            sc.OnSpawn   -= HandleSpawn;
+            sc.OnDespawn -= HandleDespawn;
+            sc.OnMove    -= HandleMove;
+        }
+        ClearPlayers();
+    }
 
-        GameObject obj = Instantiate(playerPrefab);
+    // ── 이벤트 핸들러 ─────────────────────────────────────────────────────
+    void HandleSpawn(SpawnPacket p)
+    {
+        CreatePlayer(p.nickname,
+            new Vector3(p.x, p.y, p.z),
+            Quaternion.Euler(p.rotX, p.rotY, p.rotZ),
+            p.isMove);
+    }
+
+    void HandleDespawn(string nickname) => RemovePlayer(nickname);
+
+    void HandleMove(MoveBroadcastPacket p)
+    {
+        if (!players.TryGetValue(p.nickname, out var player)) return;
+        player.AddSnapshot(
+            new Vector3(p.posX, p.posY, p.posZ),
+            Quaternion.Euler(p.rotX, p.rotY, p.rotZ),
+            p.isMove);
+    }
+
+    // ── 플레이어 생성 / 제거 ──────────────────────────────────────────────
+    void CreatePlayer(string nickname, Vector3 pos, Quaternion rot, bool isMove)
+    {
+        if (players.ContainsKey(nickname)) return;
+
+        GameObject obj    = Instantiate(playerPrefab);
         PlayerController player = obj.GetComponent<PlayerController>();
 
-        player.nickname = nickname;
-        bool isLocal = nickname == NetworkManager.Instance.socketClient.myNickname;
+        string myName = GameManager.Instance?.myNickname
+                     ?? NetworkManager.Instance?.socketClient.myNickname;
+        bool isLocal = nickname == myName;
+
+        player.nickname      = nickname;
         player.isLocalPlayer = isLocal;
-        player.transform.position = pos;
-        player.transform.rotation = rot;
+        player.transform.SetPositionAndRotation(pos, rot);
         player.ClearSnapshots();
         player.AddSnapshot(pos, rot, isMove);
 
         if (!isLocal)
         {
-            PlayerLabel label = obj.AddComponent<PlayerLabel>();
+            var label = obj.AddComponent<PlayerLabel>();
             label.SetNickname(nickname);
         }
 
         players[nickname] = player;
-
-        Debug.Log($"[Player] Created: {nickname} (local={player.isLocalPlayer})");
+        Debug.Log($"[Player] Spawned: {nickname}  local={isLocal}");
     }
 
-    public void MovePlayer(string nickname, Vector3 pos, Quaternion rot, bool isMove, int tick)
+    void RemovePlayer(string nickname)
     {
-        if (!players.TryGetValue(nickname, out PlayerController player))
-            return;
-
-        player.AddSnapshot(pos, rot, isMove);
-    }
-
-    public void RemovePlayer(string nickname)
-    {
-        if (!players.TryGetValue(nickname, out PlayerController player))
-            return;
-
+        if (!players.TryGetValue(nickname, out var player)) return;
         players.Remove(nickname);
-        Destroy(player.gameObject);
-
-        Debug.Log($"[Player] Removed: {nickname}");
+        if (player != null) Destroy(player.gameObject);
+        Debug.Log($"[Player] Despawned: {nickname}");
     }
 
-    public void ClearPlayers()
+    void ClearPlayers()
     {
-        foreach (PlayerController player in players.Values)
-            Destroy(player.gameObject);
-
+        foreach (var p in players.Values)
+            if (p != null) Destroy(p.gameObject);
         players.Clear();
+    }
+
+    public PlayerController GetPlayer(string nickname)
+    {
+        players.TryGetValue(nickname, out var p);
+        return p;
     }
 }

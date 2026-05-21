@@ -4,13 +4,15 @@ using UnityEngine;
 
 public class UnityMainThreadDispatcher : MonoBehaviour
 {
-    private static readonly Queue<Action> executionQueue = new();
+    static readonly Queue<Action> executionQueue = new();
 
     public static UnityMainThreadDispatcher Instance;
 
     void Awake()
     {
+        if (Instance != null) { Destroy(gameObject); return; }
         Instance = this;
+        DontDestroyOnLoad(gameObject);
     }
 
     public void Enqueue(Action action)
@@ -26,9 +28,7 @@ public class UnityMainThreadDispatcher : MonoBehaviour
         lock (executionQueue)
         {
             while (executionQueue.Count > 0)
-            {
                 executionQueue.Dequeue().Invoke();
-            }
         }
     }
 }

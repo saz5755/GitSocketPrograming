@@ -1,99 +1,129 @@
 using UnityEngine;
 
 /// <summary>
-/// Player 프리팹에 추가하면 Awake 시 비행기 형태의 메시를 자동 생성합니다.
-/// 기존 Capsule MeshRenderer/Collider는 자동으로 비활성화됩니다.
+/// F-22 Raptor 스타일 비행기 모델을 Unity 기본 프리미티브로 구성합니다.
+/// 마젠타 방지: 렌더 파이프라인(Standard/URP/HDRP)에 상관없이
+/// CreatePrimitive의 sharedMaterial을 복제하여 올바른 셰이더를 유지합니다.
 /// </summary>
 [DisallowMultipleComponent]
 public class PlaneModelBuilder : MonoBehaviour
 {
-    [Header("Colors")]
-    public Color bodyColor    = new Color(0.15f, 0.35f, 0.75f);
-    public Color wingColor    = new Color(0.20f, 0.45f, 0.85f);
-    public Color cockpitColor = new Color(0.55f, 0.85f, 1.00f, 0.8f);
-    public Color exhaustColor = new Color(0.25f, 0.25f, 0.25f);
+    // ── F-22 스텔스 색상 팔레트 ─────────────────────────────────────────
+    static readonly Color BodyGray   = new Color(0.28f, 0.30f, 0.33f); // 공중우세 회색
+    static readonly Color PanelGray  = new Color(0.21f, 0.22f, 0.25f); // 어두운 패널
+    static readonly Color WingGray   = new Color(0.32f, 0.33f, 0.36f); // 날개 (약간 밝음)
+    static readonly Color Cockpit    = new Color(0.04f, 0.06f, 0.14f); // 조종석 틴트 (거의 검정)
+    static readonly Color IntakeDark = new Color(0.16f, 0.17f, 0.19f); // 인테이크 외부
+    static readonly Color Black      = new Color(0.04f, 0.04f, 0.05f); // 인테이크 내부
+    static readonly Color Exhaust    = new Color(0.24f, 0.22f, 0.20f); // 배기 노즐
+    static readonly Color ExhGlow    = new Color(0.90f, 0.50f, 0.12f); // 배기열 발광
+
+    // 렌더 파이프라인 호환 기본 머티리얼 (Build()에서 한번만 가져옴)
+    Material baseMat;
 
     void Awake()
     {
-        DisableDefaultCapsule();
-        Build();
-    }
-
-    void DisableDefaultCapsule()
-    {
         MeshRenderer mr = GetComponent<MeshRenderer>();
         if (mr != null) mr.enabled = false;
-
         CapsuleCollider cc = GetComponent<CapsuleCollider>();
         if (cc != null) cc.enabled = false;
+
+        // 기본 머티리얼 확보: 임시 프리미티브에서 복제 (URP/HDRP/Standard 자동 대응)
+        GameObject tmp = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        baseMat = tmp.GetComponent<Renderer>().sharedMaterial;
+        DestroyImmediate(tmp);
+
+        Build();
     }
 
     void Build()
     {
-        // ── 동체 (Fuselage) ──────────────────────────────
-        // 앞뒤로 긴 몸통 (Z 축이 전방)
-        Part("Fuselage",       new Vector3(0f,    0f,    0f),    new Vector3(0.45f, 0.42f, 3.2f),  PrimitiveType.Cube,    bodyColor);
+        // ── 동체 ────────────────────────────────────────────────────────
+        P("Fuselage",      V(0f,    0f,     0f),    V(0.50f, 0.36f, 3.80f), BodyGray);
+        P("Belly",         V(0f,   -0.15f,  0.15f), V(0.66f, 0.12f, 3.50f), PanelGray);
+        P("NoseSection",   V(0f,   -0.02f,  2.10f), V(0.38f, 0.28f, 0.90f), BodyGray,   PrimitiveType.Sphere);
+        P("NoseTip",       V(0f,   -0.04f,  2.56f), V(0.14f, 0.12f, 0.28f), PanelGray,  PrimitiveType.Sphere);
 
-        // 기수 (앞 덮개)
-        Part("Nose",           new Vector3(0f,   -0.04f, 1.85f), new Vector3(0.32f, 0.30f, 0.90f), PrimitiveType.Sphere,  bodyColor);
+        // 기수 채인 (스텔스 각진 측면 블렌딩)
+        P("ChineL",        V(-0.30f,-0.07f, 1.40f), V(0.16f, 0.08f, 1.80f), PanelGray,  rot: Q(0f, 0f,-16f));
+        P("ChineR",        V( 0.30f,-0.07f, 1.40f), V(0.16f, 0.08f, 1.80f), PanelGray,  rot: Q(0f, 0f, 16f));
 
-        // 조종석 캐노피
-        Part("Canopy",         new Vector3(0f,    0.26f, 0.80f), new Vector3(0.28f, 0.22f, 0.60f), PrimitiveType.Cube,    cockpitColor);
+        // ── 조종석 ──────────────────────────────────────────────────────
+        P("CanopyBase",    V(0f,    0.20f,  1.05f), V(0.34f, 0.13f, 0.85f), BodyGray);
+        P("Canopy",        V(0f,    0.31f,  0.95f), V(0.27f, 0.21f, 0.72f), Cockpit,    PrimitiveType.Sphere);
 
-        // ── 주익 (Main Wings) ────────────────────────────
-        Part("WingLeft",       new Vector3(-2.2f, 0f,    0.10f), new Vector3(3.5f,  0.07f, 1.10f), PrimitiveType.Cube,    wingColor);
-        Part("WingRight",      new Vector3( 2.2f, 0f,    0.10f), new Vector3(3.5f,  0.07f, 1.10f), PrimitiveType.Cube,    wingColor);
+        // ── 주익 (크랭크드 애로우 델타) ──────────────────────────────────
+        // 내측 주익 (후퇴각 ~42°)
+        P("WingInnL",      V(-1.05f,-0.02f, 0.15f), V(1.80f, 0.068f, 2.20f), WingGray, rot: Q(0f, 22f,-1.5f));
+        P("WingInnR",      V( 1.05f,-0.02f, 0.15f), V(1.80f, 0.068f, 2.20f), WingGray, rot: Q(0f,-22f, 1.5f));
+        // 외측 주익 (후퇴각 ~18°)
+        P("WingOutL",      V(-2.55f,-0.02f,-0.55f), V(1.25f, 0.065f, 1.10f), WingGray, rot: Q(0f,  8f,-1.0f));
+        P("WingOutR",      V( 2.55f,-0.02f,-0.55f), V(1.25f, 0.065f, 1.10f), WingGray, rot: Q(0f, -8f, 1.0f));
+        // 날개 끝 (잘린 형태)
+        P("WingTipL",      V(-3.35f,-0.02f,-0.82f), V(0.35f, 0.064f, 0.45f), PanelGray);
+        P("WingTipR",      V( 3.35f,-0.02f,-0.82f), V(0.35f, 0.064f, 0.45f), PanelGray);
 
-        // 에일러론 (날개 끝 색상 강조)
-        Part("AileronLeft",    new Vector3(-3.5f, 0f,   -0.05f), new Vector3(0.90f, 0.07f, 0.50f), PrimitiveType.Cube,    bodyColor);
-        Part("AileronRight",   new Vector3( 3.5f, 0f,   -0.05f), new Vector3(0.90f, 0.07f, 0.50f), PrimitiveType.Cube,    bodyColor);
+        // ── 수평 미익 (전동 수평미익, 약간 내려감) ─────────────────────
+        P("HTailL",        V(-1.05f,-0.11f,-1.72f), V(1.20f, 0.062f, 0.72f), WingGray, rot: Q(0f, 18f,-6f));
+        P("HTailR",        V( 1.05f,-0.11f,-1.72f), V(1.20f, 0.062f, 0.72f), WingGray, rot: Q(0f,-18f, 6f));
 
-        // ── 꼬리날개 (Tail) ──────────────────────────────
-        Part("HorizontalTail", new Vector3(0f,    0f,   -1.45f), new Vector3(1.80f, 0.06f, 0.60f), PrimitiveType.Cube,    wingColor);
-        Part("VerticalTail",   new Vector3(0f,    0.45f,-1.30f), new Vector3(0.06f, 0.72f, 0.70f), PrimitiveType.Cube,    bodyColor);
+        // ── 수직 미익 (쌍발, 외경 약 27° 경사) ─────────────────────────
+        P("VTailL",        V(-0.42f, 0.52f,-1.32f), V(0.08f, 0.82f, 0.88f), BodyGray, rot: Q(0f,-10f,-27f));
+        P("VTailR",        V( 0.42f, 0.52f,-1.32f), V(0.08f, 0.82f, 0.88f), BodyGray, rot: Q(0f, 10f, 27f));
 
-        // ── 엔진 / 배기구 ────────────────────────────────
-        Part("Engine",         new Vector3(0f,    0f,   -1.65f), new Vector3(0.36f, 0.36f, 0.22f), PrimitiveType.Cylinder, exhaustColor);
+        // ── DSI 인테이크 (동체 아래 측면) ───────────────────────────────
+        P("IntakeL",       V(-0.42f,-0.20f, 0.72f), V(0.30f, 0.22f, 1.05f), IntakeDark);
+        P("IntakeR",       V( 0.42f,-0.20f, 0.72f), V(0.30f, 0.22f, 1.05f), IntakeDark);
+        P("IntakeHoleL",   V(-0.42f,-0.21f, 0.85f), V(0.22f, 0.16f, 0.55f), Black);
+        P("IntakeHoleR",   V( 0.42f,-0.21f, 0.85f), V(0.22f, 0.16f, 0.55f), Black);
 
-        // ── 물리 콜라이더 ────────────────────────────────
+        // ── 엔진 노즐 (F-22 직사각형 노즐 형태) ────────────────────────
+        P("NozzleL",       V(-0.22f, 0f,   -1.72f), V(0.22f, 0.20f, 0.40f), Exhaust);
+        P("NozzleR",       V( 0.22f, 0f,   -1.72f), V(0.22f, 0.20f, 0.40f), Exhaust);
+        // 배기열 (안쪽 발광)
+        P("ExhaustL",      V(-0.22f, 0f,   -1.94f), V(0.15f, 0.13f, 0.08f), ExhGlow);
+        P("ExhaustR",      V( 0.22f, 0f,   -1.94f), V(0.15f, 0.13f, 0.08f), ExhGlow);
+
+        // ── 물리 콜라이더 ────────────────────────────────────────────────
         CapsuleCollider col = gameObject.AddComponent<CapsuleCollider>();
-        col.direction = 2;     // Z축 (전방)
-        col.height    = 3.4f;
-        col.radius    = 0.28f;
-        col.center    = Vector3.zero;
+        col.direction = 2;
+        col.height    = 4.4f;
+        col.radius    = 0.26f;
+        col.center    = new Vector3(0f, 0f, 0.1f);
     }
 
-    GameObject Part(string partName, Vector3 localPos, Vector3 scale, PrimitiveType type, Color color)
+    // ── 헬퍼 ─────────────────────────────────────────────────────────────
+    static Vector3    V(float x, float y, float z) => new Vector3(x, y, z);
+    static Quaternion Q(float x, float y, float z) => Quaternion.Euler(x, y, z);
+
+    void P(string partName,
+           Vector3       pos,
+           Vector3       scale,
+           Color         color,
+           PrimitiveType type = PrimitiveType.Cube,
+           Quaternion    rot  = default)
     {
         GameObject go = GameObject.CreatePrimitive(type);
         go.name = partName;
         go.transform.SetParent(transform, false);
-        go.transform.localPosition = localPos;
-        go.transform.localRotation = Quaternion.identity;
+        go.transform.localPosition = pos;
+        go.transform.localRotation = rot == default ? Quaternion.identity : rot;
         go.transform.localScale    = scale;
 
-        // 시각용 파트의 콜라이더 제거 (루트에만 사용)
+        // 시각 전용: 개별 콜라이더 제거
         Collider c = go.GetComponent<Collider>();
         if (c != null) Destroy(c);
 
-        // 머티리얼 설정
-        Renderer r = go.GetComponent<Renderer>();
-        Material mat = new Material(Shader.Find("Standard"));
-        mat.color = color;
+        // 렌더 파이프라인 호환 머티리얼 (Standard/URP/HDRP 모두 마젠타 없음)
+        Renderer r   = go.GetComponent<Renderer>();
+        Material mat = new Material(baseMat);
+        mat.color    = color;
 
-        // 조종석 반투명 처리
-        if (color.a < 1f)
-        {
-            mat.SetFloat("_Mode", 3);
-            mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-            mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-            mat.SetInt("_ZWrite", 0);
-            mat.EnableKeyword("_ALPHABLEND_ON");
-            mat.renderQueue = 3000;
-        }
+        // 메탈릭/스무스 (Standard & URP 공통 프로퍼티명)
+        if (mat.HasProperty("_Metallic"))   mat.SetFloat("_Metallic",   0.55f);
+        if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", 0.38f);
+        if (mat.HasProperty("_Glossiness")) mat.SetFloat("_Glossiness", 0.38f);
 
         r.material = mat;
-
-        return go;
     }
 }

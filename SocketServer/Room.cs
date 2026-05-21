@@ -1,9 +1,16 @@
 public class Room
 {
     public int roomId;
+    public string roomName = "Unknown Zone";
+    public int maxPlayers = 8;
 
     List<Player> players = new();
     readonly object locker = new();
+
+    public int GetPlayerCount()
+    {
+        lock (locker) { return players.Count; }
+    }
 
     public List<Player> GetPlayers()
     {

@@ -13,15 +13,23 @@ public class PlayerController : MonoBehaviour
     float moveSendTimer;
     int localTick;
 
-    [Header("Flight Settings")]
-    [SerializeField] float moveSpeed = 30f;
-    [SerializeField] float pitchSpeed = 60f;
-    [SerializeField] float yawSpeed = 45f;
-    [SerializeField] float rollSpeed = 90f;
-    [SerializeField] float sendInterval = 0.05f; // 20Hz
+    [Header("Throttle")]
+    [SerializeField] float maxSpeed     = 80f;   // kph 기준 체감, 내부는 m/s
+    [SerializeField] float acceleration = 12f;   // m/s² 가속
+    [SerializeField] float drag         =  6f;   // 스로틀 미입력 시 감속
+
+    [Header("Attitude")]
+    [SerializeField] float pitchSpeed = 55f;
+    [SerializeField] float yawSpeed   = 40f;
+    [SerializeField] float rollSpeed  = 85f;
+
+    [Header("Network")]
+    [SerializeField] float sendInterval = 0.05f; // 20 Hz
 
     [Header("Interpolation")]
     [SerializeField] float interpolationDelay = 0.1f;
+
+    float currentSpeed;
 
     void Awake()
     {
@@ -30,44 +38,54 @@ public class PlayerController : MonoBehaviour
 
     void Update()
     {
-        if (isLocalPlayer)
-            LocalUpdate();
-        else
-            RemoteUpdate();
+        if (isLocalPlayer) LocalUpdate();
+        else               RemoteUpdate();
     }
 
-    // ── 로컬 플레이어 ────────────────────────────────────────────────────
+    // ── 로컬 플레이어 ──────────────────────────────────────────────────────
     void LocalUpdate()
     {
-        float pitch = -Input.GetAxis("Vertical");
-        float yaw   =  Input.GetAxis("Horizontal");
-        float roll  = 0f;
-        if (Input.GetKey(KeyCode.Q)) roll =  1f;
-        if (Input.GetKey(KeyCode.E)) roll = -1f;
+        float dt = Time.deltaTime;
+
+        // 스로틀: W 가속 / S 감속 / 미입력 시 자연 감속
+        if (Input.GetKey(KeyCode.W))
+            currentSpeed = Mathf.MoveTowards(currentSpeed, maxSpeed, acceleration * dt);
+        else if (Input.GetKey(KeyCode.S))
+            currentSpeed = Mathf.MoveTowards(currentSpeed, 0f, acceleration * dt);
+        else
+            currentSpeed = Mathf.MoveTowards(currentSpeed, 0f, drag * dt);
+
+        // 자세 제어: 위/아래 화살표=피치, A/D=요, Q/E=롤
+        float pitch = 0f, yaw = 0f, roll = 0f;
+        if (Input.GetKey(KeyCode.UpArrow))   pitch = -1f;
+        if (Input.GetKey(KeyCode.DownArrow)) pitch =  1f;
+        if (Input.GetKey(KeyCode.A))         yaw   = -1f;
+        if (Input.GetKey(KeyCode.D))         yaw   =  1f;
+        if (Input.GetKey(KeyCode.Q))         roll  =  1f;
+        if (Input.GetKey(KeyCode.E))         roll  = -1f;
 
         transform.Rotate(
-            pitch * pitchSpeed * Time.deltaTime,
-            yaw   * yawSpeed   * Time.deltaTime,
-            roll  * rollSpeed  * Time.deltaTime,
+            pitch * pitchSpeed * dt,
+            yaw   * yawSpeed   * dt,
+            roll  * rollSpeed  * dt,
             Space.Self
         );
 
-        transform.position += transform.forward * moveSpeed * Time.deltaTime;
+        transform.position += transform.forward * currentSpeed * dt;
 
-        if (anim != null)
-            anim.SetBool("Move", true);
+        bool isMoving = currentSpeed > 0.5f;
+        if (anim != null) anim.SetBool("Move", isMoving);
 
-        moveSendTimer += Time.deltaTime;
+        moveSendTimer += dt;
         if (moveSendTimer >= sendInterval)
         {
             moveSendTimer = 0f;
             localTick++;
-
             Vector3 euler = transform.eulerAngles;
             NetworkManager.Instance.socketClient.SendMove(
                 transform.position.x, transform.position.y, transform.position.z,
                 euler.x, euler.y, euler.z,
-                true, localTick
+                isMoving, localTick
             );
         }
     }
@@ -75,10 +93,8 @@ public class PlayerController : MonoBehaviour
     // ── 원격 플레이어: 스냅샷 보간 ────────────────────────────────────────
     void RemoteUpdate()
     {
-        if (snapshots.Count == 0)
-            return;
+        if (snapshots.Count == 0) return;
 
-        // 스냅샷 1개: 해당 위치/회전에 고정
         if (snapshots.Count == 1)
         {
             transform.position = snapshots[0].position;
@@ -94,7 +110,6 @@ public class PlayerController : MonoBehaviour
         Snapshot from = snapshots[0];
         Snapshot to   = snapshots[1];
 
-        // from == to 이면 t = 0 → from 위치에 고정
         float t = (to.time > from.time)
             ? Mathf.Clamp01(Mathf.InverseLerp(from.time, to.time, renderTime))
             : 1f;
@@ -102,23 +117,14 @@ public class PlayerController : MonoBehaviour
         transform.position = Vector3.Lerp(from.position, to.position, t);
         transform.rotation = Quaternion.Slerp(from.rotation, to.rotation, t);
 
-        if (anim != null)
-            anim.SetBool("Move", to.isMove);
+        if (anim != null) anim.SetBool("Move", to.isMove);
     }
 
-    // ── 스냅샷 추가 ───────────────────────────────────────────────────────
+    // ── 스냅샷 ────────────────────────────────────────────────────────────
     public void AddSnapshot(Vector3 pos, Quaternion rot, bool isMove)
     {
-        snapshots.Add(new Snapshot
-        {
-            position = pos,
-            rotation = rot,
-            isMove   = isMove,
-            time     = Time.time
-        });
-
-        if (snapshots.Count > 12)
-            snapshots.RemoveAt(0);
+        snapshots.Add(new Snapshot { position = pos, rotation = rot, isMove = isMove, time = Time.time });
+        if (snapshots.Count > 12) snapshots.RemoveAt(0);
     }
 
     public void ClearSnapshots() => snapshots.Clear();

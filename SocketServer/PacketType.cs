@@ -9,5 +9,8 @@ public enum PacketType
     MOVE = 7,
     SPAWN = 8,
     UDP_CONNECT = 9,
-    DESPAWN = 10
+    DESPAWN = 10,
+    ROOM_LIST_REQUEST = 11,
+    ROOM_LIST_RESULT = 12,
+    LEAVE_ROOM = 13
 }

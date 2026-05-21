@@ -18,6 +18,12 @@ class PacketHandler
         
         handlers[PacketType.ENTER_ROOM]
             = EnterRoomHandler.Handle;
+
+        handlers[PacketType.ROOM_LIST_REQUEST]
+            = RoomListHandler.Handle;
+
+        handlers[PacketType.LEAVE_ROOM]
+            = LeaveRoomHandler.Handle;
         
         // TCP Move는 제거 예정 
         /*handlers[PacketType.MOVE]
