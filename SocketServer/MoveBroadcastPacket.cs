@@ -1,7 +1,8 @@
-// Client → Server (UDP): 클라이언트 현재 위치 + 전체 회전 전송
-public class MovePacket : Packet
+// Server → Client (UDP): 서버가 다른 플레이어들에게 브로드캐스트
+public class MoveBroadcastPacket : Packet
 {
     public int tick;
+    public string nickname;
 
     // World Position
     public float posX;

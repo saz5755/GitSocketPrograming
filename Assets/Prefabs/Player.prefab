@@ -127,6 +127,7 @@ GameObject:
   - component: {fileID: 2000666198628466318}
   - component: {fileID: 7530593515189148540}
   - component: {fileID: 7247021537001746904}
+  - component: {fileID: 5152184613873582431}
   m_Layer: 0
   m_Name: Player
   m_TagString: Untagged
@@ -244,6 +245,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerController
   nickname: 
   isLocalPlayer: 0
+  lastReceivedTick: 0
+  moveSpeed: 30
+  pitchSpeed: 60
+  yawSpeed: 45
+  rollSpeed: 90
+  sendInterval: 0.05
+  interpolationDelay: 0.1
 --- !u!95 &7247021537001746904
 Animator:
   serializedVersion: 7
@@ -266,6 +274,22 @@ Animator:
   m_AllowConstantClipSamplingOptimization: 1
   m_KeepAnimatorStateOnDisable: 0
   m_WriteDefaultValuesOnDisable: 0
+--- !u!114 &5152184613873582431
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6036812862657962760}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d09b314bfe34aae4d95fbe543f576582, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlaneModelBuilder
+  bodyColor: {r: 0.15, g: 0.35, b: 0.75, a: 1}
+  wingColor: {r: 0.2, g: 0.45, b: 0.85, a: 1}
+  cockpitColor: {r: 0.55, g: 0.85, b: 1, a: 0.8}
+  exhaustColor: {r: 0.25, g: 0.25, b: 0.25, a: 1}
 --- !u!1 &6180604204960651729
 GameObject:
   m_ObjectHideFlags: 0

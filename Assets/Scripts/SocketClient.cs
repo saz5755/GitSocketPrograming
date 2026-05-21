@@ -1,251 +1,253 @@
 using System;
+using System.Collections;
 using System.IO;
 using System.Net;
-using UnityEngine;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using UnityEngine;
 
 public class SocketClient : MonoBehaviour
 {
     TcpClient socket;
-    
     UdpClient udp;
-    
+    NetworkStream stream;
+    Thread receiveThread;
     Thread udpReceiveThread;
 
-    NetworkStream stream;
-
-    Thread receiveThread;
-    
     public string myNickname;
-
     public ChatUIManager uiManager;
-    
     public PlayerManager playerManager;
-    
-    bool isRunning = true;
 
-    // "127.0.0.1" 자기자신 IP
+    volatile bool isRunning = true;
+
+    [Header("Connection")]
     public string connectIP = "172.30.201.117";
-    
+    public int tcpPort = 5000;
+    public int udpPort = 6000;
+    public int defaultRoomId = 1;
+
+    // ── 연결 ──────────────────────────────────────────────────────────────
     public void Connect()
     {
-        socket = new TcpClient(connectIP, 5000);
-        
+        socket = new TcpClient(connectIP, tcpPort);
         stream = socket.GetStream();
 
-        receiveThread = new Thread(ReceiveMessage);
-
-        receiveThread.IsBackground = true;
-
+        receiveThread = new Thread(ReceiveMessage) { IsBackground = true };
         receiveThread.Start();
-        
-        // UDP 생성
+
         udp = new UdpClient(0);
-        udp.Connect(connectIP, 6000);        
-        
-        udpReceiveThread = new Thread(UdpReceiveLoop);
+        udp.Connect(connectIP, udpPort);
 
-        udpReceiveThread.IsBackground = true;
-
+        udpReceiveThread = new Thread(UdpReceiveLoop) { IsBackground = true };
         udpReceiveThread.Start();
-        
     }
-    
-void ReceiveMessage()
-{
-    byte[] lengthBuffer = new byte[4];
 
-    while (isRunning)
+    // ── TCP 수신 루프 ──────────────────────────────────────────────────────
+    void ReceiveMessage()
     {
-        try
+        byte[] lengthBuffer = new byte[4];
+
+        while (isRunning)
         {
-            // 1. 패킷 길이 읽기
-            ReadFull(stream, lengthBuffer, 4);
-
-            int length =
-                BitConverter.ToInt32(lengthBuffer, 0);
-
-            // 2. 패킷 데이터 읽기
-            byte[] dataBuffer = new byte[length];
-
-            ReadFull(stream, dataBuffer, length);
-
-            // 3. JSON 문자열 변환
-            string json =
-                Encoding.UTF8.GetString(dataBuffer);
-
-            // Debug.Log($"[RECV] {json}");
-
-            // 4. type 파싱
-            JObject obj = JObject.Parse(json);
-
-            PacketType type =
-                (PacketType)obj["type"].Value<int>();
-
-            switch (type)
+            try
             {
-                case PacketType.LOGIN_RESULT:
-                {
-                    LoginResultPacket packet =
-                        JsonConvert.DeserializeObject<LoginResultPacket>(json);
+                ReadFull(stream, lengthBuffer, 4);
+                int length = BitConverter.ToInt32(lengthBuffer, 0);
 
-                    if (packet.success)
-                    {
-                        UnityMainThreadDispatcher.Instance.Enqueue(() =>
-                        {
-                            uiManager.SetChatEnable(true);
-                            
-                            SendUdpConnect();
-                        });
-                    }
-                    else
-                    {
-                        Debug.Log(packet.message);
-                    }
+                byte[] dataBuffer = new byte[length];
+                ReadFull(stream, dataBuffer, length);
 
-                    break;
-                }
+                string json = Encoding.UTF8.GetString(dataBuffer);
+                JObject obj = JObject.Parse(json);
+                PacketType type = (PacketType)obj["type"].Value<int>();
 
-                case PacketType.CHAT:
-                case PacketType.SYSTEM:
-                {
-                    ChatPacket packet =
-                        JsonConvert.DeserializeObject<ChatPacket>(json);
-
-                    string finalMessage = "";
-
-                    switch (packet.type)
-                    {
-                        case PacketType.CHAT:
-
-                            finalMessage =
-                                $"[{packet.nickname}] {packet.message}";
-
-                            break;
-
-                        case PacketType.SYSTEM:
-
-                            finalMessage =
-                                $"<color=yellow>{packet.message}</color>";
-
-                            break;
-                    }
-
-                    UnityMainThreadDispatcher.Instance.Enqueue(() =>
-                    {
-                        uiManager.AddMessage(finalMessage);
-                    });
-
-                    break;
-                }
-                
-                case PacketType.SPAWN:
-                {
-                    SpawnPacket packet =
-                        JsonConvert.DeserializeObject<SpawnPacket>(json);
-
-                    UnityMainThreadDispatcher.Instance.Enqueue(() =>
-                    {
-                        playerManager.CreatePlayer(
-                            packet.nickname,
-                            new Vector3(
-                                packet.x,
-                                packet.y,
-                                packet.z),
-                            packet.rotY,
-                            packet.isMove);
-                    });
-
-                    break;
-                }
-
-                case PacketType.MOVE:
-                {
-                    MoveBroadcastPacket packet =
-                        JsonConvert.DeserializeObject<MoveBroadcastPacket>(json);
-
-                    UnityMainThreadDispatcher.Instance.Enqueue(() =>
-                    {
-                        playerManager.MovePlayer(
-                            packet.nickname,
-                            new Vector3(
-                                packet.position.X,
-                                packet.position.Y,
-                                packet.position.Z),
-                            packet.rotY,
-                            packet.isMove,
-                            packet.tick);
-                    });
-
-                    break;
-                }
-
-                default:
-                {
-                    Debug.Log($"Unknown Packet : {type}");
-                    break;
-                }
+                HandleTCP(type, json);
+            }
+            catch (IOException)
+            {
+                Debug.Log("[TCP] Disconnected");
+                break;
+            }
+            catch (SocketException)
+            {
+                Debug.Log("[TCP] Socket closed");
+                break;
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[TCP] {e}");
             }
         }
-        catch (IOException)
-        {
-            Debug.Log("Disconnected");
-            break;
-        }
-        catch (SocketException)
-        {
-            Debug.Log("Socket Closed");
-            break;
-        }
-        catch (Exception e)
-        {
-            Debug.Log(e.ToString());
-        }
     }
-}
-    public void SendChat(string msg)
+
+    void HandleTCP(PacketType type, string json)
     {
-        ChatPacket packet = new ChatPacket();
+        switch (type)
+        {
+            case PacketType.LOGIN_RESULT:
+            {
+                LoginResultPacket packet = JsonConvert.DeserializeObject<LoginResultPacket>(json);
 
-        packet.type = PacketType.CHAT;
-        packet.message = msg;
+                if (packet.success)
+                {
+                    UnityMainThreadDispatcher.Instance.Enqueue(() =>
+                    {
+                        uiManager.SetChatEnable(true);
+                        // UDP_CONNECT 먼저 전송 후 일정 시간 뒤 EnterRoom
+                        StartCoroutine(RegisterAndEnterRoom());
+                    });
+                }
+                else
+                {
+                    Debug.Log($"[Login] Failed: {packet.message}");
+                }
+                break;
+            }
 
-        SendPacket(packet);
-        
-        Console.WriteLine(
-            $"[CLIENT SEND] nickname = {packet.nickname}");
-        
+            case PacketType.CHAT:
+            case PacketType.SYSTEM:
+            {
+                ChatPacket packet = JsonConvert.DeserializeObject<ChatPacket>(json);
+                string msg = packet.type == PacketType.CHAT
+                    ? $"[{packet.nickname}] {packet.message}"
+                    : $"<color=yellow>{packet.message}</color>";
+
+                UnityMainThreadDispatcher.Instance.Enqueue(() => uiManager.AddMessage(msg));
+                break;
+            }
+
+            case PacketType.SPAWN:
+            {
+                SpawnPacket packet = JsonConvert.DeserializeObject<SpawnPacket>(json);
+                Vector3 pos = new Vector3(packet.x, packet.y, packet.z);
+                Quaternion rot = Quaternion.Euler(packet.rotX, packet.rotY, packet.rotZ);
+
+                UnityMainThreadDispatcher.Instance.Enqueue(() =>
+                {
+                    playerManager.CreatePlayer(packet.nickname, pos, rot, packet.isMove);
+                });
+                break;
+            }
+
+            case PacketType.DESPAWN:
+            {
+                DespawnPacket packet = JsonConvert.DeserializeObject<DespawnPacket>(json);
+
+                UnityMainThreadDispatcher.Instance.Enqueue(() =>
+                {
+                    playerManager.RemovePlayer(packet.nickname);
+                });
+                break;
+            }
+
+            // TCP MOVE: UDP endpoint 등록 전 fallback으로 수신
+            case PacketType.MOVE:
+            {
+                MoveBroadcastPacket packet = JsonConvert.DeserializeObject<MoveBroadcastPacket>(json);
+
+                // 자신의 패킷 무시
+                if (packet.nickname == myNickname)
+                    break;
+
+                Vector3 pos = new Vector3(packet.posX, packet.posY, packet.posZ);
+                Quaternion rot = Quaternion.Euler(packet.rotX, packet.rotY, packet.rotZ);
+                int tick = packet.tick;
+                string nick = packet.nickname;
+                bool isMove = packet.isMove;
+
+                UnityMainThreadDispatcher.Instance.Enqueue(() =>
+                {
+                    playerManager.MovePlayer(nick, pos, rot, isMove, tick);
+                });
+                break;
+            }
+
+            default:
+                break;
+        }
     }
-    
-    void SendDisconnect()
+
+    // ── UDP_CONNECT 전송 후 300ms 대기, 그 뒤 EnterRoom ──────────────────
+    IEnumerator RegisterAndEnterRoom()
     {
-        if (socket == null)
-            return;
+        // UDP_CONNECT 여러 번 전송 (패킷 손실 보완)
+        SendUdpConnect();
+        yield return new WaitForSeconds(0.1f);
+        SendUdpConnect();
+        yield return new WaitForSeconds(0.2f);
 
-        ChatPacket packet = new ChatPacket();
+        EnterRoom(defaultRoomId);
 
-        packet.type = PacketType.DISCONNECT;
-        // packet.nickname = nickname;
-        packet.message = "";
-
-        SendPacket(packet);
+        // 주기적으로 UDP_CONNECT 재전송 (다른 클라이언트가 나중에 접속할 때 대비)
+        StartCoroutine(KeepUdpAlive());
     }
 
-    private void OnApplicationQuit()
+    IEnumerator KeepUdpAlive()
     {
-        SendDisconnect();
-        
-        isRunning = false;
-        
-        stream?.Close();
-
-        socket?.Close();
+        while (IsConnected())
+        {
+            yield return new WaitForSeconds(5f);
+            if (IsConnected())
+                SendUdpConnect();
+        }
     }
-    
+
+    // ── UDP 수신 루프 ──────────────────────────────────────────────────────
+    void UdpReceiveLoop()
+    {
+        IPEndPoint remoteEP = new IPEndPoint(IPAddress.Any, 0);
+
+        while (isRunning)
+        {
+            try
+            {
+                byte[] data = udp.Receive(ref remoteEP);
+                string json = Encoding.UTF8.GetString(data);
+                JObject obj = JObject.Parse(json);
+                PacketType type = (PacketType)obj["type"].Value<int>();
+
+                if (type != PacketType.MOVE)
+                    continue;
+
+                MoveBroadcastPacket packet = JsonConvert.DeserializeObject<MoveBroadcastPacket>(json);
+
+                // 자신의 패킷 무시
+                if (packet.nickname == myNickname)
+                    continue;
+
+                PlayerController player = playerManager.GetPlayer(packet.nickname);
+                if (player == null)
+                    continue;
+
+                // 오래된 패킷 무시
+                if (packet.tick > 0 && packet.tick <= player.lastReceivedTick)
+                    continue;
+
+                player.lastReceivedTick = packet.tick;
+
+                Vector3 pos = new Vector3(packet.posX, packet.posY, packet.posZ);
+                Quaternion rot = Quaternion.Euler(packet.rotX, packet.rotY, packet.rotZ);
+                bool isMove = packet.isMove;
+                int tick = packet.tick;
+                string nick = packet.nickname;
+
+                UnityMainThreadDispatcher.Instance.Enqueue(() =>
+                {
+                    playerManager.MovePlayer(nick, pos, rot, isMove, tick);
+                });
+            }
+            catch (Exception e)
+            {
+                if (isRunning)
+                    Debug.LogError($"[UDP] {e.Message}");
+            }
+        }
+    }
+
+    // ── 송신 메서드 ────────────────────────────────────────────────────────
     public void Login(string id, string pw)
     {
         if (stream == null)
@@ -253,182 +255,114 @@ void ReceiveMessage()
 
         myNickname = id;
 
-        LoginPacket packet = new();
-
-        packet.type = PacketType.LOGIN;
-        packet.id = id;
-        packet.password = pw;
+        LoginPacket packet = new()
+        {
+            type = PacketType.LOGIN,
+            id = id,
+            password = pw
+        };
 
         SendPacket(packet);
     }
-    
-    static void ReadFull(NetworkStream stream, byte[] buffer, int size)
+
+    public void SendChat(string msg)
     {
-        int offset = 0;
-
-        while(offset < size)
+        ChatPacket packet = new()
         {
-            int read =
-                stream.Read(
-                    buffer,
-                    offset,
-                    size - offset);
+            type = PacketType.CHAT,
+            message = msg
+        };
 
-            if(read <= 0)
-            {
-                throw new Exception(
-                    "Client Disconnected");
-            }
-
-            offset += read;
-        }
+        SendPacket(packet);
     }
-    
+
+    public void EnterRoom(int roomId)
+    {
+        EnterRoomPacket packet = new()
+        {
+            type = PacketType.ENTER_ROOM,
+            roomId = roomId
+        };
+
+        SendPacket(packet);
+    }
+
+    public void SendMove(
+        float posX, float posY, float posZ,
+        float rotX, float rotY, float rotZ,
+        bool isMove, int tick)
+    {
+        MovePacket packet = new()
+        {
+            type = PacketType.MOVE,
+            tick = tick,
+            posX = posX, posY = posY, posZ = posZ,
+            rotX = rotX, rotY = rotY, rotZ = rotZ,
+            isMove = isMove
+        };
+
+        byte[] data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(packet));
+        udp.Send(data, data.Length);
+    }
+
+    public void SendUdpConnect()
+    {
+        UdpConnectPacket packet = new()
+        {
+            type = PacketType.UDP_CONNECT,
+            nickname = myNickname
+        };
+
+        byte[] data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(packet));
+        udp.Send(data, data.Length);
+
+        Debug.Log($"[UDP] Connect sent: {myNickname}");
+    }
+
+    void SendDisconnect()
+    {
+        if (socket == null) return;
+
+        ChatPacket packet = new()
+        {
+            type = PacketType.DISCONNECT,
+            message = ""
+        };
+
+        try { SendPacket(packet); }
+        catch { }
+    }
+
     void SendPacket(object packet)
     {
         string json = JsonConvert.SerializeObject(packet);
-
         byte[] jsonBytes = Encoding.UTF8.GetBytes(json);
-
         byte[] length = BitConverter.GetBytes(jsonBytes.Length);
 
         stream.Write(length, 0, 4);
         stream.Write(jsonBytes, 0, jsonBytes.Length);
-        
     }
-    
-    public void EnterRoom(int roomId)
+
+    static void ReadFull(NetworkStream stream, byte[] buffer, int size)
     {
-        EnterRoomPacket packet = new();
-
-        packet.type = PacketType.ENTER_ROOM;
-
-        packet.roomId = roomId;
-
-        SendPacket(packet);
-    }
-    
-    public void SendMove(float moveX, float moveY, float moveZ, float rotY, bool isMove)
-    {
-        MovePacket packet = new();
-
-        packet.type = PacketType.MOVE;
-        
-        // Input
-        packet.moveX = moveX;
-        packet.moveY = moveY;
-        packet.moveZ = moveZ;
-
-        // Rotation
-        packet.rotY = rotY;
-
-        // Animation
-        packet.isMove = isMove;
-
-        string json =
-            JsonConvert.SerializeObject(packet);
-        
-        Debug.Log($"[CLIENT SEND JSON] {json}");
-        
-
-        byte[] data =
-            Encoding.UTF8.GetBytes(json);
-
-        udp.Send(data, data.Length);
-    }
-    
-    public void SendUdpConnect()
-    {
-        UdpConnectPacket packet = new();
-
-        packet.type = PacketType.UDP_CONNECT;
-
-        packet.nickname = myNickname;
-
-        string json = JsonConvert.SerializeObject(packet);
-
-        byte[] data = Encoding.UTF8.GetBytes(json);
-
-        udp.Send(data, data.Length);
-
-        Debug.Log($"UDP CONNECT SEND : {json}");
-    }
-    
-    public bool IsConnected()
-    {
-        return socket != null &&
-               socket.Connected &&
-               stream != null;
-    }
-    
-    void UdpReceiveLoop()
-    {
-        IPEndPoint remoteEP =
-            new IPEndPoint(IPAddress.Any, 0);
-
-        while(isRunning)
+        int offset = 0;
+        while (offset < size)
         {
-            try
-            {
-                byte[] data =
-                    udp.Receive(ref remoteEP);
-
-                string json =
-                    Encoding.UTF8.GetString(data);
-
-                Debug.Log(
-                    $"UDP RECV : {json}");
-
-                JObject obj =
-                    JObject.Parse(json);
-
-                PacketType type =
-                    (PacketType)obj["type"]
-                        .Value<int>();
-
-                switch(type)
-                {
-                    case PacketType.MOVE:
-                    {
-                        MoveBroadcastPacket packet = 
-                            JsonConvert.DeserializeObject<MoveBroadcastPacket>(json);
-                        
-                        PlayerController player = playerManager.GetPlayer(packet.nickname);
-
-                        if (player == null)
-                            break;
-
-                        /*// 오래된 패킷 무시
-                        if(packet.tick <= player.lastReceivedTick)
-                        {
-                            break;
-                        }*/
-
-                        player.lastReceivedTick = packet.tick;
-                        
-                        UnityMainThreadDispatcher
-                            .Instance
-                            .Enqueue(() =>
-                            {
-                                playerManager.MovePlayer(
-                                    packet.nickname,
-                                    new Vector3(
-                                        packet.position.X,
-                                        packet.position.Y,
-                                        packet.position.Z),
-                                    packet.rotY,
-                                    packet.isMove,
-                                    packet.tick);
-                            });
-
-                        break;
-                    }
-                }
-            }
-            catch(Exception e)
-            {
-                Debug.Log(e);
-            }
+            int read = stream.Read(buffer, offset, size - offset);
+            if (read <= 0)
+                throw new IOException("Connection closed");
+            offset += read;
         }
+    }
+
+    public bool IsConnected() => socket != null && socket.Connected && stream != null;
+
+    void OnApplicationQuit()
+    {
+        isRunning = false;
+        SendDisconnect();
+        stream?.Close();
+        socket?.Close();
+        udp?.Close();
     }
 }

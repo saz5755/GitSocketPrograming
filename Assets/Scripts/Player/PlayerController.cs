@@ -1,149 +1,125 @@
 using System.Collections.Generic;
-using NUnit.Framework;
 using UnityEngine;
 
 public class PlayerController : MonoBehaviour
 {
     public string nickname;
-
     public bool isLocalPlayer;
-
-    // 스냅샷으로 대체
-    Vector3 targetPos;
-
-    // SnapShot
-    List<Snapshot> snapshots = new();
     public int lastReceivedTick;
-    
-    float targetRotY;
-    bool targetIsMove;
+
+    List<Snapshot> snapshots = new();
+
     Animator anim;
+    float moveSendTimer;
+    int localTick;
 
-    float sendTimer;
-    
-    [SerializeField]
-    float moveSpeed = 5f;
+    [Header("Flight Settings")]
+    [SerializeField] float moveSpeed = 30f;
+    [SerializeField] float pitchSpeed = 60f;
+    [SerializeField] float yawSpeed = 45f;
+    [SerializeField] float rollSpeed = 90f;
+    [SerializeField] float sendInterval = 0.05f; // 20Hz
 
-    private void Awake()
+    [Header("Interpolation")]
+    [SerializeField] float interpolationDelay = 0.1f;
+
+    void Awake()
     {
-        anim =  GetComponent<Animator>();
+        anim = GetComponent<Animator>();
     }
 
     void Update()
     {
         if (isLocalPlayer)
-        {
             LocalUpdate();
-        }
         else
-        {
             RemoteUpdate();
-        }
     }
 
+    // ── 로컬 플레이어 ────────────────────────────────────────────────────
     void LocalUpdate()
     {
-        float moveX = Input.GetAxisRaw("Horizontal");
-        float moveZ = Input.GetAxisRaw("Vertical");
-        float moveY = 0;
+        float pitch = -Input.GetAxis("Vertical");
+        float yaw   =  Input.GetAxis("Horizontal");
+        float roll  = 0f;
+        if (Input.GetKey(KeyCode.Q)) roll =  1f;
+        if (Input.GetKey(KeyCode.E)) roll = -1f;
 
-        if (Input.GetKey(KeyCode.E)) moveY = 1;
-        if (Input.GetKey(KeyCode.Q)) moveY = -1;
-
-        Vector3 dir = new Vector3(moveX, moveY, moveZ);
-
-        bool isMove = dir != Vector3.zero;
-
-        if (isMove)
-            transform.rotation = Quaternion.LookRotation(dir.normalized);
-
-        // 🔥 핵심: 즉시 이동 (client prediction)
-        transform.position += dir * 5f * Time.deltaTime;
-
-        // 서버 전송만
-        NetworkManager.Instance.socketClient.SendMove(
-            moveX, moveY, moveZ,
-            transform.eulerAngles.y,
-            isMove
+        transform.Rotate(
+            pitch * pitchSpeed * Time.deltaTime,
+            yaw   * yawSpeed   * Time.deltaTime,
+            roll  * rollSpeed  * Time.deltaTime,
+            Space.Self
         );
 
-        Debug.Log($"[SEND] moveX={moveX}, moveY={moveY}, moveZ={moveZ}, pos={transform.position}");
+        transform.position += transform.forward * moveSpeed * Time.deltaTime;
 
-        anim.SetBool("Move", isMove);
+        if (anim != null)
+            anim.SetBool("Move", true);
+
+        moveSendTimer += Time.deltaTime;
+        if (moveSendTimer >= sendInterval)
+        {
+            moveSendTimer = 0f;
+            localTick++;
+
+            Vector3 euler = transform.eulerAngles;
+            NetworkManager.Instance.socketClient.SendMove(
+                transform.position.x, transform.position.y, transform.position.z,
+                euler.x, euler.y, euler.z,
+                true, localTick
+            );
+        }
     }
-    
+
+    // ── 원격 플레이어: 스냅샷 보간 ────────────────────────────────────────
     void RemoteUpdate()
     {
-        if (snapshots.Count < 2)
+        if (snapshots.Count == 0)
+            return;
+
+        // 스냅샷 1개: 해당 위치/회전에 고정
+        if (snapshots.Count == 1)
         {
+            transform.position = snapshots[0].position;
+            transform.rotation = snapshots[0].rotation;
             return;
         }
-        
-        float renderTime = Time.time - 0.1f;
 
-        // 안전하게 2개 유지
-        while (snapshots.Count > 2 &&
-               snapshots[1].time <= renderTime)
-        {
+        float renderTime = Time.time - interpolationDelay;
+
+        while (snapshots.Count > 2 && snapshots[1].time <= renderTime)
             snapshots.RemoveAt(0);
-        }
-
-        // 다시 체크 (중요)
-        if (snapshots.Count < 2)
-            return;
 
         Snapshot from = snapshots[0];
-        Snapshot to = snapshots[1];
+        Snapshot to   = snapshots[1];
 
-        float t = Mathf.InverseLerp(
-            from.time,
-            to.time,
-            renderTime
-        );
+        // from == to 이면 t = 0 → from 위치에 고정
+        float t = (to.time > from.time)
+            ? Mathf.Clamp01(Mathf.InverseLerp(from.time, to.time, renderTime))
+            : 1f;
 
-        transform.position = Vector3.Lerp(
-            from.position,
-            to.position,
-            t
-        );
+        transform.position = Vector3.Lerp(from.position, to.position, t);
+        transform.rotation = Quaternion.Slerp(from.rotation, to.rotation, t);
 
-        transform.rotation = Quaternion.Lerp(
-            Quaternion.Euler(0, from.rotY, 0),
-            Quaternion.Euler(0, to.rotY, 0),
-            t
-        );
-        
-        anim.SetBool("Move", to.isMove);
-        
+        if (anim != null)
+            anim.SetBool("Move", to.isMove);
     }
 
-    public void SetTargetPosition(Vector3 pos, float rotY, bool isMove)
-    {
-        targetPos = pos;
-        targetRotY = rotY;
-        targetIsMove = isMove;
-    }
-    
-    // Snapshot 
-    public void AddSnapshot(Vector3 pos, float rotY, bool isMove)
+    // ── 스냅샷 추가 ───────────────────────────────────────────────────────
+    public void AddSnapshot(Vector3 pos, Quaternion rot, bool isMove)
     {
         snapshots.Add(new Snapshot
         {
             position = pos,
-            rotY = rotY,
-            isMove = isMove,
-            time = Time.time
+            rotation = rot,
+            isMove   = isMove,
+            time     = Time.time
         });
 
-        // 정렬 보장 (UDP 순서 꼬임 방지)
-        snapshots.Sort((a, b) => a.time.CompareTo(b.time));
-
-        if (snapshots.Count > 20)
+        if (snapshots.Count > 12)
             snapshots.RemoveAt(0);
     }
-    
-    public void ClearSnapshots()
-    {
-        snapshots.Clear();
-    }
+
+    public void ClearSnapshots() => snapshots.Clear();
 }

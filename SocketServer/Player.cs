@@ -1,8 +1,11 @@
-// Server → Client (UDP): 다른 플레이어 위치/회전 수신
-public class MoveBroadcastPacket : Packet
+public class Player
 {
-    public int tick;
+    public int playerId;
     public string nickname;
+    public int lastProcessedTick;
+
+    public Room room;
+    public ClientSession session;
 
     // World Position
     public float posX;
@@ -15,4 +18,7 @@ public class MoveBroadcastPacket : Packet
     public float rotZ;
 
     public bool isMove;
+    public int hp = 100;
+
+    public DateTime lastInputTime;
 }

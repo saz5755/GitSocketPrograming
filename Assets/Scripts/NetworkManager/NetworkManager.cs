@@ -9,19 +9,11 @@ public class NetworkManager : MonoBehaviour
     void Awake()
     {
         Instance = this;
-        
-        socketClient =
-            FindObjectOfType<SocketClient>();
+        socketClient = FindObjectOfType<SocketClient>();
     }
 
     public bool IsConnected()
     {
-        return socketClient != null &&
-               socketClient.IsConnected();
+        return socketClient != null && socketClient.IsConnected();
     }
-
-    /*public void SendMove(Vector3 pos, float rotY)
-    {
-        socketClient.SendMove(pos, rotY);
-    }*/
 }

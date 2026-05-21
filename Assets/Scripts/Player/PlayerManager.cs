@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using Unity.VisualScripting;
 using UnityEngine;
 
 public class PlayerManager : MonoBehaviour
@@ -10,87 +9,60 @@ public class PlayerManager : MonoBehaviour
 
     public PlayerController GetPlayer(string nickname)
     {
-        if(players.ContainsKey(nickname))
-        {
-            return players[nickname];
-        }
-        
-        return null;
-    }
-    
-    public void MovePlayer(string nickname, Vector3 pos, float rotY, bool isMove, int tick)
-    {
-        Debug.Log($"[MOVE] {nickname} {pos}");
-        
-        if (!players.ContainsKey(nickname))
-            return;
-
-        PlayerController player = players[nickname];
-
-        player.AddSnapshot(pos, rotY, isMove);
-        
+        players.TryGetValue(nickname, out PlayerController player);
+        return player;
     }
 
-    public void CreatePlayer(string nickname, Vector3 pos, float rotY, bool isMove)
+    public void CreatePlayer(string nickname, Vector3 pos, Quaternion rot, bool isMove)
     {
-        Debug.Log($"CreatePlayer 호출 : {nickname}");
-     
-        
-        // 이미 존재하면 생성 안 함
-        if(players.ContainsKey(nickname))
+        if (players.ContainsKey(nickname))
             return;
 
-        GameObject obj =
-            Instantiate(playerPrefab);
+        GameObject obj = Instantiate(playerPrefab);
+        PlayerController player = obj.GetComponent<PlayerController>();
 
-        PlayerController player =
-            obj.GetComponent<PlayerController>();
-        
-        player.ClearSnapshots();
-        player.AddSnapshot(pos, rotY, isMove);
-        
         player.nickname = nickname;
-
-        player.isLocalPlayer =
-        (
-            nickname ==
-            NetworkManager.Instance
-                .socketClient
-                .myNickname
-        );
-
-        // 최초 위치 설정
+        bool isLocal = nickname == NetworkManager.Instance.socketClient.myNickname;
+        player.isLocalPlayer = isLocal;
         player.transform.position = pos;
+        player.transform.rotation = rot;
+        player.ClearSnapshots();
+        player.AddSnapshot(pos, rot, isMove);
 
-        // Remote 보간 초기값 동기화
-        player.SetTargetPosition(pos, rotY, isMove);
+        if (!isLocal)
+        {
+            PlayerLabel label = obj.AddComponent<PlayerLabel>();
+            label.SetNickname(nickname);
+        }
 
         players[nickname] = player;
 
-        Debug.Log($"Create Player : {nickname}");
+        Debug.Log($"[Player] Created: {nickname} (local={player.isLocalPlayer})");
     }
-    
-    public void RemovePlayer(string nickname)
+
+    public void MovePlayer(string nickname, Vector3 pos, Quaternion rot, bool isMove, int tick)
     {
-        if(players.ContainsKey(nickname) == false)
+        if (!players.TryGetValue(nickname, out PlayerController player))
             return;
 
-        PlayerController player = players[nickname];
+        player.AddSnapshot(pos, rot, isMove);
+    }
+
+    public void RemovePlayer(string nickname)
+    {
+        if (!players.TryGetValue(nickname, out PlayerController player))
+            return;
 
         players.Remove(nickname);
-
         Destroy(player.gameObject);
 
-        Debug.Log($"REMOVE PLAYER : {nickname}");
+        Debug.Log($"[Player] Removed: {nickname}");
     }
-    
-    // ??
+
     public void ClearPlayers()
     {
-        foreach(var player in players.Values)
-        {
+        foreach (PlayerController player in players.Values)
             Destroy(player.gameObject);
-        }
 
         players.Clear();
     }
