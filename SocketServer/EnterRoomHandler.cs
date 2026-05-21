@@ -18,6 +18,9 @@ class EnterRoomHandler
         if (session.player.room != null)
             session.player.room.Leave(session.player);
 
+        // 재입장 시 틱 카운터 리셋 (클라이언트 tick은 씬 재로드마다 0부터 시작)
+        session.player.lastProcessedTick = 0;
+
         // 초기 스폰 위치 설정
         session.player.posX = 0;
         session.player.posY = 0;

@@ -28,10 +28,9 @@ public class PlaneModelBuilder : MonoBehaviour
         CapsuleCollider cc = GetComponent<CapsuleCollider>();
         if (cc != null) cc.enabled = false;
 
-        // 기본 머티리얼 확보: 임시 프리미티브에서 복제 (URP/HDRP/Standard 자동 대응)
-        GameObject tmp = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        baseMat = tmp.GetComponent<Renderer>().sharedMaterial;
-        DestroyImmediate(tmp);
+        // 빌드에서 Standard 셰이더가 스트립되는 문제 방지:
+        // 렌더 파이프라인 순서대로 명시적으로 셰이더 탐색
+        baseMat = FindBaseMaterial();
 
         Build();
     }
@@ -93,6 +92,33 @@ public class PlaneModelBuilder : MonoBehaviour
     }
 
     // ── 헬퍼 ─────────────────────────────────────────────────────────────
+    static Material FindBaseMaterial()
+    {
+        // URP → HDRP → Standard → Diffuse 순서로 탐색
+        // Shader.Find()는 빌드에 포함된 셰이더만 반환하므로 URP 빌드에서 Standard가 없어도 안전
+        string[] candidates = {
+            "Universal Render Pipeline/Lit",
+            "Universal Render Pipeline/Simple Lit",
+            "Lightweight Render Pipeline/Lit",   // 구 LWRP/URP
+            "HDRP/Lit",
+            "Standard",
+            "Diffuse",
+        };
+        foreach (string name in candidates)
+        {
+            Shader sh = Shader.Find(name);
+            if (sh != null) return new Material(sh);
+        }
+        // 마지막 수단: 씬의 기존 렌더러에서 복제
+        foreach (var r in FindObjectsOfType<Renderer>())
+        {
+            if (r.sharedMaterial?.shader != null &&
+                !r.sharedMaterial.shader.name.StartsWith("Hidden"))
+                return new Material(r.sharedMaterial);
+        }
+        return new Material(Shader.Find("Sprites/Default"));
+    }
+
     static Vector3    V(float x, float y, float z) => new Vector3(x, y, z);
     static Quaternion Q(float x, float y, float z) => Quaternion.Euler(x, y, z);
 

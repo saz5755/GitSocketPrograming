@@ -152,13 +152,19 @@ public class SocketClient : MonoBehaviour
     }
 
     // ── UDP: 등록 + keepalive ──────────────────────────────────────────────
+    bool keepAliveRunning;
+
     IEnumerator RegisterUDP()
     {
         SendUdpConnect();
         yield return new WaitForSeconds(0.1f);
         SendUdpConnect();
         yield return new WaitForSeconds(0.2f);
-        StartCoroutine(KeepUdpAlive());
+        if (!keepAliveRunning)
+        {
+            keepAliveRunning = true;
+            StartCoroutine(KeepUdpAlive());
+        }
     }
 
     IEnumerator KeepUdpAlive()
@@ -168,6 +174,7 @@ public class SocketClient : MonoBehaviour
             yield return new WaitForSeconds(5f);
             if (IsConnected()) SendUdpConnect();
         }
+        keepAliveRunning = false;
     }
 
     // ── UDP 수신 루프 ──────────────────────────────────────────────────────
@@ -216,7 +223,11 @@ public class SocketClient : MonoBehaviour
         => SendTCP(new ChatPacket { type = PacketType.CHAT, message = msg });
 
     public void EnterRoom(int roomId)
-        => SendTCP(new EnterRoomPacket { type = PacketType.ENTER_ROOM, roomId = roomId });
+    {
+        // 재입장 시 서버 UDP 엔드포인트 재등록 (UDP 연결이 끊겼거나 방 재진입 시 대비)
+        StartCoroutine(RegisterUDP());
+        SendTCP(new EnterRoomPacket { type = PacketType.ENTER_ROOM, roomId = roomId });
+    }
 
     public void LeaveRoom()
     {
