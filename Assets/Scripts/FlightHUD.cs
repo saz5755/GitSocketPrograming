@@ -47,6 +47,17 @@ public class FlightHUD : MonoBehaviour
     Text n1Text, fuelText, clockText, modeText, weaponText, gearText;
     RectTransform n1Fill, fuelFill;
 
+    // ── 타겟팅 오버레이 ──────────────────────────────────────────────────────
+    TargetingSystem targeting;
+    MissileLauncher launcher;
+    RectTransform   tdbRoot;
+    RectTransform[] tdbArms = new RectTransform[8];
+    Text            tdbLabel, tdbRange, tdbClosure, tdbAspect, tdbName;
+    RectTransform   offScreenRoot;
+    Text            offScreenDist;
+    Text            aim120CountText;
+    float           tdbFlash;
+
     Vector3 prevPos; bool prevPosSet;
     Vector3 prevVel;
     float smoothG = 1f, missionTime = 0f, fuelLevel = 100f;
@@ -96,6 +107,14 @@ public class FlightHUD : MonoBehaviour
         BuildBoresight();
         BuildFPV();
         BuildBankAngleArc();
+
+        // 타겟팅·미사일 시스템을 같은 GameObject에 추가
+        targeting = GetComponent<TargetingSystem>();
+        if (targeting == null) targeting = gameObject.AddComponent<TargetingSystem>();
+        launcher = GetComponent<MissileLauncher>();
+        if (launcher == null) launcher = gameObject.AddComponent<MissileLauncher>();
+
+        BuildTargetingOverlay();
     }
 
     // ── 인공수평선: 배경 없음, 라인만 ─────────────────────────────────────────
@@ -253,7 +272,7 @@ public class FlightHUD : MonoBehaviour
         AddTxt(p, "WEAPON", new Vector2(700f, 118f), new Vector2(110f,20f), 9, HGD, TextAnchor.MiddleCenter);
         Img(Rect("RD1", p, new Vector2(700f,107f), new Vector2(100f,1f)), HGX);
         weaponText = AddTxt(p, "SAFE", new Vector2(700f,88f), new Vector2(100f,26f), 13, HGD, TextAnchor.MiddleCenter);
-        AddTxt(p, "AIM-120  x4", new Vector2(700f,66f), new Vector2(110f,18f), 8, HGX, TextAnchor.MiddleCenter);
+        aim120CountText = AddTxt(p, "AIM-120  x4", new Vector2(700f,66f), new Vector2(110f,18f), 8, HGX, TextAnchor.MiddleCenter);
         AddTxt(p, "AIM-9X   x2", new Vector2(700f,48f), new Vector2(110f,18f), 8, HGX, TextAnchor.MiddleCenter);
         AddTxt(p, "SYSTEMS", new Vector2(700f,20f), new Vector2(110f,20f), 9, HGD, TextAnchor.MiddleCenter);
         Img(Rect("RD2", p, new Vector2(700f,9f), new Vector2(100f,1f)), HGX);
@@ -529,6 +548,8 @@ public class FlightHUD : MonoBehaviour
         if(n1Text   !=null) n1Text.color =n1>95f?WARN:HG;
         if(fuelLevel<10f&&warnText!=null&&!gWarn&&!stallWarn)
         {warnText.text="  BINGO FUEL";warnText.color=WARN;}
+
+        UpdateTargetingHUD();
     }
 
     void UpdateTape(Text[] labels, RectTransform[] rts, float val,
@@ -566,6 +587,163 @@ public class FlightHUD : MonoBehaviour
     }
 
     static string HeadingLabel(int d)=>d switch{0=>"N",90=>"E",180=>"S",270=>"W",_=>d%30==0?(d/10).ToString():"·"};
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // ── 타겟팅 오버레이 빌드 ───────────────────────────────────────────────
+    void BuildTargetingOverlay()
+    {
+        BuildTargetBox();
+        BuildOffScreenIndicator();
+    }
+
+    void BuildTargetBox()
+    {
+        tdbRoot = Rect("TDB_Root", hudCanvas.transform, Vector2.zero, Vector2.zero);
+        tdbRoot.gameObject.SetActive(false);
+
+        // 8개 브래킷 암 (코너당 2개: H + V)
+        for (int i = 0; i < 8; i++)
+        {
+            tdbArms[i] = Rect($"TDB_A{i}", tdbRoot, Vector2.zero, new Vector2(20f, 2f));
+            Img(tdbArms[i], HG);
+        }
+
+        // 타겟 이름 (박스 위)
+        tdbName    = AddTxt(tdbRoot, "", new Vector2(0f, 58f),  new Vector2(160f, 16f), 9,  HGD, TextAnchor.MiddleCenter);
+        // 락온 상태 레이블 (박스 아래)
+        tdbLabel   = AddTxt(tdbRoot, "", new Vector2(0f, -62f), new Vector2(120f, 18f), 11, HG,  TextAnchor.MiddleCenter);
+        // 거리
+        tdbRange   = AddTxt(tdbRoot, "", new Vector2(0f, -80f), new Vector2(160f, 16f), 10, HGD, TextAnchor.MiddleCenter);
+        // 폐쇄율
+        tdbClosure = AddTxt(tdbRoot, "", new Vector2(0f, -96f), new Vector2(160f, 16f), 9,  HGD, TextAnchor.MiddleCenter);
+        // 어스펙트
+        tdbAspect  = AddTxt(tdbRoot, "", new Vector2(0f,-112f), new Vector2(160f, 16f), 9,  HGD, TextAnchor.MiddleCenter);
+    }
+
+    void BuildOffScreenIndicator()
+    {
+        offScreenRoot = Rect("OSI_Root", hudCanvas.transform, Vector2.zero, new Vector2(28f, 28f));
+        offScreenRoot.gameObject.SetActive(false);
+        // 화살표: 텍스트 "▲" 회전으로 방향 표시
+        AddTxt(offScreenRoot, "▲", Vector2.zero, new Vector2(28f, 28f), 16, HG, TextAnchor.MiddleCenter);
+        offScreenDist = AddTxt(offScreenRoot, "", new Vector2(0f, -26f), new Vector2(90f, 18f), 9, HGD, TextAnchor.MiddleCenter);
+    }
+
+    void LayoutTDBArms(float halfSize)
+    {
+        float arm = 22f, thk = 2f;
+        // 좌상 코너
+        tdbArms[0].anchoredPosition = new Vector2(-halfSize + arm * 0.5f,  halfSize);
+        tdbArms[0].sizeDelta        = new Vector2(arm, thk);
+        tdbArms[1].anchoredPosition = new Vector2(-halfSize,  halfSize - arm * 0.5f);
+        tdbArms[1].sizeDelta        = new Vector2(thk, arm);
+        // 우상 코너
+        tdbArms[2].anchoredPosition = new Vector2( halfSize - arm * 0.5f,  halfSize);
+        tdbArms[2].sizeDelta        = new Vector2(arm, thk);
+        tdbArms[3].anchoredPosition = new Vector2( halfSize,  halfSize - arm * 0.5f);
+        tdbArms[3].sizeDelta        = new Vector2(thk, arm);
+        // 좌하 코너
+        tdbArms[4].anchoredPosition = new Vector2(-halfSize + arm * 0.5f, -halfSize);
+        tdbArms[4].sizeDelta        = new Vector2(arm, thk);
+        tdbArms[5].anchoredPosition = new Vector2(-halfSize, -halfSize + arm * 0.5f);
+        tdbArms[5].sizeDelta        = new Vector2(thk, arm);
+        // 우하 코너
+        tdbArms[6].anchoredPosition = new Vector2( halfSize - arm * 0.5f, -halfSize);
+        tdbArms[6].sizeDelta        = new Vector2(arm, thk);
+        tdbArms[7].anchoredPosition = new Vector2( halfSize, -halfSize + arm * 0.5f);
+        tdbArms[7].sizeDelta        = new Vector2(thk, arm);
+    }
+
+    // ── 타겟팅 HUD 업데이트 ────────────────────────────────────────────────
+    void UpdateTargetingHUD()
+    {
+        if (targeting == null) return;
+
+        tdbFlash += Time.deltaTime;
+        bool blink = tdbFlash % 0.5f < 0.25f;  // 2Hz 점멸
+
+        bool hasTarget = targeting.Target != null;
+
+        if (hasTarget && targeting.IsTargetOnScreen)
+        {
+            tdbRoot.gameObject.SetActive(true);
+            offScreenRoot.gameObject.SetActive(false);
+
+            // 캔버스 위치로 이동
+            tdbRoot.anchoredPosition = targeting.TargetCanvasPos;
+
+            bool   locked   = targeting.State == TargetingSystem.LockState.Locked;
+            float  halfSize = Mathf.Lerp(65f, 42f, targeting.LockProgress);
+            LayoutTDBArms(halfSize);
+
+            // 브래킷 색상: Locked=밝은 녹, Searching=점멸
+            Color armCol = locked ? HG : (blink ? HGD : HGX);
+            foreach (var arm in tdbArms)
+            {
+                var img = arm.GetComponent<Image>();
+                if (img != null) img.color = armCol;
+            }
+
+            // 레이블
+            tdbLabel.text  = locked ? "◆ TRK" : "SRCH";
+            tdbLabel.color = locked ? HG : (blink ? WARN : HGX);
+
+            float km = targeting.TargetRange / 1000f;
+            tdbRange.text   = km >= 1f ? $"{km:F1} km" : $"{targeting.TargetRange:F0} m";
+            tdbClosure.text = $"CL  {(targeting.ClosureRate >= 0f ? "+" : "")}{targeting.ClosureRate:F0} m/s";
+            tdbAspect.text  = $"ASP  {targeting.TargetAspect:F0}°  {AspectLabel(targeting.TargetAspect)}";
+            tdbName.text    = targeting.Target.nickname;
+
+            // 무장 상태 업데이트
+            if (weaponText != null)
+            {
+                if (locked)
+                { weaponText.text = "SHOOT"; weaponText.color = blink ? CRIT : WARN; }
+                else
+                { weaponText.text = "ACQR"; weaponText.color = WARN; }
+            }
+        }
+        else if (hasTarget && !targeting.IsTargetOnScreen)
+        {
+            tdbRoot.gameObject.SetActive(false);
+            offScreenRoot.gameObject.SetActive(true);
+
+            // 오프스크린 화살표: 화면 엣지에 배치
+            Vector2 dir = targeting.TargetCanvasPos;
+            if (dir.sqrMagnitude < 0.001f) dir = Vector2.up;
+            float   maxX  = 830f, maxY = 370f;
+            float   sX    = Mathf.Abs(dir.x) > 0.001f ? maxX / Mathf.Abs(dir.x) : float.MaxValue;
+            float   sY    = Mathf.Abs(dir.y) > 0.001f ? maxY / Mathf.Abs(dir.y) : float.MaxValue;
+            offScreenRoot.anchoredPosition = dir * Mathf.Min(sX, sY);
+
+            // 화살표 방향 (▲ 기준 = 위쪽, 회전으로 방향 설정)
+            float angle = Mathf.Atan2(dir.x, dir.y) * Mathf.Rad2Deg;
+            offScreenRoot.localRotation = Quaternion.Euler(0f, 0f, -angle);
+
+            float km = targeting.TargetRange / 1000f;
+            offScreenDist.text = km >= 1f ? $"{km:F1}km" : $"{targeting.TargetRange:F0}m";
+
+            if (weaponText != null) { weaponText.text = "ACQR"; weaponText.color = WARN; }
+        }
+        else
+        {
+            tdbRoot.gameObject.SetActive(false);
+            offScreenRoot.gameObject.SetActive(false);
+            if (weaponText != null) { weaponText.text = "SAFE"; weaponText.color = HGD; }
+        }
+
+        // AIM-120 카운트 동적 갱신
+        if (aim120CountText != null && launcher != null)
+            aim120CountText.text = $"AIM-120  x{launcher.MissileCount}";
+    }
+
+    static string AspectLabel(float deg)
+    {
+        if (deg < 30f)  return "TAIL";
+        if (deg < 90f)  return "BEAM";
+        if (deg < 150f) return "NOSE";
+        return "HTB";
+    }
 
     RectTransform Rect(string name,Transform parent,Vector2 pos,Vector2 size)
     {

@@ -2,7 +2,14 @@
   "permissions": {
     "allow": [
       "Bash(dotnet build *)",
-      "PowerShell(Get-Process *)"
+      "PowerShell(Get-Process *)",
+      "Bash(uvx --python \">=3.11\" coplay-mcp-server@latest --help)",
+      "WebFetch(domain:coplay.ai)",
+      "WebFetch(domain:docs.coplay.dev)",
+      "PowerShell(Head 60 *)",
+      "PowerShell(Get-ChildItem \"C:\\\\Unity\\\\GitSocketPrograming\\\\Library\\\\PackageCache\\\\com.coplaydev.coplay@2b7638c0b668\" -Force | ForEach-Object { $_.Name })",
+      "PowerShell(Get-ChildItem \"C:\\\\Unity\\\\GitSocketPrograming\\\\Library\\\\PackageCache\\\\com.coplaydev.coplay@2b7638c0b668\\\\Editor\" -Force | ForEach-Object { $_.Name })",
+      "PowerShell(Get-ChildItem -Force \"C:\\\\Unity\\\\GitSocketPrograming\\\\Assets\\\\Scripts\\\\Combat\\\\\" | ForEach-Object { \"$\\($_.Name\\)  $\\($_.Length\\)bytes  $\\($_.LastWriteTime\\)\" })"
     ]
   }
 }
