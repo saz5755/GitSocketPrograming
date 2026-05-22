@@ -24,8 +24,15 @@ class PacketHandler
 
         handlers[PacketType.LEAVE_ROOM]
             = LeaveRoomHandler.Handle;
-        
-        // TCP Move는 제거 예정 
+
+        handlers[PacketType.MISSILE_SPAWN]
+            = MissileHandler.HandleSpawn;
+        handlers[PacketType.MISSILE_DESTROY]
+            = MissileHandler.HandleDestroy;
+        handlers[PacketType.MISSILE_WARN]
+            = MissileHandler.HandleWarn;
+
+        // TCP Move는 제거 예정
         /*handlers[PacketType.MOVE]
             = MoveHandler.Handle;*/
         

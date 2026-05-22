@@ -26,6 +26,15 @@ public class FlightCamera : MonoBehaviour
     float freeLookYaw   = 0f;
     float freeLookPitch = 0f;
 
+    float _shakeMag, _shakeTimer, _shakeDur;
+
+    public void TriggerShake(float magnitude, float duration)
+    {
+        _shakeMag   = magnitude;
+        _shakeTimer = duration;
+        _shakeDur   = duration;
+    }
+
     void Awake()
     {
         cockpitBuilder = gameObject.AddComponent<CockpitBuilder>();
@@ -79,6 +88,14 @@ public class FlightCamera : MonoBehaviour
             UpdateCockpit();
         else
             UpdateChase();
+
+        // 카메라 쉐이크
+        if (_shakeTimer > 0f)
+        {
+            _shakeTimer -= Time.deltaTime;
+            float decay = _shakeDur > 0f ? _shakeTimer / _shakeDur : 0f;
+            transform.position += Random.insideUnitSphere * (_shakeMag * decay);
+        }
     }
 
     void UpdateCockpit()

@@ -9,7 +9,13 @@
       "PowerShell(Head 60 *)",
       "PowerShell(Get-ChildItem \"C:\\\\Unity\\\\GitSocketPrograming\\\\Library\\\\PackageCache\\\\com.coplaydev.coplay@2b7638c0b668\" -Force | ForEach-Object { $_.Name })",
       "PowerShell(Get-ChildItem \"C:\\\\Unity\\\\GitSocketPrograming\\\\Library\\\\PackageCache\\\\com.coplaydev.coplay@2b7638c0b668\\\\Editor\" -Force | ForEach-Object { $_.Name })",
-      "PowerShell(Get-ChildItem -Force \"C:\\\\Unity\\\\GitSocketPrograming\\\\Assets\\\\Scripts\\\\Combat\\\\\" | ForEach-Object { \"$\\($_.Name\\)  $\\($_.Length\\)bytes  $\\($_.LastWriteTime\\)\" })"
+      "PowerShell(Get-ChildItem -Force \"C:\\\\Unity\\\\GitSocketPrograming\\\\Assets\\\\Scripts\\\\Combat\\\\\" | ForEach-Object { \"$\\($_.Name\\)  $\\($_.Length\\)bytes  $\\($_.LastWriteTime\\)\" })",
+      "Bash(Get-Process -Name \"SocketServer\" -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object Id, ProcessName, StartTime)",
+      "PowerShell(Start-Process -FilePath \"dotnet\" -ArgumentList \"run --configuration Release\" -WorkingDirectory \"C:\\\\Unity\\\\GitSocketPrograming\\\\SocketServer\" -PassThru | Select-Object Id, ProcessName)",
+      "PowerShell($proc = Start-Process -FilePath \"C:\\\\Unity\\\\GitSocketPrograming\\\\SocketServer\\\\bin\\\\Release\\\\net9.0\\\\SocketServer.exe\" -PassThru; Start-Sleep -Seconds 2; if \\($proc -and !$proc.HasExited\\) { Write-Output \"PID=$\\($proc.Id\\) 실행중\" } else { Write-Output \"실행 실패 또는 즉시 종료\" })",
+      "PowerShell(netstat *)",
+      "PowerShell(Stop-Process *)"
     ]
   }
 }

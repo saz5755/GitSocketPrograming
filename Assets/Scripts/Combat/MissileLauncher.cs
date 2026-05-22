@@ -21,6 +21,9 @@ public class MissileLauncher : MonoBehaviour
     {
         if (_cooldownTimer > 0f) _cooldownTimer -= Time.deltaTime;
         if (Input.GetKeyDown(fireKey)) TryFire();
+
+        // 타겟 락온 상태 네트워크 경고 브로드캐스트
+        BroadcastLockState();
     }
 
     void TryFire()
@@ -38,35 +41,71 @@ public class MissileLauncher : MonoBehaviour
 
     void CreateMissile(Transform origin, Transform target)
     {
-        var go = new GameObject("AIM-120");
-        go.transform.position = origin.position
-                              + origin.forward * 3f
-                              + origin.up      * -0.4f;
-        go.transform.rotation = origin.rotation;
+        GameObject prefab = Resources.Load<GameObject>("MissilePrefab");
+        GameObject go;
+        if (prefab != null)
+        {
+            go = Instantiate(prefab, origin.position + origin.forward * 3f + origin.up * -0.4f, origin.rotation);
+        }
+        else
+        {
+            go = new GameObject("AIM-120");
+            go.transform.position = origin.position + origin.forward * 3f + origin.up * -0.4f;
+            go.transform.rotation = origin.rotation;
+            go.AddComponent<MissileController>();
+        }
 
-        // 동체
-        var body = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        body.name = "Body";
-        body.transform.SetParent(go.transform, false);
-        body.transform.localScale = new Vector3(0.12f, 0.12f, 2.2f);
-        Destroy(body.GetComponent<Collider>());
+        string shooterNick = _targeting.LocalPlayer.nickname;
+        string missileId   = System.Guid.NewGuid().ToString("N")[..8];
 
-        // 핀 (전방)
-        var finH = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        finH.name = "FinH";
-        finH.transform.SetParent(go.transform, false);
-        finH.transform.localPosition = new Vector3(0f, 0f, -0.9f);
-        finH.transform.localScale    = new Vector3(0.55f, 0.04f, 0.28f);
-        Destroy(finH.GetComponent<Collider>());
+        var mc = go.GetComponent<MissileController>();
+        mc.Initialize(target, origin.GetComponent<PlayerController>()?.CurrentSpeed ?? 30f,
+                      MissileGuidanceType.RadarGuided, missileId, shooterNick);
 
-        var finV = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        finV.name = "FinV";
-        finV.transform.SetParent(go.transform, false);
-        finV.transform.localPosition = new Vector3(0f, 0f, -0.9f);
-        finV.transform.localScale    = new Vector3(0.04f, 0.55f, 0.28f);
-        Destroy(finV.GetComponent<Collider>());
+        // 미사일 스폰 네트워크 브로드캐스트
+        var sc = NetworkManager.Instance?.socketClient;
+        if (sc != null)
+        {
+            var targetPc = target.GetComponent<PlayerController>();
+            sc.SendMissileSpawn(missileId, shooterNick,
+                targetPc?.nickname ?? "",
+                go.transform.position, go.transform.eulerAngles,
+                (int)MissileGuidanceType.RadarGuided);
+        }
+    }
 
-        var mc = go.AddComponent<MissileController>();
-        mc.Initialize(target, origin.GetComponent<PlayerController>()?.CurrentSpeed ?? 30f);
+    float _warnTimer;
+    void BroadcastLockState()
+    {
+        if (_targeting == null || _targeting.LocalPlayer == null) return;
+        _warnTimer += Time.deltaTime;
+        if (_warnTimer < 0.3f) return;
+        _warnTimer = 0f;
+
+        var sc = NetworkManager.Instance?.socketClient;
+        if (sc == null) return;
+
+        string myNick = _targeting.LocalPlayer.nickname;
+
+        // 타겟팅 상태 경고 (LockState → ThreatLevel 올바른 매핑)
+        int lockLevel = _targeting.State switch
+        {
+            TargetingSystem.LockState.Searching => (int)ThreatWarningSystem.ThreatLevel.Tracked,
+            TargetingSystem.LockState.Locked    => (int)ThreatWarningSystem.ThreatLevel.Locked,
+            _                                   => (int)ThreatWarningSystem.ThreatLevel.None
+        };
+        string targetNick = _targeting.Target?.nickname ?? "";
+        if (!string.IsNullOrEmpty(targetNick) && lockLevel > 0)
+            sc.SendMissileWarn(myNick, targetNick, lockLevel);
+
+        // 발사된 미사일 추적 경고 (MissileFired = 4)
+        foreach (var mc in FindObjectsOfType<MissileController>())
+        {
+            if (mc.ShooterNick != myNick) continue;
+            var targetPc = mc.Target?.GetComponent<PlayerController>();
+            if (targetPc == null) continue;
+            sc.SendMissileWarn(myNick, targetPc.nickname,
+                               (int)ThreatWarningSystem.ThreatLevel.MissileFired);
+        }
     }
 }

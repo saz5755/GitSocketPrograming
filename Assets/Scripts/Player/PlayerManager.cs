@@ -11,9 +11,11 @@ public class PlayerManager : MonoBehaviour
     {
         SocketClient sc = NetworkManager.Instance?.socketClient;
         if (sc == null) { Debug.LogWarning("[PlayerManager] SocketClient not found"); return; }
-        sc.OnSpawn   += HandleSpawn;
-        sc.OnDespawn += HandleDespawn;
-        sc.OnMove    += HandleMove;
+        sc.OnSpawn          += HandleSpawn;
+        sc.OnDespawn        += HandleDespawn;
+        sc.OnMove           += HandleMove;
+        sc.OnMissileDestroy += HandleMissileDestroy;
+        sc.OnMissileWarn    += HandleMissileWarn;
     }
 
     void OnDestroy()
@@ -21,9 +23,11 @@ public class PlayerManager : MonoBehaviour
         SocketClient sc = NetworkManager.Instance?.socketClient;
         if (sc != null)
         {
-            sc.OnSpawn   -= HandleSpawn;
-            sc.OnDespawn -= HandleDespawn;
-            sc.OnMove    -= HandleMove;
+            sc.OnSpawn          -= HandleSpawn;
+            sc.OnDespawn        -= HandleDespawn;
+            sc.OnMove           -= HandleMove;
+            sc.OnMissileDestroy -= HandleMissileDestroy;
+            sc.OnMissileWarn    -= HandleMissileWarn;
         }
         ClearPlayers();
     }
@@ -46,6 +50,38 @@ public class PlayerManager : MonoBehaviour
             new Vector3(p.posX, p.posY, p.posZ),
             Quaternion.Euler(p.rotX, p.rotY, p.rotZ),
             p.isMove);
+    }
+
+    void HandleMissileDestroy(MissileDestroyPacket p)
+    {
+        string myName = GameManager.Instance?.myNickname
+                     ?? NetworkManager.Instance?.socketClient.myNickname
+                     ?? "";
+        // 발사자는 Detonate()에서 이미 로컬 이펙트 처리 → 서버 에코 무시
+        if (p.shooterNickname == myName) return;
+
+        var pos   = new Vector3(p.posX, p.posY, p.posZ);
+        bool hitMe = !string.IsNullOrEmpty(p.hitNickname) && p.hitNickname == myName;
+        HitEffectSystem.Instance?.TriggerHit(pos, hitMe);
+    }
+
+    void HandleMissileWarn(MissileWarnPacket p)
+    {
+        string myName = GameManager.Instance?.myNickname
+                     ?? NetworkManager.Instance?.socketClient.myNickname
+                     ?? "";
+        if (p.targetNickname != myName) return;
+
+        var threatWarn = FindObjectOfType<ThreatWarningSystem>();
+        if (threatWarn == null) return;
+
+        var level = (ThreatWarningSystem.ThreatLevel)Mathf.Clamp(p.lockLevel, 0, 4);
+
+        Vector3 shooterPos = Vector3.zero;
+        if (players.TryGetValue(p.shooterNickname, out var shooter))
+            shooterPos = shooter.transform.position;
+
+        threatWarn.ReportNetworkThreat(level, shooterPos);
     }
 
     // ── 플레이어 생성 / 제거 ──────────────────────────────────────────────

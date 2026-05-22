@@ -48,8 +48,10 @@ public class FlightHUD : MonoBehaviour
     RectTransform n1Fill, fuelFill;
 
     // ── 타겟팅 오버레이 ──────────────────────────────────────────────────────
-    TargetingSystem targeting;
-    MissileLauncher launcher;
+    TargetingSystem    targeting;
+    MissileLauncher    launcher;
+    ThreatWarningSystem threatWarn;
+    CountermeasureSystem cmsys;
     RectTransform   tdbRoot;
     RectTransform[] tdbArms = new RectTransform[8];
     Text            tdbLabel, tdbRange, tdbClosure, tdbAspect, tdbName;
@@ -58,12 +60,42 @@ public class FlightHUD : MonoBehaviour
     Text            aim120CountText;
     float           tdbFlash;
 
+    // ── 위협 경고 UI (코크핏 HUD 내부) ─────────────────────────────────────
+    Text          threatWarningText;
+    RectTransform rwrNeedle;
+    Text          flareCountText, chaffCountText;
+
+    // ── 상시 표시 경고 캔버스 (chase/cockpit 무관) ──────────────────────
+    Canvas  warningCanvas;
+    Image   missileAlertOverlay;   // 풀스크린 적색 박동 (미사일 인입 시)
+    Text    missileAlertText;      // 화면 상단 중앙 대형 경고문
+    Text    missileDistText;       // 미사일 거리 표시
+    Text    cmsDeployText;         // "◎ FLARE / ≋ CHAFF" 투하 알림
+    float   _deployTimer;
+    string  _deployMsg;
+
     Vector3 prevPos; bool prevPosSet;
     Vector3 prevVel;
     float smoothG = 1f, missionTime = 0f, fuelLevel = 100f;
     const float FUEL_RATE = 1.8f;
 
-    void Start() => BuildHUD();
+    void Start()
+    {
+        CountermeasureSystem.OnDeploy += OnCMSDeploy;
+        BuildHUD();
+        BuildWarningCanvas();
+    }
+
+    void OnDestroy()
+    {
+        CountermeasureSystem.OnDeploy -= OnCMSDeploy;
+    }
+
+    void OnCMSDeploy(CountermeasureType type)
+    {
+        _deployMsg   = type == CountermeasureType.Flare ? "◎  FLARE" : "≋  CHAFF";
+        _deployTimer = 1.6f;
+    }
 
     void FindRefs()
     {
@@ -77,8 +109,184 @@ public class FlightHUD : MonoBehaviour
         if (localPlayer == null || flightCamera == null) { FindRefs(); return; }
         bool cockpit = flightCamera.IsCockpit;
         if (hudCanvas != null) hudCanvas.enabled = cockpit;
+
+        UpdateWarningCanvas();   // 항상 업데이트 (chase / cockpit 무관)
+
         if (!cockpit) return;
         UpdateHUD();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // ── 상시 표시 경고 캔버스 빌드 ─────────────────────────────────────────
+    void BuildWarningCanvas()
+    {
+        var go = new GameObject("Warning_Canvas");
+        warningCanvas = go.AddComponent<Canvas>();
+        warningCanvas.renderMode   = RenderMode.ScreenSpaceOverlay;
+        warningCanvas.sortingOrder = 30;                 // hudCanvas(20) 위
+        var cs = go.AddComponent<CanvasScaler>();
+        cs.uiScaleMode         = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        cs.referenceResolution = new Vector2(1920, 1080);
+        cs.matchWidthOrHeight  = 0.5f;
+        go.AddComponent<GraphicRaycaster>();
+
+        // 풀스크린 박동 오버레이
+        var overlay = MakeStretch("MissileAlert", warningCanvas.transform);
+        missileAlertOverlay = overlay.gameObject.AddComponent<Image>();
+        missileAlertOverlay.color = Color.clear;
+        missileAlertOverlay.raycastTarget = false;
+
+        // 상단 중앙 대형 경고문
+        missileAlertText = AddTxt(warningCanvas.transform, "",
+            new Vector2(0f, 400f), new Vector2(900f, 60f), 28, CRIT, TextAnchor.MiddleCenter);
+        missileAlertText.fontStyle = FontStyle.Bold;
+
+        // 미사일 거리
+        missileDistText = AddTxt(warningCanvas.transform, "",
+            new Vector2(0f, 360f), new Vector2(400f, 30f), 14, WARN, TextAnchor.MiddleCenter);
+
+        // CMS 투하 알림 (우측 상단)
+        cmsDeployText = AddTxt(warningCanvas.transform, "",
+            new Vector2(700f, 380f), new Vector2(200f, 36f), 18, WARN, TextAnchor.MiddleCenter);
+        cmsDeployText.fontStyle = FontStyle.Bold;
+
+        // RWR 미니 디스플레이 (좌측 중앙 – 항상 표시)
+        BuildWarningRWR();
+    }
+
+    RectTransform _warnRwrNeedle;
+    Text          _warnRwrLabel;
+
+    void BuildWarningRWR()
+    {
+        // 반투명 RWR 패널
+        var root = Rect("WRWR", warningCanvas.transform, new Vector2(-800f, 0f), new Vector2(90f, 90f));
+        Img(root, new Color(0f, 0f, 0f, 0.60f));
+        var ol = root.gameObject.AddComponent<Outline>();
+        ol.effectColor    = new Color(HG.r, HG.g, HG.b, 0.55f);
+        ol.effectDistance = new Vector2(1.5f, 1.5f);
+
+        AddTxt(root, "RWR", new Vector2(0f, 30f), new Vector2(80f, 16f), 8, HGX, TextAnchor.MiddleCenter);
+        // 십자선
+        Img(Rect("WH", root, Vector2.zero, new Vector2(60f, 1f)), new Color(HG.r, HG.g, HG.b, 0.22f));
+        Img(Rect("WV", root, Vector2.zero, new Vector2(1f, 60f)), new Color(HG.r, HG.g, HG.b, 0.22f));
+        // 원형 범위 표시선
+        var ring = Rect("Ring", root, Vector2.zero, new Vector2(54f, 54f));
+        ring.gameObject.AddComponent<Image>().color = Color.clear;
+        var ringOl = ring.gameObject.AddComponent<Outline>();
+        ringOl.effectColor    = new Color(HG.r, HG.g, HG.b, 0.20f);
+        ringOl.effectDistance = new Vector2(1f, 1f);
+
+        // 베어링 바늘 (pivot=하단)
+        _warnRwrNeedle = Rect("WNeedle", root, new Vector2(0f, 10f), new Vector2(3f, 28f));
+        _warnRwrNeedle.pivot = new Vector2(0.5f, 0f);
+        Img(_warnRwrNeedle, CRIT);
+        _warnRwrNeedle.gameObject.SetActive(false);
+
+        _warnRwrLabel = AddTxt(root, "", new Vector2(0f, -32f), new Vector2(80f, 14f), 7, HGD, TextAnchor.MiddleCenter);
+    }
+
+    // ── 상시 경고 캔버스 업데이트 ──────────────────────────────────────────
+    void UpdateWarningCanvas()
+    {
+        if (warningCanvas == null || threatWarn == null) return;
+
+        float t = Time.time;
+        bool  missileInbound = threatWarn.MissileIncoming;
+
+        // ── 풀스크린 박동 오버레이 ────────────────────────────────────────
+        if (missileInbound)
+        {
+            float pulse = (Mathf.Sin(t * 9f) + 1f) * 0.5f;   // 4.5 Hz 박동
+            missileAlertOverlay.color = new Color(CRIT.r, CRIT.g, CRIT.b, pulse * 0.14f);
+        }
+        else
+        {
+            missileAlertOverlay.color = Color.clear;
+        }
+
+        // ── 상단 경고문 ───────────────────────────────────────────────────
+        if (missileAlertText != null)
+        {
+            if (missileInbound)
+            {
+                bool blink = (t % 0.22f) < 0.11f;
+                missileAlertText.text  = blink ? "⚠  MISSILE INBOUND  ⚠" : "";
+                missileAlertText.color = CRIT;
+            }
+            else if (threatWarn.Threat >= ThreatWarningSystem.ThreatLevel.Locked)
+            {
+                bool blink = (t % 0.45f) < 0.225f;
+                missileAlertText.text  = blink ? "◉  LOCK WARNING" : "";
+                missileAlertText.color = CRIT;
+            }
+            else if (threatWarn.Threat == ThreatWarningSystem.ThreatLevel.Tracked)
+            {
+                missileAlertText.text  = "RADAR TRACKING";
+                missileAlertText.color = WARN;
+            }
+            else
+            {
+                missileAlertText.text = "";
+            }
+        }
+
+        // ── 미사일 거리 표시 ─────────────────────────────────────────────
+        if (missileDistText != null)
+        {
+            if (missileInbound && threatWarn.NearestMissileDist < float.MaxValue)
+            {
+                float d = threatWarn.NearestMissileDist;
+                missileDistText.text  = d < 1000f ? $"IMPACT  {d:F0} m" : $"IMPACT  {d/1000f:F1} km";
+                missileDistText.color = d < 500f ? CRIT : WARN;
+            }
+            else
+            {
+                missileDistText.text = "";
+            }
+        }
+
+        // ── CMS 투하 알림 페이드 ─────────────────────────────────────────
+        if (cmsDeployText != null)
+        {
+            if (_deployTimer > 0f)
+            {
+                _deployTimer -= Time.deltaTime;
+                float alpha   = Mathf.Clamp01(_deployTimer);
+                cmsDeployText.text  = _deployMsg;
+                cmsDeployText.color = new Color(WARN.r, WARN.g, WARN.b, alpha);
+            }
+            else
+            {
+                cmsDeployText.text = "";
+            }
+        }
+
+        // ── RWR 바늘 ─────────────────────────────────────────────────────
+        if (_warnRwrNeedle != null)
+        {
+            bool show = threatWarn.Threat > ThreatWarningSystem.ThreatLevel.None;
+            _warnRwrNeedle.gameObject.SetActive(show);
+            if (show)
+            {
+                _warnRwrNeedle.localRotation = Quaternion.Euler(0f, 0f, -threatWarn.ThreatBearing);
+                var needleImg = _warnRwrNeedle.GetComponent<Image>();
+                if (needleImg != null)
+                    needleImg.color = missileInbound ? CRIT : WARN;
+            }
+            if (_warnRwrLabel != null)
+            {
+                _warnRwrLabel.text = threatWarn.Threat switch
+                {
+                    ThreatWarningSystem.ThreatLevel.MissileFired => "MSL",
+                    ThreatWarningSystem.ThreatLevel.Locked        => "LCK",
+                    ThreatWarningSystem.ThreatLevel.Tracked       => "TRK",
+                    ThreatWarningSystem.ThreatLevel.Detected      => "DET",
+                    _                                              => ""
+                };
+                _warnRwrLabel.color = missileInbound ? CRIT : WARN;
+            }
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -108,11 +316,12 @@ public class FlightHUD : MonoBehaviour
         BuildFPV();
         BuildBankAngleArc();
 
-        // 타겟팅·미사일 시스템을 같은 GameObject에 추가
-        targeting = GetComponent<TargetingSystem>();
-        if (targeting == null) targeting = gameObject.AddComponent<TargetingSystem>();
-        launcher = GetComponent<MissileLauncher>();
-        if (launcher == null) launcher = gameObject.AddComponent<MissileLauncher>();
+        // 전투 시스템 자동 추가
+        targeting  = GetComponent<TargetingSystem>()   ?? gameObject.AddComponent<TargetingSystem>();
+        launcher   = GetComponent<MissileLauncher>()   ?? gameObject.AddComponent<MissileLauncher>();
+        threatWarn = GetComponent<ThreatWarningSystem>() ?? gameObject.AddComponent<ThreatWarningSystem>();
+        cmsys      = GetComponent<CountermeasureSystem>() ?? gameObject.AddComponent<CountermeasureSystem>();
+        if (GetComponent<HitEffectSystem>() == null)   gameObject.AddComponent<HitEffectSystem>();
 
         BuildTargetingOverlay();
     }
@@ -281,6 +490,16 @@ public class FlightHUD : MonoBehaviour
         AddTxt(p, "ECM  STBY",  new Vector2(700f,-50f), new Vector2(110f,20f), 9, HGD, TextAnchor.MiddleCenter);
         AddTxt(p, "IFF  ON",    new Vector2(700f,-70f), new Vector2(110f,20f), 9, HGD, TextAnchor.MiddleCenter);
         AddTxt(p, "APG-81  ACT",new Vector2(700f,-96f), new Vector2(110f,20f), 9, HGD, TextAnchor.MiddleCenter);
+
+        // ── 대응수단 카운트 ──────────────────────────────────────────────────
+        AddTxt(p, "COUNTERMEASURE", new Vector2(700f,-116f), new Vector2(130f,14f), 7, HGX, TextAnchor.MiddleCenter);
+        Img(Rect("CMD", p, new Vector2(700f,-126f), new Vector2(110f,1f)), HGX);
+        flareCountText = AddTxt(p, "FLARE  30", new Vector2(700f,-138f), new Vector2(110f,16f), 9, HGD, TextAnchor.MiddleCenter);
+        chaffCountText = AddTxt(p, "CHAFF  30", new Vector2(700f,-152f), new Vector2(110f,16f), 9, HGD, TextAnchor.MiddleCenter);
+
+        // ── SA/EW MFD 내부 RWR 바늘 ─────────────────────────────────────────
+        // lMFD는 글레어실드 로컬 (-452, 8), 크기 (220, 170)
+        // MFD 내부에 직접 추가 (별도 빌드 메서드에서 처리)
     }
 
     // ── HUD 글래스 코너 브래킷 ────────────────────────────────────────────────
@@ -594,6 +813,32 @@ public class FlightHUD : MonoBehaviour
     {
         BuildTargetBox();
         BuildOffScreenIndicator();
+        BuildThreatWarningUI();
+    }
+
+    void BuildThreatWarningUI()
+    {
+        // 대형 위협 경고 텍스트 (AH 영역 상단, 헤딩 스트립 위)
+        var wp = Rect("ThreatWarn", hudCanvas.transform, new Vector2(0f, 475f), new Vector2(700f, 38f));
+        Img(wp, new Color(0f, 0f, 0f, 0f));
+        threatWarningText = AddTxt(wp, "", Vector2.zero, new Vector2(700f, 38f), 18, CRIT, TextAnchor.MiddleCenter);
+
+        // RWR 베어링 바늘 (화면 중앙 부근 작은 지시기)
+        var rwrRoot = Rect("RWR_Root", hudCanvas.transform, new Vector2(-740f, 200f), new Vector2(60f, 60f));
+        Img(rwrRoot, new Color(0f, 0f, 0f, 0.55f));
+        // 원형 테두리 (Outline 사용)
+        var rwrOl = rwrRoot.gameObject.AddComponent<UnityEngine.UI.Outline>();
+        rwrOl.effectColor = new Color(HG.r, HG.g, HG.b, 0.5f);
+        rwrOl.effectDistance = new Vector2(1f, 1f);
+        AddTxt(rwrRoot, "RWR", new Vector2(0f, 20f), new Vector2(56f, 14f), 7, HGX, TextAnchor.MiddleCenter);
+        // 십자선
+        Img(Rect("RH", rwrRoot, Vector2.zero, new Vector2(40f, 1f)), new Color(HG.r,HG.g,HG.b,0.25f));
+        Img(Rect("RV", rwrRoot, Vector2.zero, new Vector2(1f, 40f)), new Color(HG.r,HG.g,HG.b,0.25f));
+        // 베어링 바늘 (pivot=하단 → 중심에서 뻗어 나감)
+        rwrNeedle = Rect("RWR_Needle", rwrRoot, new Vector2(0f, 8f), new Vector2(2f, 20f));
+        rwrNeedle.pivot = new Vector2(0.5f, 0f);
+        Img(rwrNeedle, CRIT);
+        rwrNeedle.gameObject.SetActive(false);
     }
 
     void BuildTargetBox()
@@ -735,6 +980,66 @@ public class FlightHUD : MonoBehaviour
         // AIM-120 카운트 동적 갱신
         if (aim120CountText != null && launcher != null)
             aim120CountText.text = $"AIM-120  x{launcher.MissileCount}";
+
+        // 대응수단 카운트 동적 갱신
+        if (cmsys != null)
+        {
+            if (flareCountText != null)
+            {
+                flareCountText.text  = $"FLARE  {cmsys.FlareRemaining:D2}";
+                flareCountText.color = cmsys.FlareRemaining <= 5 ? WARN : HGD;
+            }
+            if (chaffCountText != null)
+            {
+                chaffCountText.text  = $"CHAFF  {cmsys.ChaffRemaining:D2}";
+                chaffCountText.color = cmsys.ChaffRemaining <= 5 ? WARN : HGD;
+            }
+        }
+
+        UpdateThreatWarningUI();
+    }
+
+    void UpdateThreatWarningUI()
+    {
+        if (threatWarn == null || threatWarningText == null) return;
+
+        bool blink = tdbFlash % 0.35f < 0.175f;
+
+        switch (threatWarn.Threat)
+        {
+            case ThreatWarningSystem.ThreatLevel.MissileFired:
+                threatWarningText.text  = blink ? "⚠  MISSILE INBOUND  ⚠" : "  MISSILE INBOUND  ";
+                threatWarningText.color = CRIT;
+                break;
+            case ThreatWarningSystem.ThreatLevel.Locked:
+                threatWarningText.text  = blink ? "◉  LOCK WARNING  ◉" : "";
+                threatWarningText.color = CRIT;
+                break;
+            case ThreatWarningSystem.ThreatLevel.Tracked:
+                threatWarningText.text  = blink ? "RADAR TRACKING" : "";
+                threatWarningText.color = WARN;
+                break;
+            case ThreatWarningSystem.ThreatLevel.Detected:
+                threatWarningText.text  = "DETECTED";
+                threatWarningText.color = HGD;
+                break;
+            default:
+                threatWarningText.text  = "";
+                break;
+        }
+
+        // RWR 베어링 바늘
+        if (rwrNeedle != null)
+        {
+            bool showRWR = threatWarn.Threat > ThreatWarningSystem.ThreatLevel.None;
+            rwrNeedle.gameObject.SetActive(showRWR);
+            if (showRWR)
+            {
+                rwrNeedle.localRotation = Quaternion.Euler(0f, 0f, -threatWarn.ThreatBearing);
+                var img = rwrNeedle.GetComponent<UnityEngine.UI.Image>();
+                if (img != null) img.color = threatWarn.MissileIncoming ? CRIT : WARN;
+            }
+        }
     }
 
     static string AspectLabel(float deg)

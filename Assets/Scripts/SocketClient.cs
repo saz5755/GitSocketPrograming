@@ -33,11 +33,14 @@ public class SocketClient : MonoBehaviour
 
     // ── 이벤트 (Unity 메인스레드에서 발행) ──────────────────────────────
     public event Action<LoginResultPacket>    OnLoginResult;
-    public event Action<string>               OnChat;       // 포맷된 문자열
+    public event Action<string>               OnChat;
     public event Action<SpawnPacket>          OnSpawn;
-    public event Action<string>               OnDespawn;    // nickname
+    public event Action<string>               OnDespawn;
     public event Action<MoveBroadcastPacket>  OnMove;
     public event Action<List<RoomInfo>>       OnRoomList;
+    public event Action<MissileSpawnPacket>   OnMissileSpawn;
+    public event Action<MissileDestroyPacket> OnMissileDestroy;
+    public event Action<MissileWarnPacket>    OnMissileWarn;
 
     // ── 연결 ──────────────────────────────────────────────────────────────
     public void Connect(string ip = null)
@@ -147,6 +150,27 @@ public class SocketClient : MonoBehaviour
                 break;
             }
 
+            case PacketType.MISSILE_SPAWN:
+            {
+                var p = JsonConvert.DeserializeObject<MissileSpawnPacket>(json);
+                UnityMainThreadDispatcher.Instance.Enqueue(() => OnMissileSpawn?.Invoke(p));
+                break;
+            }
+
+            case PacketType.MISSILE_DESTROY:
+            {
+                var p = JsonConvert.DeserializeObject<MissileDestroyPacket>(json);
+                UnityMainThreadDispatcher.Instance.Enqueue(() => OnMissileDestroy?.Invoke(p));
+                break;
+            }
+
+            case PacketType.MISSILE_WARN:
+            {
+                var p = JsonConvert.DeserializeObject<MissileWarnPacket>(json);
+                UnityMainThreadDispatcher.Instance.Enqueue(() => OnMissileWarn?.Invoke(p));
+                break;
+            }
+
             default: break;
         }
     }
@@ -252,6 +276,27 @@ public class SocketClient : MonoBehaviour
         try { udp?.Send(data, data.Length); }
         catch { }
     }
+
+    public void SendMissileSpawn(string id, string shooter, string target,
+                                 Vector3 pos, Vector3 rot, int guidanceType)
+        => SendTCP(new MissileSpawnPacket {
+            type = PacketType.MISSILE_SPAWN, missileId = id,
+            shooterNickname = shooter, targetNickname = target,
+            posX = pos.x, posY = pos.y, posZ = pos.z,
+            rotX = rot.x, rotY = rot.y, rotZ = rot.z,
+            guidanceType = guidanceType });
+
+    public void SendMissileDestroy(string id, string shooterNick, string hitNick, Vector3 pos)
+        => SendTCP(new MissileDestroyPacket {
+            type = PacketType.MISSILE_DESTROY, missileId = id,
+            shooterNickname = shooterNick, hitNickname = hitNick,
+            posX = pos.x, posY = pos.y, posZ = pos.z });
+
+    public void SendMissileWarn(string shooter, string target, int lockLevel)
+        => SendTCP(new MissileWarnPacket {
+            type = PacketType.MISSILE_WARN,
+            shooterNickname = shooter, targetNickname = target,
+            lockLevel = lockLevel });
 
     public void SendUdpConnect()
     {
