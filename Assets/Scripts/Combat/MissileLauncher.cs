@@ -32,6 +32,7 @@ public class MissileLauncher : MonoBehaviour
         if (MissileCount <= 0)                                      return;
         if (_targeting == null || _targeting.LocalPlayer == null)   return;
         if (_targeting.State != TargetingSystem.LockState.Locked)   return;
+        if (!_targeting.IsInFireZone)                               return;  // 조준각 초과 시 발사 불가
 
         _cooldownTimer = cooldown;
         MissileCount--;

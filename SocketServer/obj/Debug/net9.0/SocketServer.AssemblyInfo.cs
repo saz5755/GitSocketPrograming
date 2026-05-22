@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SocketServer")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+37701aaae60cb3fb5d2e7b054a7dfb5726c67e10")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+3071cb9384ed6daa648ac15c70db0918e76fb9dc")]
 [assembly: System.Reflection.AssemblyProductAttribute("SocketServer")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SocketServer")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

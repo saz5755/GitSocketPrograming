@@ -907,31 +907,55 @@ public class FlightHUD : MonoBehaviour
         tdbFlash += Time.deltaTime;
         bool blink = tdbFlash % 0.5f < 0.25f;  // 2Hz 점멸
 
-        bool hasTarget = targeting.Target != null;
+        bool hasTarget   = targeting.Target != null;
+        bool locked      = targeting.State == TargetingSystem.LockState.Locked;
+        bool inFireZone  = locked && targeting.IsInFireZone;
 
         if (hasTarget && targeting.IsTargetOnScreen)
         {
             tdbRoot.gameObject.SetActive(true);
             offScreenRoot.gameObject.SetActive(false);
 
-            // 캔버스 위치로 이동
             tdbRoot.anchoredPosition = targeting.TargetCanvasPos;
 
-            bool   locked   = targeting.State == TargetingSystem.LockState.Locked;
             float  halfSize = Mathf.Lerp(65f, 42f, targeting.LockProgress);
             LayoutTDBArms(halfSize);
 
-            // 브래킷 색상: Locked=밝은 녹, Searching=점멸
-            Color armCol = locked ? HG : (blink ? HGD : HGX);
+            // 브래킷 색상
+            // · 파이어존 진입(락온+조준각 OK) → 밝은 황색(WARN) 점멸 → "지금 쏠 수 있다"
+            // · 락온만 됨 → HG(녹색) 고정
+            // · 탐색 중 → 점멸 HGD/HGX
+            Color armCol;
+            if (inFireZone)
+                armCol = blink ? WARN : new Color(WARN.r, WARN.g, WARN.b, 0.5f);
+            else if (locked)
+                armCol = HG;
+            else
+                armCol = blink ? HGD : HGX;
+
             foreach (var arm in tdbArms)
             {
                 var img = arm.GetComponent<Image>();
                 if (img != null) img.color = armCol;
             }
 
-            // 레이블
-            tdbLabel.text  = locked ? "◆ TRK" : "SRCH";
-            tdbLabel.color = locked ? HG : (blink ? WARN : HGX);
+            // 레이블: 파이어존 진입 시 "◉ FIRE" 표시
+            if (inFireZone)
+            {
+                tdbLabel.text  = blink ? "◉  FIRE" : "◉  FIRE";
+                tdbLabel.color = blink ? CRIT : WARN;
+            }
+            else if (locked)
+            {
+                // 락온됐지만 조준각 벗어남 → 남은 각도 표시로 조종 유도
+                tdbLabel.text  = $"STEER  {targeting.BoresightAngle:F0}°";
+                tdbLabel.color = WARN;
+            }
+            else
+            {
+                tdbLabel.text  = "SRCH";
+                tdbLabel.color = blink ? WARN : HGX;
+            }
 
             float km = targeting.TargetRange / 1000f;
             tdbRange.text   = km >= 1f ? $"{km:F1} km" : $"{targeting.TargetRange:F0} m";
@@ -939,11 +963,13 @@ public class FlightHUD : MonoBehaviour
             tdbAspect.text  = $"ASP  {targeting.TargetAspect:F0}°  {AspectLabel(targeting.TargetAspect)}";
             tdbName.text    = targeting.Target.nickname;
 
-            // 무장 상태 업데이트
+            // 무장 상태: 파이어존 진입 시에만 SHOOT
             if (weaponText != null)
             {
-                if (locked)
+                if (inFireZone)
                 { weaponText.text = "SHOOT"; weaponText.color = blink ? CRIT : WARN; }
+                else if (locked)
+                { weaponText.text = "LOCK"; weaponText.color = HG; }
                 else
                 { weaponText.text = "ACQR"; weaponText.color = WARN; }
             }
@@ -953,7 +979,6 @@ public class FlightHUD : MonoBehaviour
             tdbRoot.gameObject.SetActive(false);
             offScreenRoot.gameObject.SetActive(true);
 
-            // 오프스크린 화살표: 화면 엣지에 배치
             Vector2 dir = targeting.TargetCanvasPos;
             if (dir.sqrMagnitude < 0.001f) dir = Vector2.up;
             float   maxX  = 830f, maxY = 370f;
@@ -961,7 +986,6 @@ public class FlightHUD : MonoBehaviour
             float   sY    = Mathf.Abs(dir.y) > 0.001f ? maxY / Mathf.Abs(dir.y) : float.MaxValue;
             offScreenRoot.anchoredPosition = dir * Mathf.Min(sX, sY);
 
-            // 화살표 방향 (▲ 기준 = 위쪽, 회전으로 방향 설정)
             float angle = Mathf.Atan2(dir.x, dir.y) * Mathf.Rad2Deg;
             offScreenRoot.localRotation = Quaternion.Euler(0f, 0f, -angle);
 

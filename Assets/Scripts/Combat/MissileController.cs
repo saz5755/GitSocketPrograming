@@ -9,7 +9,8 @@ public class MissileController : MonoBehaviour
     [SerializeField] float acceleration  = 150f;
     [SerializeField] float navConst      = 4f;
     [SerializeField] float maxTurnRate   = 30f;
-    [SerializeField] float proximityFuse = 15f;
+    [SerializeField] float directHitDist = 3f;
+    [SerializeField] float proximityFuse = 8f;
     [SerializeField] float lifetime      = 30f;
     [SerializeField] float armDelay      = 0.5f;
 
@@ -100,15 +101,15 @@ public class MissileController : MonoBehaviour
             if (_decoyTimer >= 0.25f) { _decoyTimer = 0f; CheckCountermeasures(); }
         }
 
+        Vector3 posBefore = transform.position;
+
         if (Target != null)
             Navigate();
         else
             transform.position += transform.forward * _speed * Time.deltaTime;
 
-        // 근접 신관
-        if (_armed && Target != null &&
-            Vector3.Distance(transform.position, Target.position) <= proximityFuse)
-            Detonate();
+        if (_armed && Target != null)
+            CheckHit(posBefore);
 
         // 네트워크 위치 브로드캐스트 (0.1초마다)
         _netBroadcastTimer += Time.deltaTime;
@@ -117,6 +118,26 @@ public class MissileController : MonoBehaviour
             _netBroadcastTimer = 0f;
             BroadcastPosition();
         }
+    }
+
+    void CheckHit(Vector3 posBefore)
+    {
+        Vector3 posAfter = transform.position;
+        Vector3 move     = posAfter - posBefore;
+        float   moveLen  = move.magnitude;
+
+        // 직격 판정: 이동 선분~타겟 최단거리 (서브프레임 정밀도)
+        if (moveLen > 0.001f)
+        {
+            Vector3 toTarget = Target.position - posBefore;
+            float   t        = Mathf.Clamp01(Vector3.Dot(toTarget, move) / (moveLen * moveLen));
+            float   closest  = Vector3.Distance(posBefore + move * t, Target.position);
+            if (closest <= directHitDist) { Detonate(); return; }
+        }
+
+        // 근접 신관: 파편 살상반경
+        if (Vector3.Distance(posAfter, Target.position) <= proximityFuse)
+            Detonate();
     }
 
     void Navigate()

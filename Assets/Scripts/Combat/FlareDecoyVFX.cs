@@ -1,107 +1,138 @@
 using UnityEngine;
-using UnityEngine.Rendering;
 
-// 플레어 디코이에 부착되는 시각 효과 컴포넌트
-// CountermeasureSystem.Deploy()에서 FlareDecoyVFX.Attach(go, lifetime) 호출
 public class FlareDecoyVFX : MonoBehaviour
 {
-    Material _coreMat;
-    Material _haloMat;
-    float    _age;
-    float    _lifetime;
-
-    // ── 팩토리 ────────────────────────────────────────────────────────────
     public static void Attach(GameObject host, float lifetime)
     {
-        host.AddComponent<FlareDecoyVFX>().InitVFX(lifetime);
+        var vfx = host.AddComponent<FlareDecoyVFX>();
+        vfx.InitVFX(lifetime);
     }
 
-    // ── 초기화 ────────────────────────────────────────────────────────────
     void InitVFX(float lifetime)
     {
-        _lifetime = lifetime;
-        float seed = Random.Range(0f, 6.28f);
+        Material addMat = Resources.Load<Material>("VFX/Mat_Additive");
+        Material alphaMat = Resources.Load<Material>("VFX/Mat_Alpha");
 
-        _coreMat = BuildGlowSphere("FlareCore", 2.2f, seed);
-        _haloMat = BuildGlowSphere("FlareHalo", 5.5f, seed + 1.1f);
-        BuildSmokeTrail();
-    }
+        // 1. Core Glow (Bright White/Yellow)
+        GameObject coreObj = new GameObject("FlareCore");
+        coreObj.transform.SetParent(transform, false);
+        ParticleSystem corePS = coreObj.AddComponent<ParticleSystem>();
+        var cMain = corePS.main;
+        cMain.duration = lifetime;
+        cMain.loop = false;
+        cMain.startLifetime = 0.1f;
+        cMain.startSpeed = 0f;
+        cMain.startSize = 2.5f;
+        cMain.startColor = new Color(1f, 0.9f, 0.7f, 1f);
+        cMain.simulationSpace = ParticleSystemSimulationSpace.World;
+        
+        var cEm = corePS.emission;
+        cEm.rateOverTime = 30f;
+        
+        var cRend = corePS.GetComponent<ParticleSystemRenderer>();
+        cRend.material = addMat;
 
-    // ── 발광 구체 생성 ────────────────────────────────────────────────────
-    Material BuildGlowSphere(string goName, float scale, float seed)
-    {
-        var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        go.name = goName;
-        go.transform.SetParent(transform, false);
-        go.transform.localScale = Vector3.one * scale;
-        Object.Destroy(go.GetComponent<SphereCollider>());
+        // 2. Halo (Orange/Red)
+        GameObject haloObj = new GameObject("FlareHalo");
+        haloObj.transform.SetParent(transform, false);
+        ParticleSystem haloPS = haloObj.AddComponent<ParticleSystem>();
+        var hMain = haloPS.main;
+        hMain.duration = lifetime;
+        hMain.loop = false;
+        hMain.startLifetime = 0.15f;
+        hMain.startSpeed = 0f;
+        hMain.startSize = 6.0f;
+        hMain.startColor = new Color(1f, 0.3f, 0.0f, 0.6f);
+        hMain.simulationSpace = ParticleSystemSimulationSpace.World;
+        
+        var hEm = haloPS.emission;
+        hEm.rateOverTime = 20f;
+        
+        var hRend = haloPS.GetComponent<ParticleSystemRenderer>();
+        hRend.material = addMat;
 
-        var r = go.GetComponent<MeshRenderer>();
-        r.shadowCastingMode = ShadowCastingMode.Off;
-        r.receiveShadows    = false;
+        // 3. Sparks (Falling burning pieces)
+        GameObject sparksObj = new GameObject("FlareSparks");
+        sparksObj.transform.SetParent(transform, false);
+        ParticleSystem sparksPS = sparksObj.AddComponent<ParticleSystem>();
+        var sMain = sparksPS.main;
+        sMain.duration = lifetime;
+        sMain.loop = false;
+        sMain.startLifetime = new ParticleSystem.MinMaxCurve(0.5f, 1.5f);
+        sMain.startSpeed = new ParticleSystem.MinMaxCurve(2f, 8f);
+        sMain.startSize = new ParticleSystem.MinMaxCurve(0.2f, 0.6f);
+        sMain.startColor = new Color(1f, 0.8f, 0.4f, 1f);
+        sMain.gravityModifier = 0.8f;
+        sMain.simulationSpace = ParticleSystemSimulationSpace.World;
 
-        var sh = Shader.Find("Custom/FlareEffect");
-        if (sh == null) { r.enabled = false; return null; }
+        var sEm = sparksPS.emission;
+        sEm.rateOverTime = 40f;
 
-        var mat = new Material(sh);
-        mat.SetFloat("_Age",  0f);
-        mat.SetFloat("_Seed", seed);
-        r.sharedMaterial = mat;
-        return mat;
-    }
+        var sShape = sparksPS.shape;
+        sShape.shapeType = ParticleSystemShapeType.Sphere;
+        sShape.radius = 0.5f;
 
-    // ── 연기 트레일 ───────────────────────────────────────────────────────
-    void BuildSmokeTrail()
-    {
-        var tr = gameObject.AddComponent<TrailRenderer>();
-        tr.time              = 2.2f;
-        tr.startWidth        = 0.7f;
-        tr.endWidth          = 0.08f;
-        tr.minVertexDistance = 0.4f;
-        tr.textureMode       = LineTextureMode.Stretch;
-        tr.shadowCastingMode = ShadowCastingMode.Off;
-        tr.receiveShadows    = false;
+        var sCol = sparksPS.colorOverLifetime;
+        sCol.enabled = true;
+        Gradient sGrad = new Gradient();
+        sGrad.SetKeys(
+            new GradientColorKey[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(new Color(1f, 0.2f, 0f), 0.7f), new GradientColorKey(Color.black, 1f) },
+            new GradientAlphaKey[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(1f, 0.8f), new GradientAlphaKey(0f, 1f) }
+        );
+        sCol.color = sGrad;
 
-        var sh = Shader.Find("Custom/SmokeTrail");
-        Material mat;
-        if (sh != null)
-        {
-            mat = new Material(sh);
-            mat.SetColor("_Color",      new Color(0.95f, 0.93f, 0.90f, 0.65f));
-            mat.SetFloat("_NoiseScale", 2.2f);
-        }
-        else
-        {
-            var fallback = Shader.Find("Universal Render Pipeline/Particles/Unlit")
-                        ?? Shader.Find("Sprites/Default");
-            mat = new Material(fallback);
-            mat.color = new Color(0.92f, 0.90f, 0.88f, 0.55f);
-        }
-        tr.material = mat;
+        var sSize = sparksPS.sizeOverLifetime;
+        sSize.enabled = true;
+        sSize.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(new Keyframe(0, 1f), new Keyframe(1, 0f)));
 
-        var gc = new Gradient();
-        gc.SetKeys(
-            new GradientColorKey[]
-            {
-                new GradientColorKey(new Color(1.00f, 0.96f, 0.88f), 0.00f),
-                new GradientColorKey(new Color(0.88f, 0.85f, 0.82f), 0.25f),
-                new GradientColorKey(new Color(0.58f, 0.56f, 0.54f), 1.00f),
-            },
-            new GradientAlphaKey[]
-            {
-                new GradientAlphaKey(0.80f, 0.00f),
-                new GradientAlphaKey(0.45f, 0.45f),
-                new GradientAlphaKey(0.00f, 1.00f),
-            });
-        tr.colorGradient = gc;
-    }
+        var sRend = sparksPS.GetComponent<ParticleSystemRenderer>();
+        sRend.material = addMat;
+        sRend.renderMode = ParticleSystemRenderMode.Stretch;
+        sRend.velocityScale = 0.05f;
 
-    // ── 수명 업데이트 ─────────────────────────────────────────────────────
-    void Update()
-    {
-        _age += Time.deltaTime;
-        float t = Mathf.Clamp01(_age / _lifetime);
-        _coreMat?.SetFloat("_Age", t);
-        _haloMat?.SetFloat("_Age", t);
+        // 4. Smoke Trail
+        GameObject smokeObj = new GameObject("FlareSmoke");
+        smokeObj.transform.SetParent(transform, false);
+        ParticleSystem smokePS = smokeObj.AddComponent<ParticleSystem>();
+        var smMain = smokePS.main;
+        smMain.duration = lifetime;
+        smMain.loop = false;
+        smMain.startLifetime = new ParticleSystem.MinMaxCurve(2f, 4f);
+        smMain.startSpeed = new ParticleSystem.MinMaxCurve(0.5f, 2f);
+        smMain.startSize = new ParticleSystem.MinMaxCurve(2f, 4f);
+        smMain.startColor = new Color(0.9f, 0.9f, 0.9f, 0.6f);
+        smMain.simulationSpace = ParticleSystemSimulationSpace.World;
+
+        var smEm = smokePS.emission;
+        smEm.rateOverTime = 30f;
+
+        var smShape = smokePS.shape;
+        smShape.shapeType = ParticleSystemShapeType.Sphere;
+        smShape.radius = 0.5f;
+
+        var smCol = smokePS.colorOverLifetime;
+        smCol.enabled = true;
+        Gradient smGrad = new Gradient();
+        smGrad.SetKeys(
+            new GradientColorKey[] { new GradientColorKey(new Color(1f, 0.9f, 0.8f), 0f), new GradientColorKey(new Color(0.6f, 0.6f, 0.6f), 1f) },
+            new GradientAlphaKey[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(0.6f, 0.1f), new GradientAlphaKey(0f, 1f) }
+        );
+        smCol.color = smGrad;
+
+        var smSize = smokePS.sizeOverLifetime;
+        smSize.enabled = true;
+        smSize.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(new Keyframe(0, 0.5f), new Keyframe(1, 3f)));
+
+        var smRend = smokePS.GetComponent<ParticleSystemRenderer>();
+        smRend.material = alphaMat;
+
+        // Light
+        Light light = gameObject.AddComponent<Light>();
+        light.type = LightType.Point;
+        light.color = new Color(1f, 0.8f, 0.5f);
+        light.intensity = 4f;
+        light.range = 30f;
+
+        Destroy(gameObject, lifetime + 4.0f);
     }
 }
