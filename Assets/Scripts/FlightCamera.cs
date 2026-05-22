@@ -9,12 +9,27 @@ public class FlightCamera : MonoBehaviour
     [Header("Cockpit Camera")]
     [SerializeField] Vector3 cockpitOffset = new Vector3(0f, 0.26f, 0.80f);
 
+    [Header("Free Look (우클릭 드래그)")]
+    [SerializeField] float freeLookSensitivity = 3f;
+    [SerializeField] float freeLookReturnSpeed = 8f;
+    [SerializeField] float freeLookMaxPitch    = 80f;
+
     [Header("Toggle")]
     [SerializeField] KeyCode toggleKey = KeyCode.C;
 
     bool isCockpit = false;
+    public bool IsCockpit => isCockpit;
     PlayerController localPlayer;
     Renderer[] localRenderers;
+    CockpitBuilder cockpitBuilder;
+
+    float freeLookYaw   = 0f;
+    float freeLookPitch = 0f;
+
+    void Awake()
+    {
+        cockpitBuilder = gameObject.AddComponent<CockpitBuilder>();
+    }
 
     void Start()
     {
@@ -45,6 +60,21 @@ public class FlightCamera : MonoBehaviour
         if (Input.GetKeyDown(toggleKey))
             SetCockpit(!isCockpit);
 
+        // 우클릭 중 자유시점: 마우스로 카메라 회전, 손을 떼면 원위치로 복귀
+        bool freeLook = Input.GetMouseButton(1);
+
+        if (freeLook)
+        {
+            freeLookYaw   += Input.GetAxis("Mouse X") * freeLookSensitivity;
+            freeLookPitch -= Input.GetAxis("Mouse Y") * freeLookSensitivity;
+            freeLookPitch  = Mathf.Clamp(freeLookPitch, -freeLookMaxPitch, freeLookMaxPitch);
+        }
+        else
+        {
+            freeLookYaw   = Mathf.Lerp(freeLookYaw,   0f, freeLookReturnSpeed * Time.deltaTime);
+            freeLookPitch = Mathf.Lerp(freeLookPitch, 0f, freeLookReturnSpeed * Time.deltaTime);
+        }
+
         if (isCockpit)
             UpdateCockpit();
         else
@@ -55,7 +85,8 @@ public class FlightCamera : MonoBehaviour
     {
         Transform t = localPlayer.transform;
         transform.position = t.TransformPoint(cockpitOffset);
-        transform.rotation = t.rotation;
+        Quaternion freeLookOffset = Quaternion.Euler(freeLookPitch, freeLookYaw, 0f);
+        transform.rotation = t.rotation * freeLookOffset;
     }
 
     void UpdateChase()
@@ -63,14 +94,18 @@ public class FlightCamera : MonoBehaviour
         Transform t = localPlayer.transform;
         Vector3 target = t.TransformPoint(chaseOffset);
         transform.position = Vector3.Lerp(transform.position, target, chaseSmooth * Time.deltaTime);
-        transform.rotation = Quaternion.Slerp(transform.rotation, t.rotation, chaseSmooth * Time.deltaTime);
+
+        Quaternion freeLookOffset = Quaternion.Euler(freeLookPitch, freeLookYaw, 0f);
+        Quaternion targetRot = t.rotation * freeLookOffset;
+        transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, chaseSmooth * Time.deltaTime);
     }
 
     void SetCockpit(bool cockpit)
     {
         isCockpit = cockpit;
-        if (localRenderers == null) return;
-        foreach (Renderer r in localRenderers)
-            r.enabled = !cockpit;
+        if (localRenderers != null)
+            foreach (Renderer r in localRenderers)
+                r.enabled = !cockpit;
+        cockpitBuilder?.SetVisible(cockpit);
     }
 }

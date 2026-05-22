@@ -5,8 +5,8 @@ using Newtonsoft.Json;
 
 class Program
 {
-    static TcpListener server;
-    public static UdpClient udpServer;
+    static TcpListener server = null!;
+    public static UdpClient udpServer = null!;
 
     static void Main()
     {
@@ -59,9 +59,9 @@ class Program
         }
     }
 
-    static void HandleClient(object obj)
+    static void HandleClient(object? obj)
     {
-        ClientSession session = (ClientSession)obj;
+        ClientSession session = (ClientSession)obj!;
         NetworkStream stream = session.stream;
         byte[] lengthBuffer = new byte[4];
 

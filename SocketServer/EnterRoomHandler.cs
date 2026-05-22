@@ -4,10 +4,11 @@ class EnterRoomHandler
 {
     public static void Handle(ClientSession session, string json)
     {
-        if (!session.isLogin) return;
+        if (!session.isLogin || session.player == null) return;
 
-        EnterRoomPacket packet = JsonConvert.DeserializeObject<EnterRoomPacket>(json);
-        Room room = RoomManager.GetRoom(packet.roomId);
+        EnterRoomPacket? packet = JsonConvert.DeserializeObject<EnterRoomPacket>(json);
+        if (packet == null) return;
+        Room? room = RoomManager.GetRoom(packet.roomId);
 
         if (room == null)
         {

@@ -2,7 +2,7 @@
 public class MoveBroadcastPacket : Packet
 {
     public int tick;
-    public string nickname;
+    public string nickname = string.Empty;
 
     // World Position
     public float posX;

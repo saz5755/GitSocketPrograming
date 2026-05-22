@@ -5,7 +5,7 @@ class MoveHandler
 {
     public static void HandleUDP(IPEndPoint remoteEP, string json)
     {
-        ClientSession session = SessionManager.FindByUDP(remoteEP);
+        ClientSession? session = SessionManager.FindByUDP(remoteEP);
 
         if (session == null)
         {
@@ -16,7 +16,8 @@ class MoveHandler
         if (session.player?.room == null)
             return;
 
-        MovePacket packet = JsonConvert.DeserializeObject<MovePacket>(json);
+        MovePacket? packet = JsonConvert.DeserializeObject<MovePacket>(json);
+        if (packet == null) return;
 
         if (packet.tick <= session.player.lastProcessedTick)
             return;
@@ -51,7 +52,7 @@ class MoveHandler
             isMove = sender.isMove
         };
 
-        foreach (Player target in sender.room.GetPlayers())
+        foreach (Player target in sender.room!.GetPlayers())
         {
             if (target == sender) continue;
             if (target.session == null) continue;

@@ -3,5 +3,5 @@ public class LoginResultPacket : Packet
 {
     public bool success;
 
-    public string message;
+    public string message = string.Empty;
 }

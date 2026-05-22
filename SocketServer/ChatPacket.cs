@@ -1,7 +1,7 @@
 [System.Serializable]
 public class ChatPacket : Packet
 {
-    public string nickname;
+    public string nickname = string.Empty;
 
-    public string message;
+    public string message = string.Empty;
 }

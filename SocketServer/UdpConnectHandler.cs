@@ -5,10 +5,11 @@ class UdpConnectHandler
 {
     public static void Handle(IPEndPoint remoteEP, string json)
     {
-        UdpConnectPacket packet =
+        UdpConnectPacket? packet =
             JsonConvert.DeserializeObject<UdpConnectPacket>(json);
+        if (packet == null) return;
 
-        ClientSession session =
+        ClientSession? session =
             SessionManager.FindByNickname(packet.nickname);
 
         if(session == null)

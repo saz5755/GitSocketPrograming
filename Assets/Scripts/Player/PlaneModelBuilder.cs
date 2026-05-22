@@ -1,115 +1,123 @@
 using UnityEngine;
 
 /// <summary>
-/// F-22 Raptor 스타일 비행기 모델을 Unity 기본 프리미티브로 구성합니다.
-/// 마젠타 방지: 렌더 파이프라인(Standard/URP/HDRP)에 상관없이
-/// CreatePrimitive의 sharedMaterial을 복제하여 올바른 셰이더를 유지합니다.
+/// F-35A Lightning II 스텔스 전투기 모델.
+/// 단일 수직미익, 단일 DSI 인테이크, F135 단발 엔진을 재현합니다.
 /// </summary>
 [DisallowMultipleComponent]
 public class PlaneModelBuilder : MonoBehaviour
 {
-    // ── F-22 스텔스 색상 팔레트 ─────────────────────────────────────────
-    static readonly Color BodyGray   = new Color(0.28f, 0.30f, 0.33f); // 공중우세 회색
-    static readonly Color PanelGray  = new Color(0.21f, 0.22f, 0.25f); // 어두운 패널
-    static readonly Color WingGray   = new Color(0.32f, 0.33f, 0.36f); // 날개 (약간 밝음)
-    static readonly Color Cockpit    = new Color(0.04f, 0.06f, 0.14f); // 조종석 틴트 (거의 검정)
-    static readonly Color IntakeDark = new Color(0.16f, 0.17f, 0.19f); // 인테이크 외부
-    static readonly Color Black      = new Color(0.04f, 0.04f, 0.05f); // 인테이크 내부
-    static readonly Color Exhaust    = new Color(0.24f, 0.22f, 0.20f); // 배기 노즐
-    static readonly Color ExhGlow    = new Color(0.90f, 0.50f, 0.12f); // 배기열 발광
+    // ── F-35A 색상 팔레트 ──────────────────────────────────────────────────
+    // 레이더흡수코팅(RAM) 특유의 무광 회색조
+    static readonly Color BodyGray   = new Color(0.29f, 0.31f, 0.33f); // 동체 주요 색
+    static readonly Color PanelGray  = new Color(0.19f, 0.21f, 0.23f); // 패널라인 / 제어면
+    static readonly Color WingGray   = new Color(0.31f, 0.33f, 0.35f); // 주익 상면
+    static readonly Color Cockpit    = new Color(0.04f, 0.07f, 0.18f); // 캐노피 (청색 반사)
+    static readonly Color IntakeDark = new Color(0.16f, 0.17f, 0.19f); // DSI 인테이크 하우징
+    static readonly Color Black      = new Color(0.03f, 0.03f, 0.04f); // 인테이크 내부 / 노즐 내부
+    static readonly Color Exhaust    = new Color(0.24f, 0.22f, 0.20f); // F135 노즐 페탈
+    static readonly Color ExhGlow    = new Color(0.95f, 0.55f, 0.12f); // 애프터버너 글로우
 
-    // 렌더 파이프라인 호환 기본 머티리얼 (Build()에서 한번만 가져옴)
     Material baseMat;
 
     void Awake()
     {
-        MeshRenderer mr = GetComponent<MeshRenderer>();
+        var mr = GetComponent<MeshRenderer>();
         if (mr != null) mr.enabled = false;
-        CapsuleCollider cc = GetComponent<CapsuleCollider>();
+        var cc = GetComponent<CapsuleCollider>();
         if (cc != null) cc.enabled = false;
 
-        // 빌드에서 Standard 셰이더가 스트립되는 문제 방지:
-        // 렌더 파이프라인 순서대로 명시적으로 셰이더 탐색
         baseMat = FindBaseMaterial();
-
         Build();
     }
 
     void Build()
     {
-        // ── 동체 ────────────────────────────────────────────────────────
-        P("Fuselage",      V(0f,    0f,     0f),    V(0.50f, 0.36f, 3.80f), BodyGray);
-        P("Belly",         V(0f,   -0.15f,  0.15f), V(0.66f, 0.12f, 3.50f), PanelGray);
-        P("NoseSection",   V(0f,   -0.02f,  2.10f), V(0.38f, 0.28f, 0.90f), BodyGray,   PrimitiveType.Sphere);
-        P("NoseTip",       V(0f,   -0.04f,  2.56f), V(0.14f, 0.12f, 0.28f), PanelGray,  PrimitiveType.Sphere);
+        // ── 메인 동체 (F-35 특유의 두꺼운 타원 단면) ─────────────────────────
+        P("Fuselage",       V( 0f,     0f,     0f),    V(0.62f, 0.43f, 3.20f), BodyGray);
+        // 배면 (폭 넓고 편평한 F-35 하부)
+        P("Belly",          V( 0f,    -0.19f,  0.12f), V(0.70f, 0.20f, 2.75f), PanelGray);
+        P("BellyRear",      V( 0f,    -0.15f, -1.05f), V(0.54f, 0.17f, 0.78f), PanelGray);
+        // 척추 능선 (F-35 특유의 두꺼운 dorsal spine)
+        P("DorsalSpine",    V( 0f,     0.25f, -0.42f), V(0.22f, 0.19f, 1.88f), PanelGray);
 
-        // 기수 채인 (스텔스 각진 측면 블렌딩)
-        P("ChineL",        V(-0.30f,-0.07f, 1.40f), V(0.16f, 0.08f, 1.80f), PanelGray,  rot: Q(0f, 0f,-16f));
-        P("ChineR",        V( 0.30f,-0.07f, 1.40f), V(0.16f, 0.08f, 1.80f), PanelGray,  rot: Q(0f, 0f, 16f));
+        // ── 기수 (F-35의 짧고 굵은 뭉툭한 기수) ────────────────────────────────
+        P("Nose",           V( 0f,     0.03f,  1.95f), V(0.49f, 0.39f, 0.70f), BodyGray, PrimitiveType.Sphere);
+        P("NoseTip",        V( 0f,     0.01f,  2.33f), V(0.21f, 0.19f, 0.22f), PanelGray, PrimitiveType.Sphere);
+        // 기수 채인: 스텔스 각진 측면
+        P("ChineL",         V(-0.34f, -0.07f,  1.20f), V(0.18f, 0.10f, 1.52f), PanelGray, rot: Q(0f,  0f, -18f));
+        P("ChineR",         V( 0.34f, -0.07f,  1.20f), V(0.18f, 0.10f, 1.52f), PanelGray, rot: Q(0f,  0f,  18f));
 
-        // ── 조종석 ──────────────────────────────────────────────────────
-        P("CanopyBase",    V(0f,    0.20f,  1.05f), V(0.34f, 0.13f, 0.85f), BodyGray);
-        P("Canopy",        V(0f,    0.31f,  0.95f), V(0.27f, 0.21f, 0.72f), Cockpit,    PrimitiveType.Sphere);
+        // ── 조종석 캐노피 (F-35의 넓고 앞에 위치한 버블 캐노피) ───────────────────
+        P("CanopyBase",     V( 0f,     0.23f,  1.22f), V(0.42f, 0.15f, 0.90f), BodyGray);
+        P("Canopy",         V( 0f,     0.39f,  1.07f), V(0.36f, 0.31f, 0.74f), Cockpit, PrimitiveType.Sphere);
+        P("CanopyFairing",  V( 0f,     0.27f,  0.58f), V(0.30f, 0.16f, 0.46f), PanelGray);
+        // EO/DAS 광학 센서 돔 (기수 상부)
+        P("EODome",         V( 0f,     0.28f,  1.66f), V(0.12f, 0.10f, 0.12f), Black, PrimitiveType.Sphere);
 
-        // ── 주익 (크랭크드 애로우 델타) ──────────────────────────────────
-        // 내측 주익 (후퇴각 ~42°)
-        P("WingInnL",      V(-1.05f,-0.02f, 0.15f), V(1.80f, 0.068f, 2.20f), WingGray, rot: Q(0f, 22f,-1.5f));
-        P("WingInnR",      V( 1.05f,-0.02f, 0.15f), V(1.80f, 0.068f, 2.20f), WingGray, rot: Q(0f,-22f, 1.5f));
-        // 외측 주익 (후퇴각 ~18°)
-        P("WingOutL",      V(-2.55f,-0.02f,-0.55f), V(1.25f, 0.065f, 1.10f), WingGray, rot: Q(0f,  8f,-1.0f));
-        P("WingOutR",      V( 2.55f,-0.02f,-0.55f), V(1.25f, 0.065f, 1.10f), WingGray, rot: Q(0f, -8f, 1.0f));
-        // 날개 끝 (잘린 형태)
-        P("WingTipL",      V(-3.35f,-0.02f,-0.82f), V(0.35f, 0.064f, 0.45f), PanelGray);
-        P("WingTipR",      V( 3.35f,-0.02f,-0.82f), V(0.35f, 0.064f, 0.45f), PanelGray);
+        // ── LERX (Leading Edge Root Extension) ──────────────────────────────────
+        // F-35의 뚜렷한 strake: 주익과 동체를 부드럽게 연결
+        P("LERX_L",         V(-0.56f,  0.01f,  0.83f), V(0.36f, 0.068f, 1.58f), PanelGray, rot: Q(0f, 16f, -2f));
+        P("LERX_R",         V( 0.56f,  0.01f,  0.83f), V(0.36f, 0.068f, 1.58f), PanelGray, rot: Q(0f,-16f,  2f));
 
-        // ── 수평 미익 (전동 수평미익, 약간 내려감) ─────────────────────
-        P("HTailL",        V(-1.05f,-0.11f,-1.72f), V(1.20f, 0.062f, 0.72f), WingGray, rot: Q(0f, 18f,-6f));
-        P("HTailR",        V( 1.05f,-0.11f,-1.72f), V(1.20f, 0.062f, 0.72f), WingGray, rot: Q(0f,-18f, 6f));
+        // ── 주익 (35° 후퇴각 사다리꼴 델타) ─────────────────────────────────────
+        P("WingInnL",       V(-1.13f, -0.01f, -0.06f), V(1.70f, 0.074f, 1.90f), WingGray, rot: Q(0f, 17f, -2f));
+        P("WingInnR",       V( 1.13f, -0.01f, -0.06f), V(1.70f, 0.074f, 1.90f), WingGray, rot: Q(0f,-17f,  2f));
+        P("WingOutL",       V(-2.30f, -0.01f, -0.52f), V(1.12f, 0.070f, 1.06f), WingGray, rot: Q(0f,  6f, -1.5f));
+        P("WingOutR",       V( 2.30f, -0.01f, -0.52f), V(1.12f, 0.070f, 1.06f), WingGray, rot: Q(0f, -6f,  1.5f));
+        // 날개 끝: F-35 사각형 클리핑 팁
+        P("WingTipL",       V(-2.96f, -0.01f, -0.76f), V(0.30f, 0.068f, 0.40f), PanelGray);
+        P("WingTipR",       V( 2.96f, -0.01f, -0.76f), V(0.30f, 0.068f, 0.40f), PanelGray);
 
-        // ── 수직 미익 (쌍발, 외경 약 27° 경사) ─────────────────────────
-        P("VTailL",        V(-0.42f, 0.52f,-1.32f), V(0.08f, 0.82f, 0.88f), BodyGray, rot: Q(0f,-10f,-27f));
-        P("VTailR",        V( 0.42f, 0.52f,-1.32f), V(0.08f, 0.82f, 0.88f), BodyGray, rot: Q(0f, 10f, 27f));
+        // ── 전동수평미익 (All-moving stabilators, 대형 델타형) ──────────────────
+        P("StabL",          V(-0.84f, -0.13f, -1.74f), V(1.32f, 0.065f, 0.90f), WingGray, rot: Q(0f, 21f, -5f));
+        P("StabR",          V( 0.84f, -0.13f, -1.74f), V(1.32f, 0.065f, 0.90f), WingGray, rot: Q(0f,-21f,  5f));
 
-        // ── DSI 인테이크 (동체 아래 측면) ───────────────────────────────
-        P("IntakeL",       V(-0.42f,-0.20f, 0.72f), V(0.30f, 0.22f, 1.05f), IntakeDark);
-        P("IntakeR",       V( 0.42f,-0.20f, 0.72f), V(0.30f, 0.22f, 1.05f), IntakeDark);
-        P("IntakeHoleL",   V(-0.42f,-0.21f, 0.85f), V(0.22f, 0.16f, 0.55f), Black);
-        P("IntakeHoleR",   V( 0.42f,-0.21f, 0.85f), V(0.22f, 0.16f, 0.55f), Black);
+        // ── 단일 수직미익 (F-35A/B/C 공통 — F-22의 쌍발과 차별점) ─────────────
+        P("VTail",          V( 0f,     0.72f, -1.24f), V(0.11f, 1.18f, 0.80f), BodyGray);
+        P("VTailRudder",    V( 0f,     0.74f, -1.64f), V(0.10f, 0.88f, 0.23f), PanelGray);
+        P("VTailRoot",      V( 0f,     0.17f, -1.08f), V(0.18f, 0.28f, 0.40f), PanelGray);
 
-        // ── 엔진 노즐 (F-22 직사각형 노즐 형태) ────────────────────────
-        P("NozzleL",       V(-0.22f, 0f,   -1.72f), V(0.22f, 0.20f, 0.40f), Exhaust);
-        P("NozzleR",       V( 0.22f, 0f,   -1.72f), V(0.22f, 0.20f, 0.40f), Exhaust);
-        // 배기열 (안쪽 발광)
-        P("ExhaustL",      V(-0.22f, 0f,   -1.94f), V(0.15f, 0.13f, 0.08f), ExhGlow);
-        P("ExhaustR",      V( 0.22f, 0f,   -1.94f), V(0.15f, 0.13f, 0.08f), ExhGlow);
+        // ── DSI 인테이크 (F-35 특징: 동체 하부 단일 대형 인테이크) ──────────────
+        // Diverterless Supersonic Inlet — 사각형 입구 + 볼록 범프
+        P("IntakeHousing",  V( 0f,    -0.30f,  0.50f), V(0.60f, 0.33f, 1.18f), IntakeDark);
+        P("IntakeLip",      V( 0f,    -0.22f,  1.06f), V(0.62f, 0.14f, 0.16f), PanelGray);
+        P("DSIBump",        V( 0f,    -0.16f,  0.70f), V(0.28f, 0.12f, 0.64f), IntakeDark); // 경계층 분리 범프
+        P("IntakeHole",     V( 0f,    -0.32f,  0.58f), V(0.46f, 0.24f, 0.78f), Black);
 
-        // ── 물리 콜라이더 ────────────────────────────────────────────────
-        CapsuleCollider col = gameObject.AddComponent<CapsuleCollider>();
+        // ── F135 단발 엔진 노즐 (원형, 중앙) ─────────────────────────────────
+        P("Nozzle",         V( 0f,    -0.02f, -1.80f), V(0.41f, 0.38f, 0.45f), Exhaust);
+        P("NozzleInner",    V( 0f,    -0.02f, -1.93f), V(0.28f, 0.26f, 0.22f), Black);
+        P("ExhaustGlow",    V( 0f,    -0.02f, -2.05f), V(0.20f, 0.18f, 0.10f), ExhGlow);
+
+        // ── 내부 무장창 외형 (Internal Weapons Bay 돌출부) ───────────────────
+        P("WpnBayL",        V(-0.22f, -0.26f,  0.06f), V(0.16f, 0.05f, 0.82f), PanelGray);
+        P("WpnBayR",        V( 0.22f, -0.26f,  0.06f), V(0.16f, 0.05f, 0.82f), PanelGray);
+
+        // ── 콜라이더 ──────────────────────────────────────────────────────────
+        var col      = gameObject.AddComponent<CapsuleCollider>();
         col.direction = 2;
-        col.height    = 4.4f;
-        col.radius    = 0.26f;
-        col.center    = new Vector3(0f, 0f, 0.1f);
+        col.height    = 4.0f;
+        col.radius    = 0.30f;
+        col.center    = new Vector3(0f, 0f, 0.05f);
     }
 
-    // ── 헬퍼 ─────────────────────────────────────────────────────────────
+    // ── 헬퍼 ──────────────────────────────────────────────────────────────────
     static Material FindBaseMaterial()
     {
-        // URP → HDRP → Standard → Diffuse 순서로 탐색
-        // Shader.Find()는 빌드에 포함된 셰이더만 반환하므로 URP 빌드에서 Standard가 없어도 안전
         string[] candidates = {
             "Universal Render Pipeline/Lit",
             "Universal Render Pipeline/Simple Lit",
-            "Lightweight Render Pipeline/Lit",   // 구 LWRP/URP
+            "Lightweight Render Pipeline/Lit",
             "HDRP/Lit",
             "Standard",
             "Diffuse",
         };
-        foreach (string name in candidates)
+        foreach (string n in candidates)
         {
-            Shader sh = Shader.Find(name);
+            var sh = Shader.Find(n);
             if (sh != null) return new Material(sh);
         }
-        // 마지막 수단: 씬의 기존 렌더러에서 복제
         foreach (var r in FindObjectsOfType<Renderer>())
         {
             if (r.sharedMaterial?.shader != null &&
@@ -122,33 +130,26 @@ public class PlaneModelBuilder : MonoBehaviour
     static Vector3    V(float x, float y, float z) => new Vector3(x, y, z);
     static Quaternion Q(float x, float y, float z) => Quaternion.Euler(x, y, z);
 
-    void P(string partName,
-           Vector3       pos,
-           Vector3       scale,
-           Color         color,
-           PrimitiveType type = PrimitiveType.Cube,
-           Quaternion    rot  = default)
+    void P(string partName, Vector3 pos, Vector3 scale, Color color,
+           PrimitiveType type = PrimitiveType.Cube, Quaternion rot = default)
     {
-        GameObject go = GameObject.CreatePrimitive(type);
+        var go = GameObject.CreatePrimitive(type);
         go.name = partName;
         go.transform.SetParent(transform, false);
         go.transform.localPosition = pos;
         go.transform.localRotation = rot == default ? Quaternion.identity : rot;
         go.transform.localScale    = scale;
 
-        // 시각 전용: 개별 콜라이더 제거
-        Collider c = go.GetComponent<Collider>();
-        if (c != null) Destroy(c);
+        Destroy(go.GetComponent<Collider>());
 
-        // 렌더 파이프라인 호환 머티리얼 (Standard/URP/HDRP 모두 마젠타 없음)
-        Renderer r   = go.GetComponent<Renderer>();
-        Material mat = new Material(baseMat);
-        mat.color    = color;
+        var r   = go.GetComponent<Renderer>();
+        var mat = new Material(baseMat);
+        mat.color = color;
 
-        // 메탈릭/스무스 (Standard & URP 공통 프로퍼티명)
-        if (mat.HasProperty("_Metallic"))   mat.SetFloat("_Metallic",   0.55f);
-        if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", 0.38f);
-        if (mat.HasProperty("_Glossiness")) mat.SetFloat("_Glossiness", 0.38f);
+        // RAM 코팅: 낮은 반사율, 낮은 광택
+        if (mat.HasProperty("_Metallic"))   mat.SetFloat("_Metallic",   0.38f);
+        if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", 0.18f);
+        if (mat.HasProperty("_Glossiness")) mat.SetFloat("_Glossiness", 0.18f);
 
         r.material = mat;
     }

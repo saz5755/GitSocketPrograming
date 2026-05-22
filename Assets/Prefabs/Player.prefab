@@ -246,9 +246,11 @@ MonoBehaviour:
   nickname: 
   isLocalPlayer: 0
   lastReceivedTick: 0
-  moveSpeed: 30
-  pitchSpeed: 60
-  yawSpeed: 45
+  maxSpeed: 80
+  acceleration: 12
+  drag: 6
+  pitchSensitivity: 90
+  yawSensitivity: 90
   rollSpeed: 90
   sendInterval: 0.05
   interpolationDelay: 0.1
@@ -286,10 +288,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d09b314bfe34aae4d95fbe543f576582, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlaneModelBuilder
-  bodyColor: {r: 0.15, g: 0.35, b: 0.75, a: 1}
-  wingColor: {r: 0.2, g: 0.45, b: 0.85, a: 1}
-  cockpitColor: {r: 0.55, g: 0.85, b: 1, a: 0.8}
-  exhaustColor: {r: 0.25, g: 0.25, b: 0.25, a: 1}
 --- !u!1 &6180604204960651729
 GameObject:
   m_ObjectHideFlags: 0

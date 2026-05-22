@@ -1,11 +1,11 @@
 public class Player
 {
     public int playerId;
-    public string nickname;
+    public string nickname = string.Empty;
     public int lastProcessedTick;
 
-    public Room room;
-    public ClientSession session;
+    public Room? room;
+    public ClientSession session = null!;
 
     // World Position
     public float posX;

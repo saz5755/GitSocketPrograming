@@ -4,8 +4,9 @@ class LoginHandler
 {
     public static void Handle(ClientSession session, string json)
     {
-        LoginPacket packet =
+        LoginPacket? packet =
             JsonConvert.DeserializeObject<LoginPacket>(json);
+        if (packet == null) return;
 
         // 이미 로그인 상태인지 체크
         if (session.isLogin)
@@ -57,7 +58,7 @@ class LoginHandler
         // Room room = RoomManager.GetRoom(1);
         
         // 테스트 Room 분리 입장
-        Room room;
+        Room? room;
         if(packet.id == "test")
             room = RoomManager.GetRoom(2);
         else

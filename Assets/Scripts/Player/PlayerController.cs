@@ -14,22 +14,23 @@ public class PlayerController : MonoBehaviour
     int localTick;
 
     [Header("Throttle")]
-    [SerializeField] float maxSpeed     = 80f;   // kph 기준 체감, 내부는 m/s
-    [SerializeField] float acceleration = 12f;   // m/s² 가속
-    [SerializeField] float drag         =  6f;   // 스로틀 미입력 시 감속
+    [SerializeField] float maxSpeed     = 80f;
+    [SerializeField] float acceleration = 12f;
+    [SerializeField] float drag         =  6f;
 
-    [Header("Attitude")]
-    [SerializeField] float pitchSpeed = 55f;
-    [SerializeField] float yawSpeed   = 40f;
-    [SerializeField] float rollSpeed  = 85f;
+    [Header("Mouse Flight Control")]
+    [SerializeField] float pitchSensitivity = 60f;
+    [SerializeField] float yawSensitivity   = 60f;
+    [SerializeField] float rollSpeed        = 85f;
 
     [Header("Network")]
-    [SerializeField] float sendInterval = 0.05f; // 20 Hz
+    [SerializeField] float sendInterval = 0.05f;
 
     [Header("Interpolation")]
     [SerializeField] float interpolationDelay = 0.1f;
 
     float currentSpeed;
+    public float CurrentSpeed => currentSpeed;
 
     void Awake()
     {
@@ -55,22 +56,25 @@ public class PlayerController : MonoBehaviour
         else
             currentSpeed = Mathf.MoveTowards(currentSpeed, 0f, drag * dt);
 
-        // 자세 제어: 위/아래 화살표=피치, A/D=요, Q/E=롤
-        float pitch = 0f, yaw = 0f, roll = 0f;
-        if (Input.GetKey(KeyCode.UpArrow))   pitch = -1f;
-        if (Input.GetKey(KeyCode.DownArrow)) pitch =  1f;
-        if (Input.GetKey(KeyCode.A))         yaw   = -1f;
-        if (Input.GetKey(KeyCode.D))         yaw   =  1f;
-        if (Input.GetKey(KeyCode.Q))         roll  =  1f;
-        if (Input.GetKey(KeyCode.E))         roll  = -1f;
+        // 우클릭 중이면 자유시점 모드 (비행 입력 차단)
+        bool freeLook = Input.GetMouseButton(1);
 
-        transform.Rotate(
-            pitch * pitchSpeed * dt,
-            yaw   * yawSpeed   * dt,
-            roll  * rollSpeed  * dt,
-            Space.Self
-        );
+        float pitch = 0f;
+        float yaw   = 0f;
 
+        if (!freeLook)
+        {
+            // 마우스로 피치/요 제어 (상용 비행 시뮬레이터 방식)
+            pitch = -Input.GetAxis("Mouse Y") * pitchSensitivity * dt;
+            yaw   =  Input.GetAxis("Mouse X") * yawSensitivity   * dt;
+        }
+
+        // 롤: A/Q = 왼쪽 뱅킹, D/E = 오른쪽 뱅킹
+        float roll = 0f;
+        if (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.Q)) roll =  rollSpeed * dt;
+        if (Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.E)) roll = -rollSpeed * dt;
+
+        transform.Rotate(pitch, yaw, roll, Space.Self);
         transform.position += transform.forward * currentSpeed * dt;
 
         bool isMoving = currentSpeed > 0.5f;

@@ -6,11 +6,12 @@ class ChatHandler
     {
         if (session.isLogin == false)
             return;
-        
-        if (session.player.room == null)
+
+        if (session.player == null || session.player.room == null)
             return;
 
-        ChatPacket packet = JsonConvert.DeserializeObject<ChatPacket>(json);
+        ChatPacket? packet = JsonConvert.DeserializeObject<ChatPacket>(json);
+        if (packet == null) return;
         
         packet.nickname = session.player.nickname;
 

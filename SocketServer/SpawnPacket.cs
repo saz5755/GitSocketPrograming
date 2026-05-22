@@ -1,6 +1,6 @@
 class SpawnPacket : Packet
 {
-    public string nickname;
+    public string nickname = string.Empty;
 
     // World Position
     public float x;

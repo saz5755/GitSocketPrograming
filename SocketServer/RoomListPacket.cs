@@ -3,7 +3,7 @@ using System.Collections.Generic;
 public class RoomInfo
 {
     public int roomId;
-    public string roomName;
+    public string roomName = string.Empty;
     public int playerCount;
     public int maxPlayers;
 }

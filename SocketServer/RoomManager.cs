@@ -28,7 +28,7 @@ public class RoomManager
     }
 
 
-    public static Room GetRoom(int roomId)
+    public static Room? GetRoom(int roomId)
     {
         if (rooms.ContainsKey(roomId))
             return rooms[roomId];

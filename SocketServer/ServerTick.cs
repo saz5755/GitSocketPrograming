@@ -3,7 +3,7 @@ class ServerTick
 {
     const int TICK_MS = 50;
 
-    static Thread tickThread;
+    static Thread tickThread = null!;
 
     public static void Start()
     {
@@ -24,7 +24,7 @@ class ServerTick
     {
         foreach (ClientSession session in SessionManager.GetSessions())
         {
-            Player player = session.player;
+            Player? player = session.player;
             if (player?.room == null) continue;
 
             BroadcastPlayerState(player);
@@ -47,7 +47,7 @@ class ServerTick
             isMove = player.isMove
         };
 
-        foreach (Player target in player.room.GetPlayers())
+        foreach (Player target in player.room!.GetPlayers())
         {
             if (target == player) continue;
             if (target.session == null) continue;

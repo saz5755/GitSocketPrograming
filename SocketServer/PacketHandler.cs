@@ -45,7 +45,7 @@ class PacketHandler
             return;
         }
 
-        Packet packet = JsonConvert.DeserializeObject<Packet>(json);
+        Packet? packet = JsonConvert.DeserializeObject<Packet>(json);
 
         if(packet == null)
         {
@@ -61,7 +61,8 @@ class PacketHandler
     
     public static void HandleUDP(IPEndPoint remoteEP, string json)
     {
-        Packet packet = JsonConvert.DeserializeObject<Packet>(json);
+        Packet? packet = JsonConvert.DeserializeObject<Packet>(json);
+        if (packet == null) return;
 
         if(udpHandlers.ContainsKey(packet.type))
         {

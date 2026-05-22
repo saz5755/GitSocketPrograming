@@ -1,7 +1,7 @@
 [System.Serializable]
 public class LoginPacket : Packet
 {
-    public string id;
+    public string id = string.Empty;
 
-    public string password;
+    public string password = string.Empty;
 }

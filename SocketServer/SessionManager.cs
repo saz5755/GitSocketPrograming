@@ -36,7 +36,7 @@ class SessionManager
         }
     }
     
-    public static ClientSession Find(string accountId)
+    public static ClientSession? Find(string accountId)
     {
         lock (locker)
         {
@@ -53,7 +53,7 @@ class SessionManager
         }
     }
     
-    public static ClientSession FindByUDP(IPEndPoint ep)
+    public static ClientSession? FindByUDP(IPEndPoint ep)
     {
         foreach(var session in sessions)
         {
@@ -67,7 +67,7 @@ class SessionManager
         return null;
     }
     
-    public static ClientSession FindByNickname(string nickname)
+    public static ClientSession? FindByNickname(string nickname)
     {
         foreach(var session in sessions)
         {
