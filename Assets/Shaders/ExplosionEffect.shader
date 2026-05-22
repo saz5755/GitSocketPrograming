@@ -153,5 +153,5 @@ Shader "Custom/ExplosionEffect"
         }
     }
 
-    FallBack "Hidden/InternalErrorShader"
+    FallBack Off
 }

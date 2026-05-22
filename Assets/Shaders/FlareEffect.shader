@@ -120,5 +120,5 @@ Shader "Custom/FlareEffect"
         }
     }
 
-    FallBack "Hidden/InternalErrorShader"
+    FallBack Off
 }

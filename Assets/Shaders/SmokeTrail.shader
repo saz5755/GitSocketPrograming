@@ -96,5 +96,5 @@ Shader "Custom/SmokeTrail"
         }
     }
 
-    FallBack "Hidden/InternalErrorShader"
+    FallBack Off
 }
