@@ -5,7 +5,8 @@ public class PlayerManager : MonoBehaviour
 {
     public GameObject playerPrefab;
 
-    readonly Dictionary<string, PlayerController> players = new();
+    readonly Dictionary<string, PlayerController>  players        = new();
+    readonly Dictionary<string, RemoteMissileView> remoteMissiles = new();
 
     void Start()
     {
@@ -14,7 +15,9 @@ public class PlayerManager : MonoBehaviour
         sc.OnSpawn          += HandleSpawn;
         sc.OnDespawn        += HandleDespawn;
         sc.OnMove           += HandleMove;
+        sc.OnMissileSpawn   += HandleMissileSpawn;
         sc.OnMissileDestroy += HandleMissileDestroy;
+        sc.OnMissileMove    += HandleMissileMove;
         sc.OnMissileWarn    += HandleMissileWarn;
     }
 
@@ -26,10 +29,13 @@ public class PlayerManager : MonoBehaviour
             sc.OnSpawn          -= HandleSpawn;
             sc.OnDespawn        -= HandleDespawn;
             sc.OnMove           -= HandleMove;
+            sc.OnMissileSpawn   -= HandleMissileSpawn;
             sc.OnMissileDestroy -= HandleMissileDestroy;
+            sc.OnMissileMove    -= HandleMissileMove;
             sc.OnMissileWarn    -= HandleMissileWarn;
         }
         ClearPlayers();
+        ClearRemoteMissiles();
     }
 
     // ── 이벤트 핸들러 ─────────────────────────────────────────────────────
@@ -52,6 +58,48 @@ public class PlayerManager : MonoBehaviour
             p.isMove);
     }
 
+    // ── 원격 미사일 스폰: 상대방이 쏜 미사일을 시각적으로 생성 ─────────────
+    void HandleMissileSpawn(MissileSpawnPacket p)
+    {
+        string myName = GameManager.Instance?.myNickname
+                     ?? NetworkManager.Instance?.socketClient.myNickname ?? "";
+
+        // 자신이 발사한 미사일은 MissileLauncher에서 이미 로컬 생성
+        if (p.shooterNickname == myName) return;
+        if (remoteMissiles.ContainsKey(p.missileId)) return;
+
+        var go = new GameObject($"Missile_Remote_{p.missileId}");
+
+        // 캡슐로 미사일 외형 (콜라이더 없음)
+        var body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+        Object.Destroy(body.GetComponent<CapsuleCollider>());
+        body.transform.SetParent(go.transform, false);
+        body.transform.localScale    = new Vector3(0.2f, 0.5f, 0.2f);
+        body.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+
+        go.transform.SetPositionAndRotation(
+            new Vector3(p.posX, p.posY, p.posZ),
+            Quaternion.Euler(p.rotX, p.rotY, p.rotZ));
+
+        var view = go.AddComponent<RemoteMissileView>();
+        view.AttachSmokeTrail();
+        view.AddSnapshot(go.transform.position, go.transform.rotation);
+
+        remoteMissiles[p.missileId] = view;
+        Debug.Log($"[Missile] Remote spawned: {p.missileId} shooter={p.shooterNickname}");
+    }
+
+    // ── 원격 미사일 위치 업데이트 (UDP 10Hz) ──────────────────────────────
+    void HandleMissileMove(MissileMovePacket p)
+    {
+        if (!remoteMissiles.TryGetValue(p.missileId, out var view)) return;
+        if (view == null) { remoteMissiles.Remove(p.missileId); return; }
+
+        view.AddSnapshot(
+            new Vector3(p.posX, p.posY, p.posZ),
+            Quaternion.Euler(p.rotX, p.rotY, p.rotZ));
+    }
+
     void HandleMissileDestroy(MissileDestroyPacket p)
     {
         string myName = GameManager.Instance?.myNickname
@@ -59,6 +107,13 @@ public class PlayerManager : MonoBehaviour
                      ?? "";
         // 발사자는 Detonate()에서 이미 로컬 이펙트 처리 → 서버 에코 무시
         if (p.shooterNickname == myName) return;
+
+        // 원격 미사일 오브젝트 제거
+        if (remoteMissiles.TryGetValue(p.missileId, out var view))
+        {
+            if (view != null) Destroy(view.gameObject);
+            remoteMissiles.Remove(p.missileId);
+        }
 
         var pos   = new Vector3(p.posX, p.posY, p.posZ);
         bool hitMe = !string.IsNullOrEmpty(p.hitNickname) && p.hitNickname == myName;
@@ -125,6 +180,13 @@ public class PlayerManager : MonoBehaviour
         foreach (var p in players.Values)
             if (p != null) Destroy(p.gameObject);
         players.Clear();
+    }
+
+    void ClearRemoteMissiles()
+    {
+        foreach (var v in remoteMissiles.Values)
+            if (v != null) Destroy(v.gameObject);
+        remoteMissiles.Clear();
     }
 
     public PlayerController GetPlayer(string nickname)

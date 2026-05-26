@@ -41,6 +41,14 @@ class PacketHandler
 
         udpHandlers[PacketType.MOVE]
             = MoveHandler.HandleUDP;
+
+        udpHandlers[PacketType.MISSILE_MOVE]
+            = MissileMoveHandler.HandleUDP;
+
+        handlers[PacketType.GUN_HIT]
+            = GunHandler.HandleHit;
+        udpHandlers[PacketType.GUN_FIRE]
+            = GunHandler.HandleFire;
     }
 
     // 기본적으로 TCP Handle

@@ -25,3 +25,36 @@ public class MissileWarnPacket : Packet
     public string targetNickname;
     public int    lockLevel;      // 0=None 1=Searching 2=Locked 3=Fired
 }
+
+[System.Serializable]
+public class MissileMovePacket : Packet
+{
+    public string missileId;
+    public float  posX, posY, posZ;
+    public float  rotX, rotY, rotZ;
+    public float  speed;
+}
+
+[System.Serializable]
+public class GunFirePacket : Packet
+{
+    public string shooterNickname;
+    public float  posX, posY, posZ;   // muzzle world position
+    public float  dirX, dirY, dirZ;   // normalized fire direction
+}
+
+[System.Serializable]
+public class GunHitPacket : Packet
+{
+    public string shooterNickname;
+    public string targetNickname;
+    public float  posX, posY, posZ;   // hit world position
+}
+
+[System.Serializable]
+public class MoveAckPacket : Packet
+{
+    public int   tick;
+    public float posX, posY, posZ;
+    public float rotX, rotY, rotZ;
+}

@@ -15,7 +15,10 @@
       "PowerShell(Start-Process -FilePath \"dotnet\" -ArgumentList \"run --configuration Release\" -WorkingDirectory \"C:\\\\Unity\\\\GitSocketPrograming\\\\SocketServer\" -PassThru | Select-Object Id, ProcessName)",
       "PowerShell($proc = Start-Process -FilePath \"C:\\\\Unity\\\\GitSocketPrograming\\\\SocketServer\\\\bin\\\\Release\\\\net9.0\\\\SocketServer.exe\" -PassThru; Start-Sleep -Seconds 2; if \\($proc -and !$proc.HasExited\\) { Write-Output \"PID=$\\($proc.Id\\) 실행중\" } else { Write-Output \"실행 실패 또는 즉시 종료\" })",
       "PowerShell(netstat *)",
-      "PowerShell(Stop-Process *)"
+      "PowerShell(Stop-Process *)",
+      "Bash(Get-Content \"C:\\\\Unity\\\\GitSocketPrograming\\\\Packages\\\\manifest.json\")",
+      "Bash(Select-String \"textmesh|tmp|ugui\" -i)",
+      "mcp__coplay-mcp__check_compile_errors"
     ]
   }
 }

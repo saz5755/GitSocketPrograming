@@ -84,6 +84,10 @@ public class FlightHUD : MonoBehaviour
         CountermeasureSystem.OnDeploy += OnCMSDeploy;
         BuildHUD();
         BuildWarningCanvas();
+
+        // 레이더 미니맵 + 오디오 시스템 자동 추가
+        if (GetComponent<RadarMiniMap>()     == null) gameObject.AddComponent<RadarMiniMap>();
+        if (GetComponent<FlightAudioSystem>() == null) gameObject.AddComponent<FlightAudioSystem>();
     }
 
     void OnDestroy()
@@ -322,6 +326,7 @@ public class FlightHUD : MonoBehaviour
         threatWarn = GetComponent<ThreatWarningSystem>() ?? gameObject.AddComponent<ThreatWarningSystem>();
         cmsys      = GetComponent<CountermeasureSystem>() ?? gameObject.AddComponent<CountermeasureSystem>();
         if (GetComponent<HitEffectSystem>() == null)   gameObject.AddComponent<HitEffectSystem>();
+        if (GetComponent<GunSystem>()       == null)   gameObject.AddComponent<GunSystem>();
 
         BuildTargetingOverlay();
     }

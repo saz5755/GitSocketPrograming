@@ -37,10 +37,14 @@ public class SocketClient : MonoBehaviour
     public event Action<SpawnPacket>          OnSpawn;
     public event Action<string>               OnDespawn;
     public event Action<MoveBroadcastPacket>  OnMove;
+    public event Action<MoveAckPacket>        OnMoveAck;
     public event Action<List<RoomInfo>>       OnRoomList;
     public event Action<MissileSpawnPacket>   OnMissileSpawn;
     public event Action<MissileDestroyPacket> OnMissileDestroy;
     public event Action<MissileWarnPacket>    OnMissileWarn;
+    public event Action<MissileMovePacket>    OnMissileMove;
+    public event Action<GunFirePacket>        OnGunFire;
+    public event Action<GunHitPacket>         OnGunHit;
 
     // ── 연결 ──────────────────────────────────────────────────────────────
     public void Connect(string ip = null)
@@ -171,6 +175,13 @@ public class SocketClient : MonoBehaviour
                 break;
             }
 
+            case PacketType.GUN_HIT:
+            {
+                var p = JsonConvert.DeserializeObject<GunHitPacket>(json);
+                UnityMainThreadDispatcher.Instance.Enqueue(() => OnGunHit?.Invoke(p));
+                break;
+            }
+
             default: break;
         }
     }
@@ -212,20 +223,47 @@ public class SocketClient : MonoBehaviour
                 byte[] data = udp.Receive(ref ep);
                 string json = Encoding.UTF8.GetString(data);
                 JObject obj = JObject.Parse(json);
-                if ((PacketType)obj["type"].Value<int>() != PacketType.MOVE) continue;
+                var type = (PacketType)obj["type"].Value<int>();
 
-                var p = JsonConvert.DeserializeObject<MoveBroadcastPacket>(json);
-                if (p.nickname == myNickname) continue;
-
-                // 오래된 패킷 드롭 (PlayerManager 의존 없음)
-                if (p.tick > 0)
+                switch (type)
                 {
-                    int last = lastTicks.GetOrAdd(p.nickname, 0);
-                    if (p.tick <= last) continue;
-                    lastTicks[p.nickname] = p.tick;
-                }
+                    case PacketType.MOVE:
+                    {
+                        var p = JsonConvert.DeserializeObject<MoveBroadcastPacket>(json);
+                        if (p.nickname == myNickname) break;
 
-                UnityMainThreadDispatcher.Instance.Enqueue(() => OnMove?.Invoke(p));
+                        // 오래된 패킷 드롭
+                        if (p.tick > 0)
+                        {
+                            int last = lastTicks.GetOrAdd(p.nickname, 0);
+                            if (p.tick <= last) break;
+                            lastTicks[p.nickname] = p.tick;
+                        }
+                        UnityMainThreadDispatcher.Instance.Enqueue(() => OnMove?.Invoke(p));
+                        break;
+                    }
+
+                    case PacketType.MOVE_ACK:
+                    {
+                        var p = JsonConvert.DeserializeObject<MoveAckPacket>(json);
+                        UnityMainThreadDispatcher.Instance.Enqueue(() => OnMoveAck?.Invoke(p));
+                        break;
+                    }
+
+                    case PacketType.MISSILE_MOVE:
+                    {
+                        var p = JsonConvert.DeserializeObject<MissileMovePacket>(json);
+                        UnityMainThreadDispatcher.Instance.Enqueue(() => OnMissileMove?.Invoke(p));
+                        break;
+                    }
+
+                    case PacketType.GUN_FIRE:
+                    {
+                        var p = JsonConvert.DeserializeObject<GunFirePacket>(json);
+                        UnityMainThreadDispatcher.Instance.Enqueue(() => OnGunFire?.Invoke(p));
+                        break;
+                    }
+                }
             }
             catch (Exception e)
             {
@@ -248,7 +286,6 @@ public class SocketClient : MonoBehaviour
 
     public void EnterRoom(int roomId)
     {
-        // 재입장 시 서버 UDP 엔드포인트 재등록 (UDP 연결이 끊겼거나 방 재진입 시 대비)
         StartCoroutine(RegisterUDP());
         SendTCP(new EnterRoomPacket { type = PacketType.ENTER_ROOM, roomId = roomId });
     }
@@ -297,6 +334,39 @@ public class SocketClient : MonoBehaviour
             type = PacketType.MISSILE_WARN,
             shooterNickname = shooter, targetNickname = target,
             lockLevel = lockLevel });
+
+    public void SendGunFire(string shooterNick, Vector3 muzzlePos, Vector3 dir)
+    {
+        byte[] data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(new GunFirePacket
+        {
+            type             = PacketType.GUN_FIRE,
+            shooterNickname  = shooterNick,
+            posX = muzzlePos.x, posY = muzzlePos.y, posZ = muzzlePos.z,
+            dirX = dir.x,       dirY = dir.y,       dirZ = dir.z
+        }));
+        try { udp?.Send(data, data.Length); }
+        catch { }
+    }
+
+    public void SendGunHit(string shooterNick, string targetNick, Vector3 pos)
+        => SendTCP(new GunHitPacket {
+            type            = PacketType.GUN_HIT,
+            shooterNickname = shooterNick,
+            targetNickname  = targetNick,
+            posX = pos.x, posY = pos.y, posZ = pos.z });
+
+    public void SendMissileMove(string id, Vector3 pos, Vector3 euler, float speed)
+    {
+        byte[] data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(new MissileMovePacket
+        {
+            type = PacketType.MISSILE_MOVE, missileId = id,
+            posX = pos.x, posY = pos.y, posZ = pos.z,
+            rotX = euler.x, rotY = euler.y, rotZ = euler.z,
+            speed = speed
+        }));
+        try { udp?.Send(data, data.Length); }
+        catch { }
+    }
 
     public void SendUdpConnect()
     {

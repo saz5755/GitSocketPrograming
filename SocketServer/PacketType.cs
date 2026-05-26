@@ -15,5 +15,9 @@ public enum PacketType
     LEAVE_ROOM = 13,
     MISSILE_SPAWN   = 14,
     MISSILE_DESTROY = 15,
-    MISSILE_WARN    = 16
+    MISSILE_WARN    = 16,
+    MOVE_ACK        = 17,
+    MISSILE_MOVE    = 18,
+    GUN_FIRE        = 19,
+    GUN_HIT         = 20
 }

@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text;
 using Newtonsoft.Json;
 
 class MoveHandler
@@ -32,6 +33,24 @@ class MoveHandler
         session.player.rotY = packet.rotY;
         session.player.rotZ = packet.rotZ;
         session.player.isMove = packet.isMove;
+
+        // 발신자에게 ACK: 처리 완료 틱 + 서버 저장 위치 에코 (Reconciliation용)
+        if (session.udpEndPoint != null)
+        {
+            var ack = new MoveAckPacket
+            {
+                type = PacketType.MOVE_ACK,
+                tick = packet.tick,
+                posX = packet.posX, posY = packet.posY, posZ = packet.posZ,
+                rotX = packet.rotX, rotY = packet.rotY, rotZ = packet.rotZ
+            };
+            try
+            {
+                byte[] ackData = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(ack));
+                Program.udpServer.Send(ackData, ackData.Length, session.udpEndPoint);
+            }
+            catch { }
+        }
 
         BroadcastMove(session.player);
     }

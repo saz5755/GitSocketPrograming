@@ -37,6 +37,7 @@ public class MissileLauncher : MonoBehaviour
         _cooldownTimer = cooldown;
         MissileCount--;
 
+        FlightAudioSystem.NotifyMissileFired();
         CreateMissile(_targeting.LocalPlayer.transform, _targeting.Target.transform);
     }
 

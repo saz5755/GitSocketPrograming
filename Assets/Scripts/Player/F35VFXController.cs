@@ -91,6 +91,7 @@ public class F35VFXController : MonoBehaviour
 
         // Outer Glow (Orange/Red)
         afterburnerPS = abObj.AddComponent<ParticleSystem>();
+        afterburnerPS.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
         var main = afterburnerPS.main;
         main.duration = 1f;
         main.loop = true;
@@ -126,6 +127,7 @@ public class F35VFXController : MonoBehaviour
         coreObj.transform.localRotation = Quaternion.identity;
 
         corePS = coreObj.AddComponent<ParticleSystem>();
+        corePS.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
         var cMain = corePS.main;
         cMain.duration = 1f;
         cMain.loop = true;

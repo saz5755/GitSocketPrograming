@@ -205,8 +205,7 @@ public class MissileController : MonoBehaviour
         if (sc == null || string.IsNullOrEmpty(ShooterNick)) return;
         if (sc.myNickname != ShooterNick) return;  // 발사자만 브로드캐스트
 
-        // 주: 서버에서 MISSILE_UPDATE 타입을 추가로 구현해야 완전 동기화됨
-        // 현재는 생성/파괴만 TCP 동기화
+        sc.SendMissileMove(MissileId, transform.position, transform.eulerAngles, _speed);
     }
 
     void BroadcastDestroy(bool hitLocal)
