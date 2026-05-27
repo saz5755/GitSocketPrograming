@@ -27,6 +27,8 @@ public class LobbyUI : MonoBehaviour
     Text statusText;
     Text pilotLabel;
     Text onlineLabel;
+    GameObject _createModal;
+    InputField _roomNameInput;
 
     void Awake()
     {
@@ -44,7 +46,9 @@ public class LobbyUI : MonoBehaviour
     void OnDestroy()
     {
         SocketClient sc = NetworkManager.Instance?.socketClient;
-        if (sc != null) sc.OnRoomList -= HandleRoomList;
+        if (sc == null) return;
+        sc.OnRoomList         -= HandleRoomList;
+        sc.OnCreateRoomResult -= HandleCreateRoomResult;
     }
 
     void EnsureManagers()
@@ -66,7 +70,9 @@ public class LobbyUI : MonoBehaviour
     void SubscribeEvents()
     {
         SocketClient sc = NetworkManager.Instance?.socketClient;
-        if (sc != null) sc.OnRoomList += HandleRoomList;
+        if (sc == null) return;
+        sc.OnRoomList          += HandleRoomList;
+        sc.OnCreateRoomResult  += HandleCreateRoomResult;
     }
 
     IEnumerator RequestRoomList()
@@ -172,6 +178,17 @@ public class LobbyUI : MonoBehaviour
             new Vector2(0, 0), new Vector2(600, 68),
             12, FontStyle.Normal, C_DIM, TextAnchor.MiddleCenter,
             new Vector2(0.5f, 0), new Vector2(0.5f, 1));
+
+        // CREATE ROOM 버튼
+        var createBtn = MakeButton(botBar, "+   CREATE ROOM",
+            new Vector2(-240, 0), new Vector2(190, 44), new Color(0.10f, 0.28f, 0.55f),
+            new Vector2(1, 0.5f), new Vector2(1, 0.5f));
+        SetBtnTextColor(createBtn, C_TEXT);
+        var cbc = createBtn.colors;
+        cbc.highlightedColor = new Color(0.20f, 0.45f, 0.80f);
+        cbc.pressedColor     = new Color(0.06f, 0.16f, 0.35f);
+        createBtn.colors = cbc;
+        createBtn.onClick.AddListener(OnCreateRoomClick);
 
         // DISCONNECT 버튼
         var logoutBtn = MakeButton(botBar, "⬡   DISCONNECT",
@@ -371,6 +388,131 @@ public class LobbyUI : MonoBehaviour
             _ => rowImg.color = new Color(C_ROW.r + 0.02f, C_ROW.g + 0.03f, C_ROW.b + 0.04f));
         AddEvt(trigger, EventTriggerType.PointerExit,
             _ => rowImg.color = C_ROW);
+    }
+
+    // ── CREATE ROOM 모달 ──────────────────────────────────────────────────────
+    void OnCreateRoomClick()
+    {
+        if (_createModal != null) return;
+
+        // 반투명 오버레이 (전체 화면)
+        var canvasGO = GameObject.Find("LobbyCanvas");
+        var overlay  = new GameObject("CreateRoomModal");
+        overlay.transform.SetParent(canvasGO?.transform ?? transform, false);
+        var ort = overlay.AddComponent<RectTransform>();
+        ort.anchorMin = Vector2.zero; ort.anchorMax = Vector2.one;
+        ort.offsetMin = ort.offsetMax = Vector2.zero;
+        var obg = overlay.AddComponent<Image>();
+        obg.color         = new Color(0, 0, 0, 0.70f);
+        obg.raycastTarget = true;
+        _createModal = overlay;
+
+        // 중앙 패널
+        var panel = NewRect("Panel", overlay.transform, Vector2.zero, new Vector2(520, 280));
+        panel.anchorMin = panel.anchorMax = new Vector2(0.5f, 0.5f);
+        var pImg = panel.gameObject.AddComponent<Image>();
+        pImg.color = new Color(0.047f, 0.063f, 0.094f);
+
+        // 상단 강조선
+        var accent = NewRect("Accent", panel, new Vector2(0, 0), new Vector2(0, 3));
+        SetAnchors(accent, new Vector2(0, 1), new Vector2(1, 1));
+        AddImg(accent, C_ACCENT);
+
+        // 타이틀
+        MakeText(panel, "CREATE COMBAT ZONE",
+            new Vector2(0, -24), new Vector2(500, 40),
+            18, FontStyle.Bold, C_ACCENT, TextAnchor.MiddleCenter,
+            new Vector2(0.5f, 1), new Vector2(0.5f, 1));
+
+        // 룸 이름 레이블
+        MakeText(panel, "ZONE DESIGNATION",
+            new Vector2(-180, 10), new Vector2(200, 28),
+            11, FontStyle.Bold, C_DIM, TextAnchor.MiddleLeft,
+            new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f));
+
+        // 룸 이름 InputField
+        var inputGO = new GameObject("RoomNameInput");
+        inputGO.transform.SetParent(panel, false);
+        var inputRT = inputGO.AddComponent<RectTransform>();
+        inputRT.anchorMin = inputRT.anchorMax = new Vector2(0.5f, 0.5f);
+        inputRT.anchoredPosition = new Vector2(0, -25);
+        inputRT.sizeDelta        = new Vector2(440, 44);
+
+        var inputBg = inputGO.AddComponent<Image>();
+        inputBg.color = new Color(0.08f, 0.12f, 0.18f);
+
+        // InputField 텍스트
+        var textGO = new GameObject("Text");
+        textGO.transform.SetParent(inputGO.transform, false);
+        var textRT = textGO.AddComponent<RectTransform>();
+        textRT.anchorMin = Vector2.zero; textRT.anchorMax = Vector2.one;
+        textRT.offsetMin = new Vector2(10, 4); textRT.offsetMax = new Vector2(-10, -4);
+        var textComp = textGO.AddComponent<Text>();
+        textComp.font      = uiFont;
+        textComp.fontSize  = 15;
+        textComp.color     = C_TEXT;
+        textComp.alignment = TextAnchor.MiddleLeft;
+
+        // Placeholder
+        var phGO = new GameObject("Placeholder");
+        phGO.transform.SetParent(inputGO.transform, false);
+        var phRT = phGO.AddComponent<RectTransform>();
+        phRT.anchorMin = Vector2.zero; phRT.anchorMax = Vector2.one;
+        phRT.offsetMin = new Vector2(10, 4); phRT.offsetMax = new Vector2(-10, -4);
+        var phTxt = phGO.AddComponent<Text>();
+        phTxt.text      = "Enter zone name...";
+        phTxt.font      = uiFont;
+        phTxt.fontSize  = 14;
+        phTxt.color     = C_DIM;
+        phTxt.fontStyle = FontStyle.Italic;
+        phTxt.alignment = TextAnchor.MiddleLeft;
+
+        _roomNameInput            = inputGO.AddComponent<InputField>();
+        _roomNameInput.textComponent  = textComp;
+        _roomNameInput.placeholder    = phTxt;
+        _roomNameInput.characterLimit = 24;
+        _roomNameInput.text           = "";
+
+        // CONFIRM 버튼
+        var confirmBtn = MakeButton(panel, "DEPLOY  ►",
+            new Vector2(-120, -100), new Vector2(180, 44), C_ACCENT,
+            new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f));
+        SetBtnTextColor(confirmBtn, new Color(0.02f, 0.06f, 0.02f));
+        confirmBtn.onClick.AddListener(() =>
+        {
+            string name = _roomNameInput?.text?.Trim() ?? "";
+            if (string.IsNullOrEmpty(name)) name = $"{GameManager.Instance?.myNickname ?? "Unknown"}'s Zone";
+            SetStatus("Creating combat zone...", false);
+            NetworkManager.Instance?.socketClient.SendCreateRoom(name, 8);
+            CloseCreateModal();
+        });
+
+        // CANCEL 버튼
+        var cancelBtn = MakeButton(panel, "CANCEL",
+            new Vector2(100, -100), new Vector2(140, 44), new Color(0.20f, 0.22f, 0.24f),
+            new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f));
+        SetBtnTextColor(cancelBtn, C_DIM);
+        cancelBtn.onClick.AddListener(CloseCreateModal);
+    }
+
+    void CloseCreateModal()
+    {
+        if (_createModal != null) { Destroy(_createModal); _createModal = null; }
+        _roomNameInput = null;
+    }
+
+    void HandleCreateRoomResult(CreateRoomResultPacket p)
+    {
+        if (p.success)
+        {
+            if (GameManager.Instance != null) GameManager.Instance.currentRoomId = p.roomId;
+            SetStatus($"Zone created: {p.roomName}  —  Deploying...", false);
+            StartCoroutine(LoadGame());
+        }
+        else
+        {
+            SetStatus($"Failed to create zone: {p.errorMessage}", true);
+        }
     }
 
     // ── 액션 ──────────────────────────────────────────────────────────────────

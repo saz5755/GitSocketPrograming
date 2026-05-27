@@ -1,0 +1,203 @@
+using UnityEngine;
+using UnityEngine.UI;
+
+/// <summary>
+/// 지상 모드 ↔ 비행 모드 전환을 총괄하는 싱글턴.
+/// PlayerManager.CreatePlayer()에서 Init() 호출.
+/// </summary>
+public class GameModeManager : MonoBehaviour
+{
+    public static GameModeManager Instance { get; private set; }
+
+    public bool IsFlying { get; private set; }
+
+    // 외부(AircraftZone)에서 접근
+    public Transform GroundCharacter => _gc != null ? _gc.transform : null;
+    public Transform LocalAircraft   => _pc != null ? _pc.transform : null;
+
+    GroundController _gc;
+    PlayerController _pc;
+    FlightCamera     _fc;
+    FlightHUD        _hud;
+    Renderer[]       _charRenderers;
+
+    // 범위 내 존
+    AircraftZone _activeZone;
+
+    // 화면 하단 프롬프트 UI
+    Canvas _promptCanvas;
+    Text   _promptText;
+
+    void Awake()
+    {
+        if (Instance != null && Instance != this) { Destroy(gameObject); return; }
+        Instance = this;
+    }
+
+    void OnDestroy()
+    {
+        if (Instance == this) Instance = null;
+    }
+
+    // ── 초기화 ──────────────────────────────────────────────────────────────
+    public void Init(GroundController gc, PlayerController pc, Vector3 aircraftSpawnPos)
+    {
+        _gc = gc;
+        _pc = pc;
+        _fc  = FindObjectOfType<FlightCamera>();
+        _hud = FindObjectOfType<FlightHUD>();
+        _charRenderers = gc.GetComponentsInChildren<Renderer>(true);
+
+        BuildPromptUI();
+
+        // 초기 상태: 지상 모드
+        ApplyGroundMode(aircraftSpawnPos + new Vector3(0f, 0.05f, -12f), 0f);
+    }
+
+    // ── 존 알림 ─────────────────────────────────────────────────────────────
+    public void NotifyZoneEnter(AircraftZone zone) => _activeZone = zone;
+    public void NotifyZoneExit(AircraftZone zone)
+    {
+        if (_activeZone == zone) _activeZone = null;
+    }
+
+    // ── 매 프레임: 프롬프트 표시 + F키 처리 ────────────────────────────────
+    void Update()
+    {
+        if (_activeZone == null) { ShowPrompt(false); return; }
+
+        bool canBoard = !IsFlying && _activeZone.ZoneType == AircraftZone.Type.Takeoff;
+        bool canExit  =  IsFlying && _activeZone.ZoneType == AircraftZone.Type.Landing;
+
+        if (!canBoard && !canExit) { ShowPrompt(false); return; }
+
+        ShowPrompt(true, canBoard ? "[F]  BOARD AIRCRAFT" : "[F]  EXIT AIRCRAFT");
+
+        if (Input.GetKeyDown(KeyCode.F))
+        {
+            if (canBoard) EnterFlight(_activeZone.transform.position);
+            else          ExitFlight(_activeZone.transform.position);
+        }
+    }
+
+    // ── 비행 모드 진입 ───────────────────────────────────────────────────────
+    public void EnterFlight(Vector3 boardingPos)
+    {
+        if (IsFlying || _gc == null || _pc == null) return;
+        IsFlying = true;
+
+        // 캐릭터 숨기기
+        _gc.enabled = false;
+        SetCharRenderers(false);
+
+        // 항공기: 탑승 존 위치에 배치 후 활성화
+        _pc.transform.SetPositionAndRotation(boardingPos, Quaternion.identity);
+        _pc.enabled = true;
+
+        // 카메라·HUD 전환
+        _fc?.SetFlightTarget(_pc);
+        _hud?.SetVisible(true);
+
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible   = false;
+
+        Debug.Log("[GameMode] → Flight Mode");
+    }
+
+    // ── 지상 모드 복귀 ───────────────────────────────────────────────────────
+    public void ExitFlight(Vector3 landingPos)
+    {
+        if (!IsFlying || _gc == null || _pc == null) return;
+        IsFlying = false;
+
+        float yaw = _pc.transform.eulerAngles.y;
+
+        // 항공기 정지
+        _pc.enabled = false;
+
+        // 캐릭터를 착륙 위치에 배치
+        _gc.transform.SetPositionAndRotation(
+            landingPos + new Vector3(0f, 0.05f, 0f),
+            Quaternion.Euler(0f, yaw, 0f));
+        _gc.InitYaw(yaw);
+        SetCharRenderers(true);
+        _gc.enabled = true;
+
+        // 카메라·HUD 전환
+        _fc?.SetGroundTarget(_gc.transform);
+        _hud?.SetVisible(false);
+
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible   = false;
+
+        Debug.Log("[GameMode] → Ground Mode");
+    }
+
+    // ── 내부 헬퍼 ────────────────────────────────────────────────────────────
+    void ApplyGroundMode(Vector3 charPos, float yaw)
+    {
+        IsFlying = false;
+
+        _pc.enabled = false;
+
+        _gc.transform.position = charPos;
+        _gc.InitYaw(yaw);
+        SetCharRenderers(true);
+        _gc.enabled = true;
+
+        _hud?.SetVisible(false);
+        _fc?.SetGroundTarget(_gc.transform);
+    }
+
+    void SetCharRenderers(bool visible)
+    {
+        if (_charRenderers == null) return;
+        foreach (var r in _charRenderers) r.enabled = visible;
+    }
+
+    // ── 프롬프트 UI ─────────────────────────────────────────────────────────
+    void BuildPromptUI()
+    {
+        var go = new GameObject("ModePromptCanvas");
+
+        _promptCanvas = go.AddComponent<Canvas>();
+        _promptCanvas.renderMode   = RenderMode.ScreenSpaceOverlay;
+        _promptCanvas.sortingOrder = 50;
+        go.AddComponent<CanvasScaler>().uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+
+        var panel = new GameObject("Prompt");
+        panel.transform.SetParent(go.transform, false);
+
+        var rt = panel.AddComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0.5f, 0f);
+        rt.anchorMax = new Vector2(0.5f, 0f);
+        rt.pivot     = new Vector2(0.5f, 0f);
+        rt.anchoredPosition = new Vector2(0f, 40f);
+        rt.sizeDelta        = new Vector2(420f, 52f);
+
+        var bg = panel.AddComponent<Image>();
+        bg.color = new Color(0f, 0f, 0f, 0.60f);
+
+        var txtGO = new GameObject("Text");
+        txtGO.transform.SetParent(panel.transform, false);
+        var tRT = txtGO.AddComponent<RectTransform>();
+        tRT.anchorMin = Vector2.zero; tRT.anchorMax = Vector2.one;
+        tRT.offsetMin = tRT.offsetMax = Vector2.zero;
+
+        _promptText = txtGO.AddComponent<Text>();
+        _promptText.font      = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        _promptText.fontSize  = 22;
+        _promptText.fontStyle = FontStyle.Bold;
+        _promptText.color     = new Color(0f, 1f, 0.5f, 1f);
+        _promptText.alignment = TextAnchor.MiddleCenter;
+
+        _promptCanvas.enabled = false;
+    }
+
+    void ShowPrompt(bool show, string msg = "")
+    {
+        if (_promptCanvas == null) return;
+        _promptCanvas.enabled = show;
+        if (show && _promptText != null) _promptText.text = msg;
+    }
+}

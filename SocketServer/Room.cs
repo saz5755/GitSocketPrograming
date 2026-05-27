@@ -34,16 +34,17 @@ public class Room
 
     public void Leave(Player player)
     {
+        bool wasLast;
         lock (locker)
         {
             players.Remove(player);
+            wasLast = players.Count == 0;
         }
 
         player.room = null;
 
         Console.WriteLine($"[Room] {player.nickname} left room {roomId}");
 
-        // 남은 플레이어들에게 DESPAWN 통보
         DespawnPacket despawn = new()
         {
             type = PacketType.DESPAWN,
@@ -52,6 +53,10 @@ public class Room
         Broadcast(despawn);
 
         BroadcastSystem($"{player.nickname} left");
+
+        // 마지막 플레이어가 나가면 룸 삭제 (로비 목록 자동 갱신)
+        if (wasLast)
+            RoomManager.DeleteRoom(roomId);
     }
 
     public void Broadcast(object packet)

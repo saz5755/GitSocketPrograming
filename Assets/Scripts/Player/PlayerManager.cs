@@ -130,7 +130,7 @@ public class PlayerManager : MonoBehaviour
         var threatWarn = FindObjectOfType<ThreatWarningSystem>();
         if (threatWarn == null) return;
 
-        var level = (ThreatWarningSystem.ThreatLevel)Mathf.Clamp(p.lockLevel, 0, 4);
+        var level = (ThreatWarningSystem.ThreatLevel)Mathf.Clamp(p.lockLevel, 0, 5);
 
         Vector3 shooterPos = Vector3.zero;
         if (players.TryGetValue(p.shooterNickname, out var shooter))
@@ -157,7 +157,11 @@ public class PlayerManager : MonoBehaviour
         player.ClearSnapshots();
         player.AddSnapshot(pos, rot, isMove);
 
-        if (!isLocal)
+        if (isLocal)
+        {
+            InitLocalPlayerGround(player, pos);
+        }
+        else
         {
             var label = obj.AddComponent<PlayerLabel>();
             label.SetNickname(nickname);
@@ -165,6 +169,52 @@ public class PlayerManager : MonoBehaviour
 
         players[nickname] = player;
         Debug.Log($"[Player] Spawned: {nickname}  local={isLocal}");
+    }
+
+    void InitLocalPlayerGround(PlayerController pc, Vector3 spawnPos)
+    {
+        // GameModeManager 생성
+        if (GameModeManager.Instance == null)
+        {
+            var gmGO = new GameObject("GameModeManager");
+            gmGO.AddComponent<GameModeManager>();
+        }
+
+        // 보행 캐릭터 오브젝트 생성
+        var charGO = BuildCharacterObject();
+        var gc = charGO.GetComponent<GroundController>();
+
+        // 이륙 존 (탑승 포인트) — Configure() 호출 후 Start()에서 비주얼 생성
+        var takeoffZoneGO = new GameObject("TakeoffZone");
+        takeoffZoneGO.transform.position = spawnPos;
+        var takeoffZone = takeoffZoneGO.AddComponent<AircraftZone>();
+        takeoffZone.Configure(AircraftZone.Type.Takeoff, 12f);
+
+        // 착륙 존 (하차 포인트) — 같은 위치, 반경 더 크게 (비행 중 착지 허용 범위)
+        var landingZoneGO = new GameObject("LandingZone");
+        landingZoneGO.transform.position = spawnPos;
+        var landingZone = landingZoneGO.AddComponent<AircraftZone>();
+        landingZone.Configure(AircraftZone.Type.Landing, 30f);
+
+        // 초기화
+        GameModeManager.Instance.Init(gc, pc, spawnPos);
+    }
+
+    static GameObject BuildCharacterObject()
+    {
+        var root = new GameObject("LocalGroundCharacter");
+
+        // CharacterController를 GroundController보다 먼저 추가
+        var cc = root.AddComponent<CharacterController>();
+        cc.height = 1.8f;
+        cc.radius = 0.3f;
+        cc.center = new Vector3(0f, 0.9f, 0f);
+
+        // 인간형 파일럿 모델 (URP 셰이더 자동 선택)
+        root.AddComponent<CharacterModelBuilder>();
+        root.AddComponent<GroundController>();
+
+        return root;
     }
 
     void RemovePlayer(string nickname)

@@ -43,8 +43,10 @@ public class SocketClient : MonoBehaviour
     public event Action<MissileDestroyPacket> OnMissileDestroy;
     public event Action<MissileWarnPacket>    OnMissileWarn;
     public event Action<MissileMovePacket>    OnMissileMove;
-    public event Action<GunFirePacket>        OnGunFire;
-    public event Action<GunHitPacket>         OnGunHit;
+    public event Action<GunFirePacket>          OnGunFire;
+    public event Action<GunHitPacket>           OnGunHit;
+    public event Action<CreateRoomResultPacket> OnCreateRoomResult;
+    public event Action<EnterRoomResultPacket>  OnEnterRoomResult;
 
     // ── 연결 ──────────────────────────────────────────────────────────────
     public void Connect(string ip = null)
@@ -182,6 +184,20 @@ public class SocketClient : MonoBehaviour
                 break;
             }
 
+            case PacketType.CREATE_ROOM_RESULT:
+            {
+                var p = JsonConvert.DeserializeObject<CreateRoomResultPacket>(json);
+                UnityMainThreadDispatcher.Instance.Enqueue(() => OnCreateRoomResult?.Invoke(p));
+                break;
+            }
+
+            case PacketType.ENTER_ROOM_RESULT:
+            {
+                var p = JsonConvert.DeserializeObject<EnterRoomResultPacket>(json);
+                UnityMainThreadDispatcher.Instance.Enqueue(() => OnEnterRoomResult?.Invoke(p));
+                break;
+            }
+
             default: break;
         }
     }
@@ -298,6 +314,9 @@ public class SocketClient : MonoBehaviour
 
     public void RequestRoomList()
         => SendTCP(new Packet { type = PacketType.ROOM_LIST_REQUEST });
+
+    public void SendCreateRoom(string roomName, int maxPlayers = 8)
+        => SendTCP(new CreateRoomPacket { type = PacketType.CREATE_ROOM, roomName = roomName, maxPlayers = maxPlayers });
 
     public void SendMove(float posX, float posY, float posZ,
                          float rotX, float rotY, float rotZ,

@@ -95,6 +95,13 @@ public class FlightHUD : MonoBehaviour
         CountermeasureSystem.OnDeploy -= OnCMSDeploy;
     }
 
+    /// <summary>지상 모드일 때 HUD 전체 숨기기.</summary>
+    public void SetVisible(bool visible)
+    {
+        if (hudCanvas     != null) hudCanvas.enabled     = visible;
+        if (warningCanvas != null) warningCanvas.enabled = visible;
+    }
+
     void OnCMSDeploy(CountermeasureType type)
     {
         _deployMsg   = type == CountermeasureType.Flare ? "◎  FLARE" : "≋  CHAFF";
@@ -282,7 +289,8 @@ public class FlightHUD : MonoBehaviour
             {
                 _warnRwrLabel.text = threatWarn.Threat switch
                 {
-                    ThreatWarningSystem.ThreatLevel.MissileFired => "MSL",
+                    ThreatWarningSystem.ThreatLevel.MissileActive => "ARH",
+                    ThreatWarningSystem.ThreatLevel.MissileFired  => "MSL",
                     ThreatWarningSystem.ThreatLevel.Locked        => "LCK",
                     ThreatWarningSystem.ThreatLevel.Tracked       => "TRK",
                     ThreatWarningSystem.ThreatLevel.Detected      => "DET",
@@ -1036,6 +1044,10 @@ public class FlightHUD : MonoBehaviour
 
         switch (threatWarn.Threat)
         {
+            case ThreatWarningSystem.ThreatLevel.MissileActive:
+                threatWarningText.text  = blink ? "⚠  SEEKER ACTIVE  ⚠" : "  SEEKER ACTIVE  ";
+                threatWarningText.color = CRIT;
+                break;
             case ThreatWarningSystem.ThreatLevel.MissileFired:
                 threatWarningText.text  = blink ? "⚠  MISSILE INBOUND  ⚠" : "  MISSILE INBOUND  ";
                 threatWarningText.color = CRIT;

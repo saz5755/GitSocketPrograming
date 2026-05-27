@@ -18,7 +18,21 @@
       "PowerShell(Stop-Process *)",
       "Bash(Get-Content \"C:\\\\Unity\\\\GitSocketPrograming\\\\Packages\\\\manifest.json\")",
       "Bash(Select-String \"textmesh|tmp|ugui\" -i)",
-      "mcp__coplay-mcp__check_compile_errors"
+      "mcp__coplay-mcp__check_compile_errors",
+      "Bash(dotnet run *)",
+      "Bash(Start-Sleep -Seconds 3)",
+      "Bash(Get-Content \"C:\\\\Users\\\\NEWBIT~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Unity-GitSocketPrograming\\\\3b4adc0a-ec38-4b89-8988-32b3692a40c1\\\\tasks\\\\bytkdfswz.output\" -ErrorAction SilentlyContinue)",
+      "Bash(Get-Command node *)",
+      "Bash(Get-Command dotnet *)",
+      "Bash(Select-Object -First 1)",
+      "PowerShell(Get-Command *)",
+      "PowerShell(New-Item *)",
+      "PowerShell(Get-NetTCPConnection *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Unity\\\\GitSocketPrograming\\\\Assets\\\\Scripts\" -Recurse)",
+      "Bash(Select-Object FullName)",
+      "Bash(Sort-Object FullName)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Unity\\\\GitSocketPrograming\\\\Assets\" -Directory)",
+      "Bash(Select-Object Name)"
     ]
   }
 }

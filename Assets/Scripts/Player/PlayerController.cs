@@ -43,11 +43,21 @@ public class PlayerController : MonoBehaviour
         anim = GetComponent<Animator>();
     }
 
-    void Start()
+    void OnEnable()
     {
         if (!isLocalPlayer) return;
         var sc = NetworkManager.Instance?.socketClient;
         if (sc != null) sc.OnMoveAck += HandleMoveAck;
+        // 활성화 시 커서 잠금
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible   = false;
+    }
+
+    void OnDisable()
+    {
+        if (!isLocalPlayer) return;
+        var sc = NetworkManager.Instance?.socketClient;
+        if (sc != null) sc.OnMoveAck -= HandleMoveAck;
     }
 
     void OnDestroy()

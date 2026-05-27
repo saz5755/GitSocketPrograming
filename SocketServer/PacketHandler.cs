@@ -25,6 +25,9 @@ class PacketHandler
         handlers[PacketType.LEAVE_ROOM]
             = LeaveRoomHandler.Handle;
 
+        handlers[PacketType.CREATE_ROOM]
+            = CreateRoomHandler.Handle;
+
         handlers[PacketType.MISSILE_SPAWN]
             = MissileHandler.HandleSpawn;
         handlers[PacketType.MISSILE_DESTROY]

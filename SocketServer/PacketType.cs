@@ -18,6 +18,9 @@ public enum PacketType
     MISSILE_WARN    = 16,
     MOVE_ACK        = 17,
     MISSILE_MOVE    = 18,
-    GUN_FIRE        = 19,
-    GUN_HIT         = 20
+    GUN_FIRE           = 19,
+    GUN_HIT            = 20,
+    CREATE_ROOM        = 21,
+    CREATE_ROOM_RESULT = 22,
+    ENTER_ROOM_RESULT  = 23,
 }

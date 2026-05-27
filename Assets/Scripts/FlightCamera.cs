@@ -28,6 +28,14 @@ public class FlightCamera : MonoBehaviour
 
     float _shakeMag, _shakeTimer, _shakeDur;
 
+    // ── 지상 모드 ──────────────────────────────────────────────────────────
+    Transform _groundTarget;
+    float     _groundPitch = 10f;
+
+    [Header("Ground Camera")]
+    [SerializeField] Vector3 groundOffset = new Vector3(0f, 2.5f, -5f);
+    [SerializeField] float   groundSmooth = 8f;
+
     public void TriggerShake(float magnitude, float duration)
     {
         _shakeMag   = magnitude;
@@ -58,8 +66,29 @@ public class FlightCamera : MonoBehaviour
         }
     }
 
+    // ── 외부 API ────────────────────────────────────────────────────────────
+    public void SetGroundTarget(Transform t)
+    {
+        _groundTarget = t;
+        _groundPitch  = 10f;
+    }
+
+    public void SetFlightTarget(PlayerController pc)
+    {
+        _groundTarget  = null;
+        localPlayer    = pc;
+        localRenderers = pc.GetComponentsInChildren<Renderer>();
+    }
+
     void LateUpdate()
     {
+        // 지상 모드 우선 처리
+        if (_groundTarget != null)
+        {
+            UpdateGround();
+            return;
+        }
+
         if (localPlayer == null)
         {
             FindLocalPlayer();
@@ -96,6 +125,36 @@ public class FlightCamera : MonoBehaviour
             float decay = _shakeDur > 0f ? _shakeTimer / _shakeDur : 0f;
             transform.position += Random.insideUnitSphere * (_shakeMag * decay);
         }
+    }
+
+    // ── 지상 3인칭 카메라 ──────────────────────────────────────────────────
+    void UpdateGround()
+    {
+        if (_groundTarget == null) return;
+
+        // 마우스 Y → 카메라 피치 (캐릭터 X 회전과 독립)
+        _groundPitch -= Input.GetAxis("Mouse Y") * freeLookSensitivity;
+        _groundPitch  = Mathf.Clamp(_groundPitch, -15f, 55f);
+
+        float charYaw = _groundTarget.eulerAngles.y;
+        Quaternion camRot = Quaternion.Euler(_groundPitch, charYaw, 0f);
+
+        Vector3 targetPos = _groundTarget.position + camRot * groundOffset;
+
+        // 지형 관통 방지 (SphereCast)
+        Vector3 dir = targetPos - _groundTarget.position;
+        if (Physics.SphereCast(_groundTarget.position + Vector3.up * 1.5f,
+                               0.3f, dir.normalized, out RaycastHit hit, dir.magnitude))
+        {
+            targetPos = hit.point + hit.normal * 0.3f;
+        }
+
+        transform.position = Vector3.Lerp(transform.position, targetPos, groundSmooth * Time.deltaTime);
+
+        Vector3 lookAt = _groundTarget.position + Vector3.up * 1.2f;
+        transform.rotation = Quaternion.Slerp(transform.rotation,
+            Quaternion.LookRotation(lookAt - transform.position),
+            groundSmooth * Time.deltaTime);
     }
 
     void UpdateCockpit()

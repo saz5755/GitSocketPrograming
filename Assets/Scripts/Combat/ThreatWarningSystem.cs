@@ -3,7 +3,7 @@ using UnityEngine;
 
 public class ThreatWarningSystem : MonoBehaviour
 {
-    public enum ThreatLevel { None, Detected, Tracked, Locked, MissileFired }
+    public enum ThreatLevel { None, Detected, Tracked, Locked, MissileFired, MissileActive }
 
     public ThreatLevel Threat          { get; private set; }
     public float       ThreatBearing   { get; private set; }
@@ -15,6 +15,7 @@ public class ThreatWarningSystem : MonoBehaviour
     AudioSource      _audio;
     AudioClip        _lockBeep;
     AudioClip        _missileBeep;
+    AudioClip        _arhBeep;         // ARH 시커 활성 전용 경보음
     float            _scanTimer;
     float            _audioTimer;
     bool             _missileBeepToggle;
@@ -38,8 +39,9 @@ public class ThreatWarningSystem : MonoBehaviour
         _audio.priority     = 0;    // 가장 높은 우선순위
 
         // 절차적 경고음 생성 (오디오 파일 없이 코드로 직접 PCM 생성)
-        _lockBeep    = MakeBeep(880f,  0.08f);                 // 락온: 880 Hz 짧은 비프
+        _lockBeep    = MakeBeep(880f,  0.08f);                    // 락온: 880 Hz 짧은 비프
         _missileBeep = MakeDualBeep(1320f, 680f, 0.055f, 0.04f); // 미사일: 고저 교번 긴급음
+        _arhBeep     = MakeDualBeep(1760f, 1320f, 0.04f, 0.03f); // ARH 시커 활성: 고주파 연속음
     }
 
     void Start() => FindLocal();
@@ -118,7 +120,13 @@ public class ThreatWarningSystem : MonoBehaviour
         _audioTimer -= Time.deltaTime;
         if (_audioTimer > 0f) return;
 
-        if (MissileIncoming)
+        if (Threat >= ThreatLevel.MissileActive && MissileIncoming)
+        {
+            // ARH 시커 활성: 고주파 급속 경보 (0.10초 간격)
+            if (_arhBeep != null) _audio.PlayOneShot(_arhBeep, 1.0f);
+            _audioTimer = 0.10f;
+        }
+        else if (MissileIncoming)
         {
             // 고저 교번 긴급 경고음 (0.15초 간격으로 빠르게)
             if (_missileBeep != null) _audio.PlayOneShot(_missileBeep, 1.0f);

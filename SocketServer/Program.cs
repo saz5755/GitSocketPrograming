@@ -104,13 +104,13 @@ class Program
 
         try
         {
-            if (session.player?.room != null)
-                session.player.room.Leave(session.player);
-
+            // 세션 먼저 제거 — BroadcastRoomListToLobby가 이 세션에 전송하지 않도록
             SessionManager.Remove(session);
-
             session.stream?.Close();
             session.client?.Close();
+
+            if (session.player?.room != null)
+                session.player.room.Leave(session.player);
 
             Console.WriteLine($"[TCP] Disconnected: {session.player?.nickname}");
         }
