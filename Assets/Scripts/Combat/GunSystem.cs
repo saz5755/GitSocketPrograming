@@ -16,6 +16,9 @@ public class GunSystem : MonoBehaviour
     int              _ammo;
     float            _fireTimer;
 
+    public int Ammo    => _ammo;
+    public int MaxAmmo => maxAmmo;
+
     // ── 오디오 ────────────────────────────────────────────────────────────────
     AudioSource _gunSrc;
 

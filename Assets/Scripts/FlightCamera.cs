@@ -8,9 +8,9 @@ public class FlightCamera : MonoBehaviour
     [SerializeField] float chaseSmooth = 6f;
 
     [Header("Cockpit Camera")]
-    [SerializeField] Vector3 cockpitOffset    = new Vector3(0f, 0.52f, 2.45f);
+    [SerializeField] Vector3 cockpitOffset    = new Vector3(0f, 0.43f, 2.45f);
     [SerializeField] float   cockpitDownTilt  = 8f;    // 기본 하향 시선 각도 (도)
-    [SerializeField] float   cockpitFOV       = 80f;
+    [SerializeField] float   cockpitFOV       = 55f;
     [SerializeField] float   chaseFOV         = 60f;
 
     [Header("Free Look (우클릭 드래그)")]
@@ -25,6 +25,7 @@ public class FlightCamera : MonoBehaviour
     public bool IsCockpit => isCockpit;
     PlayerController localPlayer;
     CockpitBuilder   cockpitBuilder;
+    MFDController    mfdController;
 
     // KF-21 모델 오브젝트 이름으로 렌더러 분류
     // 코크핏 모드에서만 표시 (조종석 내부)
@@ -72,6 +73,7 @@ public class FlightCamera : MonoBehaviour
     void Awake()
     {
         cockpitBuilder = gameObject.AddComponent<CockpitBuilder>();
+        mfdController  = gameObject.AddComponent<MFDController>();
     }
 
     void Start()
@@ -94,6 +96,7 @@ public class FlightCamera : MonoBehaviour
 
     void BuildRendererLists(PlayerController pc)
     {
+        mfdController?.Initialize(pc);
         var all = pc.GetComponentsInChildren<Renderer>(true);
         var exterior  = new List<Renderer>();
         var interior  = new List<Renderer>();
@@ -267,6 +270,7 @@ public class FlightCamera : MonoBehaviour
 
         // 프로시저럴 코크핏 지오메트리는 비활성화 (실제 모델 사용)
         cockpitBuilder?.SetVisible(false);
+        mfdController?.SetVisible(cockpit);
     }
 
     // ── 캐노피 유리 재질 생성 ────────────────────────────────────────────────

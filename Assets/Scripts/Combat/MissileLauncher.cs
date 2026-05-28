@@ -104,7 +104,9 @@ public class MissileLauncher : MonoBehaviour
         foreach (var mc in MissileController.All)
         {
             if (mc.ShooterNick != myNick) continue;
-            var targetPc = mc.Target?.GetComponent<PlayerController>();
+            var targetT = mc.Target;
+            if (targetT == null) continue;  // 파괴된 오브젝트 안전 처리
+            var targetPc = targetT.GetComponent<PlayerController>();
             if (targetPc == null) continue;
             int warnLevel = mc.IsARHActive
                           ? (int)ThreatWarningSystem.ThreatLevel.MissileActive

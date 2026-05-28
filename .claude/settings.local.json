@@ -45,7 +45,8 @@
       "mcp__coplay-mcp__get_game_object_info",
       "Bash(Get-Content \"C:\\\\Unity\\\\GitSocketPrograming\\\\Assets\\\\Prefabs\\\\Player.prefab\")",
       "Bash(Select-Object -First 100)",
-      "mcp__coplay-mcp__capture_scene_object"
+      "mcp__coplay-mcp__capture_scene_object",
+      "mcp__coplay-mcp__play_game"
     ]
   }
 }

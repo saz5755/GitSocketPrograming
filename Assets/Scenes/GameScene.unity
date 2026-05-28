@@ -770,9 +770,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::FlightCamera
   chaseOffset: {x: 0, y: 3, z: -12}
   chaseSmooth: 6
-  cockpitOffset: {x: 0, y: 0.52, z: 2.45}
+  cockpitOffset: {x: 0, y: 0.42, z: 2.45}
   cockpitDownTilt: 8
-  cockpitFOV: 80
+  cockpitFOV: 55
   chaseFOV: 60
   freeLookSensitivity: 3
   freeLookReturnSpeed: 8
