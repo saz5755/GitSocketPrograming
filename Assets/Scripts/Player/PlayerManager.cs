@@ -5,6 +5,9 @@ public class PlayerManager : MonoBehaviour
 {
     public GameObject playerPrefab;
 
+    [Tooltip("지상 캐릭터용 FBX 프리팹 (Humanoid 리그). 비워두면 임시 프로시저럴 모델 사용.")]
+    [SerializeField] GameObject groundCharPrefab;
+
     readonly Dictionary<string, PlayerController>  players        = new();
     readonly Dictionary<string, RemoteMissileView> remoteMissiles = new();
 
@@ -200,19 +203,37 @@ public class PlayerManager : MonoBehaviour
         GameModeManager.Instance.Init(gc, pc, spawnPos);
     }
 
-    static GameObject BuildCharacterObject()
+    GameObject BuildCharacterObject()
     {
+        // ── FBX 프리팹이 연결된 경우: Instantiate 후 필수 컴포넌트만 보완 ──
+        if (groundCharPrefab != null)
+        {
+            var go = Instantiate(groundCharPrefab);
+            go.name = "LocalGroundCharacter";
+
+            if (go.GetComponent<CharacterController>() == null)
+            {
+                var cc = go.AddComponent<CharacterController>();
+                cc.height = 1.8f; cc.radius = 0.3f;
+                cc.center = new Vector3(0f, 0.9f, 0f);
+            }
+            if (go.GetComponent<GroundController>() == null)
+                go.AddComponent<GroundController>();
+
+            return go;
+        }
+
+        // ── 임시 프로시저럴 모델 (FBX 교체 전까지) ──────────────────────────
         var root = new GameObject("LocalGroundCharacter");
 
-        // CharacterController를 GroundController보다 먼저 추가
-        var cc = root.AddComponent<CharacterController>();
-        cc.height = 1.8f;
-        cc.radius = 0.3f;
-        cc.center = new Vector3(0f, 0.9f, 0f);
+        var rootCc = root.AddComponent<CharacterController>();
+        rootCc.height = 1.8f;
+        rootCc.radius = 0.3f;
+        rootCc.center = new Vector3(0f, 0.9f, 0f);
 
-        // 인간형 파일럿 모델 (URP 셰이더 자동 선택)
         root.AddComponent<CharacterModelBuilder>();
         root.AddComponent<GroundController>();
+        root.AddComponent<ProceduralCharacterAnimator>();
 
         return root;
     }

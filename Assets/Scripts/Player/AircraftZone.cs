@@ -18,10 +18,13 @@ public class AircraftZone : MonoBehaviour
     bool     _inRange;
 
     // 반투명 색상 (alpha로 불투명도 제어)
-    static readonly Color ColTakeoffIdle = new Color(0.00f, 0.90f, 0.50f, 0.20f);
-    static readonly Color ColTakeoffOn   = new Color(0.00f, 1.00f, 0.55f, 0.45f);
-    static readonly Color ColLandIdle    = new Color(1.00f, 0.75f, 0.00f, 0.22f);
-    static readonly Color ColLandOn      = new Color(1.00f, 0.85f, 0.00f, 0.50f);
+    static readonly Color ColTakeoffIdle = new Color(0.00f, 0.80f, 1.00f, 0.60f); // Cyan/Blue for Takeoff
+    static readonly Color ColTakeoffOn   = new Color(0.00f, 1.00f, 0.80f, 1.00f);
+    static readonly Color ColLandIdle    = new Color(1.00f, 0.60f, 0.00f, 0.60f); // Orange/Gold for Landing
+    static readonly Color ColLandOn      = new Color(1.00f, 0.80f, 0.00f, 1.00f);
+
+    ParticleSystem _portalParticles;
+    Light _portalLight;
 
     /// <summary>AddComponent() 직후 반드시 호출.</summary>
     public void Configure(Type zoneType, float radius)
@@ -33,6 +36,7 @@ public class AircraftZone : MonoBehaviour
     void Start()
     {
         BuildDisc();
+        BuildParticles();
         BuildWorldLabel();
     }
 
@@ -50,14 +54,32 @@ public class AircraftZone : MonoBehaviour
             else          gm.NotifyZoneExit(this);
         }
 
-        // 디스크 색 갱신
+        // 디스크 색 및 파티클 갱신
         if (_discRenderer != null)
         {
             bool land = _zoneType == Type.Landing;
-            Color c = _inRange
+            Color targetColor = _inRange
                 ? (land ? ColLandOn  : ColTakeoffOn)
                 : (land ? ColLandIdle : ColTakeoffIdle);
-            _discRenderer.material.color = c;
+            
+            // 부드러운 색상 전환
+            Color currentColor = _discRenderer.material.GetColor("_Color");
+            Color newColor = Color.Lerp(currentColor, targetColor, Time.deltaTime * 5f);
+            _discRenderer.material.SetColor("_Color", newColor);
+
+            if (_portalLight != null)
+            {
+                _portalLight.color = newColor;
+                _portalLight.intensity = Mathf.Lerp(_portalLight.intensity, _inRange ? 8f : 3f, Time.deltaTime * 5f);
+            }
+
+            if (_portalParticles != null)
+            {
+                var main = _portalParticles.main;
+                main.startColor = newColor;
+                var em = _portalParticles.emission;
+                em.rateOverTime = _inRange ? 100f : 30f;
+            }
         }
     }
 
@@ -75,20 +97,88 @@ public class AircraftZone : MonoBehaviour
     // ── 디스크 비주얼 ────────────────────────────────────────────────────────
     void BuildDisc()
     {
-        var disc = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-        disc.name = "ZoneDisc";
+        var disc = GameObject.CreatePrimitive(PrimitiveType.Quad);
+        disc.name = "PortalDisc";
         Destroy(disc.GetComponent<Collider>());
         disc.transform.SetParent(transform, false);
-        disc.transform.localScale    = new Vector3(_radius * 2f, 0.04f, _radius * 2f);
-        disc.transform.localPosition = Vector3.zero;
+        disc.transform.localScale    = new Vector3(_radius * 2f, _radius * 2f, 1f);
+        disc.transform.localPosition = new Vector3(0f, 0.1f, 0f); // 약간 띄움
+        disc.transform.localRotation = Quaternion.Euler(90f, 0f, 0f); // 바닥에 눕힘
 
         Color baseColor = _zoneType == Type.Takeoff ? ColTakeoffIdle : ColLandIdle;
-        var mat = MakeTransparentMaterial(baseColor);
+        
+        Shader portalShader = Shader.Find("Custom/PortalZone");
+        Material mat;
+        if (portalShader != null)
+        {
+            mat = new Material(portalShader);
+            mat.SetColor("_Color", baseColor);
+            mat.SetFloat("_Speed", 0.5f);
+            mat.SetFloat("_RingWidth", 0.15f);
+            mat.SetFloat("_Glow", 2.5f);
+        }
+        else
+        {
+            mat = MakeTransparentMaterial(baseColor);
+        }
 
         _discRenderer = disc.GetComponent<Renderer>();
         _discRenderer.material = mat;
         _discRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         _discRenderer.receiveShadows    = false;
+
+        // 조명 추가
+        _portalLight = disc.AddComponent<Light>();
+        _portalLight.type = LightType.Point;
+        _portalLight.color = baseColor;
+        _portalLight.intensity = 3f;
+        _portalLight.range = _radius * 1.5f;
+    }
+
+    void BuildParticles()
+    {
+        var pObj = new GameObject("PortalParticles");
+        pObj.transform.SetParent(transform, false);
+        pObj.transform.localPosition = Vector3.zero;
+        pObj.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f);
+
+        _portalParticles = pObj.AddComponent<ParticleSystem>();
+        var main = _portalParticles.main;
+        main.duration = 1f;
+        main.loop = true;
+        main.startLifetime = new ParticleSystem.MinMaxCurve(1.5f, 3.0f);
+        main.startSpeed = new ParticleSystem.MinMaxCurve(2f, 6f);
+        main.startSize = new ParticleSystem.MinMaxCurve(0.2f, 0.8f);
+        main.startColor = _zoneType == Type.Takeoff ? ColTakeoffIdle : ColLandIdle;
+        main.simulationSpace = ParticleSystemSimulationSpace.World;
+        main.playOnAwake = true;
+
+        var em = _portalParticles.emission;
+        em.rateOverTime = 30f;
+
+        var shape = _portalParticles.shape;
+        shape.shapeType = ParticleSystemShapeType.Circle;
+        shape.radius = _radius * 0.9f;
+        shape.arc = 360f;
+
+        var col = _portalParticles.colorOverLifetime;
+        col.enabled = true;
+        Gradient grad = new Gradient();
+        grad.SetKeys(
+            new GradientColorKey[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(Color.white, 1f) },
+            new GradientAlphaKey[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(1f, 0.2f), new GradientAlphaKey(0f, 1f) }
+        );
+        col.color = grad;
+
+        var size = _portalParticles.sizeOverLifetime;
+        size.enabled = true;
+        size.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(new Keyframe(0, 1f), new Keyframe(1, 0f)));
+
+        var rend = _portalParticles.GetComponent<ParticleSystemRenderer>();
+        rend.material = new Material(Shader.Find("Mobile/Particles/Additive"));
+        rend.renderMode = ParticleSystemRenderMode.Stretch;
+        rend.lengthScale = 2f;
+        rend.velocityScale = 0.1f;
     }
 
     // ── 월드 라벨 (Billboard) ────────────────────────────────────────────────
@@ -96,8 +186,8 @@ public class AircraftZone : MonoBehaviour
     {
         string label = _zoneType == Type.Takeoff ? "TAKEOFF ZONE" : "LANDING ZONE";
         Color  col   = _zoneType == Type.Takeoff
-            ? new Color(0.0f, 1.0f, 0.5f,  1f)
-            : new Color(1.0f, 0.85f, 0.0f, 1f);
+            ? new Color(0.0f, 0.8f, 1.0f, 1f)
+            : new Color(1.0f, 0.8f, 0.0f, 1f);
 
         var go = new GameObject("ZoneLabel");
         go.transform.SetParent(transform, false);

@@ -771,7 +771,12 @@ MonoBehaviour:
   chaseOffset: {x: 0, y: 3, z: -12}
   chaseSmooth: 6
   cockpitOffset: {x: 0, y: 0.26, z: 0.8}
+  freeLookSensitivity: 3
+  freeLookReturnSpeed: 8
+  freeLookMaxPitch: 80
   toggleKey: 99
+  groundOffset: {x: 0, y: 2.5, z: -5}
+  groundSmooth: 8
 --- !u!1 &362666339
 GameObject:
   m_ObjectHideFlags: 0
@@ -2878,6 +2883,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerManager
   playerPrefab: {fileID: 6036812862657962760, guid: 7cccd4623a96e8646b2aed594e1dd140, type: 3}
+  groundCharPrefab: {fileID: 3244104646821017810, guid: a62eae782ab97884c9a5808e2be7fffb, type: 3}
 --- !u!1 &1348282236
 GameObject:
   m_ObjectHideFlags: 0

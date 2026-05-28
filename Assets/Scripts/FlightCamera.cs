@@ -29,8 +29,9 @@ public class FlightCamera : MonoBehaviour
     float _shakeMag, _shakeTimer, _shakeDur;
 
     // ── 지상 모드 ──────────────────────────────────────────────────────────
-    Transform _groundTarget;
-    float     _groundPitch = 10f;
+    Transform        _groundTarget;
+    GroundController _groundController;
+    float            _groundPitch = 10f;
 
     [Header("Ground Camera")]
     [SerializeField] Vector3 groundOffset = new Vector3(0f, 2.5f, -5f);
@@ -69,8 +70,9 @@ public class FlightCamera : MonoBehaviour
     // ── 외부 API ────────────────────────────────────────────────────────────
     public void SetGroundTarget(Transform t)
     {
-        _groundTarget = t;
-        _groundPitch  = 10f;
+        _groundTarget     = t;
+        _groundController = t != null ? t.GetComponent<GroundController>() : null;
+        _groundPitch      = 10f;
     }
 
     public void SetFlightTarget(PlayerController pc)
@@ -132,12 +134,15 @@ public class FlightCamera : MonoBehaviour
     {
         if (_groundTarget == null) return;
 
-        // 마우스 Y → 카메라 피치 (캐릭터 X 회전과 독립)
+        // 마우스 Y → 카메라 피치 (캐릭터 회전과 독립)
         _groundPitch -= Input.GetAxis("Mouse Y") * freeLookSensitivity;
         _groundPitch  = Mathf.Clamp(_groundPitch, -15f, 55f);
 
-        float charYaw = _groundTarget.eulerAngles.y;
-        Quaternion camRot = Quaternion.Euler(_groundPitch, charYaw, 0f);
+        // 카메라 수평은 GroundController.CameraYaw 사용 (캐릭터 facing과 분리)
+        float cameraYaw = _groundController != null
+            ? _groundController.CameraYaw
+            : _groundTarget.eulerAngles.y;
+        Quaternion camRot = Quaternion.Euler(_groundPitch, cameraYaw, 0f);
 
         Vector3 targetPos = _groundTarget.position + camRot * groundOffset;
 

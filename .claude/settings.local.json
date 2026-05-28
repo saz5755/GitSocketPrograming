@@ -32,7 +32,13 @@
       "Bash(Select-Object FullName)",
       "Bash(Sort-Object FullName)",
       "Bash(Get-ChildItem -Path \"C:\\\\Unity\\\\GitSocketPrograming\\\\Assets\" -Directory)",
-      "Bash(Select-Object Name)"
+      "Bash(Select-Object Name)",
+      "Bash(Remove-Item \"C:\\\\Unity\\\\GitSocketPrograming\\\\Assets\\\\Scripts\\\\Player\\\\GroundCharacterAnimator.cs\" -Force)",
+      "Bash(Remove-Item \"C:\\\\Unity\\\\GitSocketPrograming\\\\Assets\\\\Scripts\\\\Player\\\\GroundCharacterAnimator.cs.meta\" -Force -ErrorAction SilentlyContinue)",
+      "mcp__coplay-mcp__list_files",
+      "mcp__coplay-mcp__get_unity_editor_state",
+      "mcp__coplay-mcp__execute_script",
+      "mcp__coplay-mcp__get_unity_logs"
     ]
   }
 }

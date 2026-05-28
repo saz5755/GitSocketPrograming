@@ -45,6 +45,9 @@ public class CountermeasureSystem : MonoBehaviour
     void Update()
     {
         if (_local == null) { FindLocal(); return; }
+        // 비행 모드에서만 대응책 사용 가능 — 탑승 F키와 겹침 방지
+        if (GameModeManager.Instance != null && !GameModeManager.Instance.IsFlying) return;
+
         if (_flareCd > 0f) _flareCd -= Time.deltaTime;
         if (_chaffCd > 0f) _chaffCd -= Time.deltaTime;
 
