@@ -726,8 +726,16 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::FlightCamera
   chaseOffset: {x: 0, y: 3, z: -12}
   chaseSmooth: 6
-  cockpitOffset: {x: 0, y: 0.26, z: 0.8}
+  cockpitOffset: {x: 0, y: 0.52, z: 2.45}
+  cockpitDownTilt: 8
+  cockpitFOV: 80
+  chaseFOV: 60
+  freeLookSensitivity: 3
+  freeLookReturnSpeed: 8
+  freeLookMaxPitch: 80
   toggleKey: 99
+  groundOffset: {x: 0, y: 2.5, z: -5}
+  groundSmooth: 8
 --- !u!1 &362666339
 GameObject:
   m_ObjectHideFlags: 0
@@ -1642,12 +1650,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SocketClient
   myNickname: 
-  uiManager: {fileID: 1751369057}
-  playerManager: {fileID: 1303891300}
   connectIP: 172.30.201.117
   tcpPort: 5000
   udpPort: 6000
-  defaultRoomId: 1
 --- !u!1 &750575245
 GameObject:
   m_ObjectHideFlags: 0
@@ -2837,6 +2842,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerManager
   playerPrefab: {fileID: 6036812862657962760, guid: 7cccd4623a96e8646b2aed594e1dd140, type: 3}
+  groundCharPrefab: {fileID: 0}
 --- !u!1 &1348282236
 GameObject:
   m_ObjectHideFlags: 0
@@ -3679,12 +3685,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ChatUIManager
   chatLogText: {fileID: 1750536336}
-  socketClient: {fileID: 620986011}
   inputField: {fileID: 825083532}
   sendButton: {fileID: 469277522}
-  idInputField: {fileID: 1420406446}
-  pwInputField: {fileID: 362666341}
-  loginButton: {fileID: 781017256}
 --- !u!1 &1768425550
 GameObject:
   m_ObjectHideFlags: 0

@@ -54,10 +54,10 @@ public class RadarMiniMap : MonoBehaviour
 
     void FindRefs()
     {
-        foreach (var pc in FindObjectsOfType<PlayerController>())
-            if (pc.isLocalPlayer) { _local = pc; break; }
-        if (_local != null)
-            _targeting = FindObjectOfType<TargetingSystem>();
+        foreach (var pc in PlayerController.All)
+            if (pc != null && pc.isLocalPlayer) { _local = pc; break; }
+        if (_local != null && TargetingSystem.All.Count > 0)
+            _targeting = TargetingSystem.All[0];
     }
 
     void Update()
@@ -212,9 +212,9 @@ public class RadarMiniMap : MonoBehaviour
         string targetNick = _targeting?.Target?.nickname ?? "";
         var seen = new HashSet<string>();
 
-        foreach (var pc in FindObjectsOfType<PlayerController>())
+        foreach (var pc in PlayerController.All)
         {
-            if (pc.isLocalPlayer) continue;
+            if (pc == null || pc.isLocalPlayer) continue;
             string nick = pc.nickname;
             seen.Add(nick);
 

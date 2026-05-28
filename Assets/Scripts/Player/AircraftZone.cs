@@ -7,21 +7,26 @@ using UnityEngine.UI;
 /// </summary>
 public class AircraftZone : MonoBehaviour
 {
-    public enum Type { Takeoff, Landing }
+    public enum Type { Takeoff, Landing, Carrier }
 
-    Type  _zoneType = Type.Takeoff;
-    float _radius   = 12f;
+    Type  _zoneType  = Type.Takeoff;
+    float _radius    = 12f;
+    float _radiusSq  = 144f;
 
     public Type ZoneType => _zoneType;
 
     Renderer _discRenderer;
+    Material _discMaterial;
     bool     _inRange;
+    Color    _lastAppliedColor = Color.clear;
 
     // 반투명 색상 (alpha로 불투명도 제어)
-    static readonly Color ColTakeoffIdle = new Color(0.00f, 0.80f, 1.00f, 0.60f); // Cyan/Blue for Takeoff
-    static readonly Color ColTakeoffOn   = new Color(0.00f, 1.00f, 0.80f, 1.00f);
-    static readonly Color ColLandIdle    = new Color(1.00f, 0.60f, 0.00f, 0.60f); // Orange/Gold for Landing
-    static readonly Color ColLandOn      = new Color(1.00f, 0.80f, 0.00f, 1.00f);
+    static readonly Color ColTakeoffIdle  = new Color(0.00f, 0.80f, 1.00f, 0.60f); // Cyan/Blue for Takeoff
+    static readonly Color ColTakeoffOn    = new Color(0.00f, 1.00f, 0.80f, 1.00f);
+    static readonly Color ColLandIdle     = new Color(1.00f, 0.60f, 0.00f, 0.60f); // Orange/Gold for Landing
+    static readonly Color ColLandOn       = new Color(1.00f, 0.80f, 0.00f, 1.00f);
+    static readonly Color ColCarrierIdle  = new Color(0.80f, 0.20f, 1.00f, 0.60f); // Purple for Carrier
+    static readonly Color ColCarrierOn    = new Color(1.00f, 0.40f, 1.00f, 1.00f);
 
     ParticleSystem _portalParticles;
     Light _portalLight;
@@ -31,6 +36,7 @@ public class AircraftZone : MonoBehaviour
     {
         _zoneType = zoneType;
         _radius   = radius;
+        _radiusSq = radius * radius;
     }
 
     void Start()
@@ -55,28 +61,40 @@ public class AircraftZone : MonoBehaviour
         }
 
         // 디스크 색 및 파티클 갱신
-        if (_discRenderer != null)
+        if (_discMaterial != null)
         {
-            bool land = _zoneType == Type.Landing;
-            Color targetColor = _inRange
-                ? (land ? ColLandOn  : ColTakeoffOn)
-                : (land ? ColLandIdle : ColTakeoffIdle);
-            
-            // 부드러운 색상 전환
-            Color currentColor = _discRenderer.material.GetColor("_Color");
+            Color targetColor = _zoneType switch
+            {
+                Type.Landing => _inRange ? ColLandOn    : ColLandIdle,
+                Type.Carrier => _inRange ? ColCarrierOn : ColCarrierIdle,
+                _            => _inRange ? ColTakeoffOn : ColTakeoffIdle,
+            };
+
+            Color currentColor = _lastAppliedColor == Color.clear
+                ? _discMaterial.GetColor("_Color")
+                : _lastAppliedColor;
             Color newColor = Color.Lerp(currentColor, targetColor, Time.deltaTime * 5f);
-            _discRenderer.material.SetColor("_Color", newColor);
+
+            if (newColor != _lastAppliedColor)
+            {
+                _discMaterial.SetColor("_Color", newColor);
+                _lastAppliedColor = newColor;
+
+                if (_portalLight != null)
+                    _portalLight.color = newColor;
+
+                if (_portalParticles != null)
+                {
+                    var main = _portalParticles.main;
+                    main.startColor = newColor;
+                }
+            }
 
             if (_portalLight != null)
-            {
-                _portalLight.color = newColor;
                 _portalLight.intensity = Mathf.Lerp(_portalLight.intensity, _inRange ? 8f : 3f, Time.deltaTime * 5f);
-            }
 
             if (_portalParticles != null)
             {
-                var main = _portalParticles.main;
-                main.startColor = newColor;
                 var em = _portalParticles.emission;
                 em.rateOverTime = _inRange ? 100f : 30f;
             }
@@ -86,10 +104,10 @@ public class AircraftZone : MonoBehaviour
     bool CheckInRange(GameModeManager gm)
     {
         if (_zoneType == Type.Takeoff && !gm.IsFlying && gm.GroundCharacter != null)
-            return Vector3.Distance(gm.GroundCharacter.position, transform.position) <= _radius;
+            return (gm.GroundCharacter.position - transform.position).sqrMagnitude <= _radiusSq;
 
-        if (_zoneType == Type.Landing && gm.IsFlying && gm.LocalAircraft != null)
-            return Vector3.Distance(gm.LocalAircraft.position, transform.position) <= _radius;
+        if ((_zoneType == Type.Landing || _zoneType == Type.Carrier) && gm.IsFlying && gm.LocalAircraft != null)
+            return (gm.LocalAircraft.position - transform.position).sqrMagnitude <= _radiusSq;
 
         return false;
     }
@@ -126,6 +144,7 @@ public class AircraftZone : MonoBehaviour
         _discRenderer.material = mat;
         _discRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         _discRenderer.receiveShadows    = false;
+        _discMaterial = _discRenderer.material;
 
         // 조명 추가
         _portalLight = disc.AddComponent<Light>();
@@ -184,10 +203,18 @@ public class AircraftZone : MonoBehaviour
     // ── 월드 라벨 (Billboard) ────────────────────────────────────────────────
     void BuildWorldLabel()
     {
-        string label = _zoneType == Type.Takeoff ? "TAKEOFF ZONE" : "LANDING ZONE";
-        Color  col   = _zoneType == Type.Takeoff
-            ? new Color(0.0f, 0.8f, 1.0f, 1f)
-            : new Color(1.0f, 0.8f, 0.0f, 1f);
+        string label = _zoneType switch
+        {
+            Type.Landing => "LANDING ZONE",
+            Type.Carrier => "CARRIER ZONE",
+            _            => "TAKEOFF ZONE",
+        };
+        Color col = _zoneType switch
+        {
+            Type.Landing => new Color(1.0f, 0.8f, 0.0f, 1f),
+            Type.Carrier => new Color(0.8f, 0.2f, 1.0f, 1f),
+            _            => new Color(0.0f, 0.8f, 1.0f, 1f),
+        };
 
         var go = new GameObject("ZoneLabel");
         go.transform.SetParent(transform, false);

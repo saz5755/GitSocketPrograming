@@ -38,7 +38,14 @@
       "mcp__coplay-mcp__list_files",
       "mcp__coplay-mcp__get_unity_editor_state",
       "mcp__coplay-mcp__execute_script",
-      "mcp__coplay-mcp__get_unity_logs"
+      "mcp__coplay-mcp__get_unity_logs",
+      "Bash(Get-ChildItem -Path \"C:\\\\Unity\\\\GitSocketPrograming\" -Directory)",
+      "mcp__coplay-mcp__list_game_objects_in_hierarchy",
+      "mcp__coplay-mcp__open_scene",
+      "mcp__coplay-mcp__get_game_object_info",
+      "Bash(Get-Content \"C:\\\\Unity\\\\GitSocketPrograming\\\\Assets\\\\Prefabs\\\\Player.prefab\")",
+      "Bash(Select-Object -First 100)",
+      "mcp__coplay-mcp__capture_scene_object"
     ]
   }
 }

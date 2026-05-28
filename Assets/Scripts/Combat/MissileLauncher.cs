@@ -101,7 +101,7 @@ public class MissileLauncher : MonoBehaviour
             sc.SendMissileWarn(myNick, targetNick, lockLevel);
 
         // 발사된 미사일 추적 경고 — ARH 활성 시 MissileActive(5), 중간유도 중 MissileFired(4)
-        foreach (var mc in FindObjectsOfType<MissileController>())
+        foreach (var mc in MissileController.All)
         {
             if (mc.ShooterNick != myNick) continue;
             var targetPc = mc.Target?.GetComponent<PlayerController>();

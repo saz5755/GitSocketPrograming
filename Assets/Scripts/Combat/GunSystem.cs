@@ -74,8 +74,8 @@ public class GunSystem : MonoBehaviour
     {
         if (_local == null)
         {
-            foreach (var pc in FindObjectsOfType<PlayerController>())
-                if (pc.isLocalPlayer) { _local = pc; break; }
+            foreach (var pc in PlayerController.All)
+                if (pc != null && pc.isLocalPlayer) { _local = pc; break; }
             if (_local == null) return;
         }
 
@@ -185,13 +185,14 @@ public class GunSystem : MonoBehaviour
 
     PlayerController FindClosestEnemy()
     {
-        float minDist = 4000f;
+        float minDistSq = 4000f * 4000f;
         PlayerController best = null;
-        foreach (var pc in FindObjectsOfType<PlayerController>())
+        Vector3 myPos = _local.transform.position;
+        foreach (var pc in PlayerController.All)
         {
-            if (pc == _local || pc.isLocalPlayer) continue;
-            float d = Vector3.Distance(_local.transform.position, pc.transform.position);
-            if (d < minDist) { minDist = d; best = pc; }
+            if (pc == null || pc == _local || pc.isLocalPlayer) continue;
+            float dSq = (myPos - pc.transform.position).sqrMagnitude;
+            if (dSq < minDistSq) { minDistSq = dSq; best = pc; }
         }
         return best;
     }

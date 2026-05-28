@@ -48,8 +48,8 @@ public class ThreatWarningSystem : MonoBehaviour
 
     void FindLocal()
     {
-        foreach (var pc in FindObjectsOfType<PlayerController>())
-            if (pc.isLocalPlayer) { _local = pc; break; }
+        foreach (var pc in PlayerController.All)
+            if (pc != null && pc.isLocalPlayer) { _local = pc; break; }
     }
 
     void Update()
@@ -70,7 +70,7 @@ public class ThreatWarningSystem : MonoBehaviour
         float       minDist = float.MaxValue;
 
         // 인입 미사일 탐지 (로컬 씬의 MissileController – 발사자 클라이언트에서 실행 중)
-        foreach (var mc in FindObjectsOfType<MissileController>())
+        foreach (var mc in MissileController.All)
         {
             if (mc.Target != _local.transform) continue;
             missile = true;
@@ -94,7 +94,7 @@ public class ThreatWarningSystem : MonoBehaviour
         // 로컬 타겟팅 시스템 락온 경고 (미사일이 없을 때)
         if (!missile)
         {
-            foreach (var ts in FindObjectsOfType<TargetingSystem>())
+            foreach (var ts in TargetingSystem.All)
             {
                 if (ts.LocalPlayer == _local || ts.Target != _local) continue;
                 ThreatLevel lv = ts.State == TargetingSystem.LockState.Locked    ? ThreatLevel.Locked

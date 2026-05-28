@@ -40,7 +40,9 @@ public class GameModeManager : MonoBehaviour
     }
 
     // ── 초기화 ──────────────────────────────────────────────────────────────
-    public void Init(GroundController gc, PlayerController pc, Vector3 aircraftSpawnPos)
+    // groundPos: Zone과 동일한 지면 스냅 좌표. 생략 시 aircraftSpawnPos에서 계산.
+    public void Init(GroundController gc, PlayerController pc,
+                     Vector3 aircraftSpawnPos, Vector3 groundPos = default)
     {
         _gc = gc;
         _pc = pc;
@@ -50,8 +52,19 @@ public class GameModeManager : MonoBehaviour
 
         BuildPromptUI();
 
-        // 초기 상태: 지상 모드
-        ApplyGroundMode(aircraftSpawnPos + new Vector3(0f, 0.05f, -12f), 0f);
+        // groundPos 미지정 시 spawnPos XZ에서 지형 스냅
+        if (groundPos == default)
+        {
+            Vector3 origin = aircraftSpawnPos + Vector3.up * 500f;
+            groundPos = Physics.Raycast(origin, Vector3.down, out RaycastHit hit, 1000f,
+                                        Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore)
+                        ? hit.point
+                        : new Vector3(aircraftSpawnPos.x, 0f, aircraftSpawnPos.z);
+        }
+
+        // 지상 캐릭터 시작 위치: Zone 12m 뒤, 지면 위 5cm
+        Vector3 charStart = new Vector3(groundPos.x, groundPos.y + 0.05f, groundPos.z - 12f);
+        ApplyGroundMode(charStart, 0f);
     }
 
     // ── 존 알림 ─────────────────────────────────────────────────────────────
@@ -66,17 +79,23 @@ public class GameModeManager : MonoBehaviour
     {
         if (_activeZone == null) { ShowPrompt(false); return; }
 
-        bool canBoard = !IsFlying && _activeZone.ZoneType == AircraftZone.Type.Takeoff;
-        bool canExit  =  IsFlying && _activeZone.ZoneType == AircraftZone.Type.Landing;
+        bool canBoard   = !IsFlying && _activeZone.ZoneType == AircraftZone.Type.Takeoff;
+        bool canExit    =  IsFlying && _activeZone.ZoneType == AircraftZone.Type.Landing;
+        // Carrier: 비행 중 항모 갑판에 착함 (항모 이동 시 transform 기준 위치 전달)
+        bool canCarrier =  IsFlying && _activeZone.ZoneType == AircraftZone.Type.Carrier;
 
-        if (!canBoard && !canExit) { ShowPrompt(false); return; }
+        if (!canBoard && !canExit && !canCarrier) { ShowPrompt(false); return; }
 
-        ShowPrompt(true, canBoard ? "[F]  BOARD AIRCRAFT" : "[F]  EXIT AIRCRAFT");
+        string prompt = canBoard   ? "[F]  BOARD AIRCRAFT"
+                      : canCarrier ? "[F]  LAND ON CARRIER"
+                      :              "[F]  EXIT AIRCRAFT";
+        ShowPrompt(true, prompt);
 
         if (Input.GetKeyDown(KeyCode.F))
         {
-            if (canBoard) EnterFlight(_activeZone.transform.position);
-            else          ExitFlight(_activeZone.transform.position);
+            if (canBoard)        EnterFlight(_activeZone.transform.position);
+            else if (canCarrier) ExitFlight(_activeZone.transform.position, _activeZone.transform);
+            else                 ExitFlight(_activeZone.transform.position);
         }
     }
 
@@ -105,7 +124,8 @@ public class GameModeManager : MonoBehaviour
     }
 
     // ── 지상 모드 복귀 ───────────────────────────────────────────────────────
-    public void ExitFlight(Vector3 landingPos)
+    // platform: 항모 등 이동 플랫폼의 Transform. 지정 시 캐릭터를 플랫폼 자식으로 배치.
+    public void ExitFlight(Vector3 landingPos, Transform platform = null)
     {
         if (!IsFlying || _gc == null || _pc == null) return;
         IsFlying = false;
@@ -116,9 +136,13 @@ public class GameModeManager : MonoBehaviour
         _pc.enabled = false;
 
         // 캐릭터를 착륙 위치에 배치
-        _gc.transform.SetPositionAndRotation(
-            landingPos + new Vector3(0f, 0.05f, 0f),
-            Quaternion.Euler(0f, yaw, 0f));
+        Vector3 spawnPos = landingPos + new Vector3(0f, 0.05f, 0f);
+        if (platform != null)
+        {
+            // 항모 갑판 위 착함: 캐릭터를 항모 좌표계 기준으로 부착
+            _gc.transform.SetParent(platform, true);
+        }
+        _gc.transform.SetPositionAndRotation(spawnPos, Quaternion.Euler(0f, yaw, 0f));
         _gc.InitYaw(yaw);
         SetCharRenderers(true);
         _gc.enabled = true;
@@ -130,7 +154,7 @@ public class GameModeManager : MonoBehaviour
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible   = false;
 
-        Debug.Log("[GameMode] → Ground Mode");
+        Debug.Log(platform != null ? $"[GameMode] → Carrier Mode ({platform.name})" : "[GameMode] → Ground Mode");
     }
 
     // ── 내부 헬퍼 ────────────────────────────────────────────────────────────

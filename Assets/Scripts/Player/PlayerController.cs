@@ -3,6 +3,8 @@ using UnityEngine;
 
 public class PlayerController : MonoBehaviour
 {
+    public static readonly List<PlayerController> All = new List<PlayerController>(16);
+
     public string nickname;
     public bool   isLocalPlayer;
     public int    lastReceivedTick;
@@ -41,6 +43,7 @@ public class PlayerController : MonoBehaviour
     void Awake()
     {
         anim = GetComponent<Animator>();
+        All.Add(this);
     }
 
     void OnEnable()
@@ -48,7 +51,6 @@ public class PlayerController : MonoBehaviour
         if (!isLocalPlayer) return;
         var sc = NetworkManager.Instance?.socketClient;
         if (sc != null) sc.OnMoveAck += HandleMoveAck;
-        // 활성화 시 커서 잠금
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible   = false;
     }
@@ -62,6 +64,7 @@ public class PlayerController : MonoBehaviour
 
     void OnDestroy()
     {
+        All.Remove(this);
         if (!isLocalPlayer) return;
         var sc = NetworkManager.Instance?.socketClient;
         if (sc != null) sc.OnMoveAck -= HandleMoveAck;

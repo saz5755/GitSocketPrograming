@@ -34,14 +34,14 @@ public class F35VFXController : MonoBehaviour
         {
             GameObject lw = new GameObject("LeftWingtip");
             lw.transform.SetParent(transform);
-            lw.transform.localPosition = new Vector3(-4.5f, 0f, -1.5f);
+            lw.transform.localPosition = new Vector3(-2.8f, 0f, -1.0f);
             leftWingtip = lw.transform;
         }
         if (rightWingtip == null)
         {
             GameObject rw = new GameObject("RightWingtip");
             rw.transform.SetParent(transform);
-            rw.transform.localPosition = new Vector3(4.5f, 0f, -1.5f);
+            rw.transform.localPosition = new Vector3(2.8f, 0f, -1.0f);
             rightWingtip = rw.transform;
         }
 
@@ -77,7 +77,7 @@ public class F35VFXController : MonoBehaviour
         {
             GameObject nozzle = new GameObject("EngineNozzle");
             nozzle.transform.SetParent(transform);
-            nozzle.transform.localPosition = new Vector3(0f, 0f, -4.5f);
+            nozzle.transform.localPosition = new Vector3(0f, 0f, -4.0f);
             engineNozzle = nozzle.transform;
         }
 

@@ -79,6 +79,10 @@ public class FlightHUD : MonoBehaviour
     float smoothG = 1f, missionTime = 0f, fuelLevel = 100f;
     const float FUEL_RATE = 1.8f;
 
+    float   _raltTimer;
+    string  _raltCache = "RALT ---";
+    const float RALT_INTERVAL = 0.1f;
+
     void Start()
     {
         CountermeasureSystem.OnDeploy += OnCMSDeploy;
@@ -110,18 +114,20 @@ public class FlightHUD : MonoBehaviour
 
     void FindRefs()
     {
-        foreach (var pc in FindObjectsOfType<PlayerController>())
-            if (pc.isLocalPlayer) { localPlayer = pc; break; }
+        foreach (var pc in PlayerController.All)
+            if (pc != null && pc.isLocalPlayer) { localPlayer = pc; break; }
         flightCamera = FindObjectOfType<FlightCamera>();
     }
 
     void Update()
     {
         if (localPlayer == null || flightCamera == null) { FindRefs(); return; }
+        if (GameModeManager.Instance == null || !GameModeManager.Instance.IsFlying) return;
+
         bool cockpit = flightCamera.IsCockpit;
         if (hudCanvas != null) hudCanvas.enabled = cockpit;
 
-        UpdateWarningCanvas();   // 항상 업데이트 (chase / cockpit 무관)
+        UpdateWarningCanvas();
 
         if (!cockpit) return;
         UpdateHUD();
@@ -749,9 +755,15 @@ public class FlightHUD : MonoBehaviour
         float vvi=vel.y;
         vsiText.text =$"VVI  {(vvi>=0?"+":"")}{vvi:F0}";
         vsiText.color=Mathf.Abs(vvi)>30f?WARN:HGD;
-        if(Physics.Raycast(t.position,Vector3.down,out RaycastHit hit,5000f))
-            raltText.text=$"RALT {hit.distance:F0}m";
-        else raltText.text="RALT ---";
+        _raltTimer -= dt;
+        if (_raltTimer <= 0f)
+        {
+            _raltTimer = RALT_INTERVAL;
+            _raltCache = Physics.Raycast(t.position, Vector3.down, out RaycastHit hit, 5000f)
+                ? $"RALT {hit.distance:F0}m"
+                : "RALT ---";
+        }
+        raltText.text = _raltCache;
 
         UpdateHeadingTape(yaw);
         hdgCurrent.text=$"{((int)yaw%360+360)%360:D3}°";

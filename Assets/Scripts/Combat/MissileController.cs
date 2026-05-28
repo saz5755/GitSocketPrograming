@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -5,6 +6,8 @@ public enum MissileGuidanceType { HeatSeeking, RadarGuided }
 
 public class MissileController : MonoBehaviour
 {
+    public static readonly List<MissileController> All = new List<MissileController>(32);
+
     [SerializeField] float topSpeed      = 600f;
     [SerializeField] float acceleration  = 150f;
     [SerializeField] float navConst      = 4f;
@@ -47,6 +50,9 @@ public class MissileController : MonoBehaviour
     bool    _armed;
     float   _decoyTimer;
     float   _netBroadcastTimer;
+
+    void Awake()  => All.Add(this);
+    void OnDestroy() => All.Remove(this);
 
     public void Initialize(Transform target, float launchSpeed,
                            MissileGuidanceType guidanceType = MissileGuidanceType.RadarGuided,

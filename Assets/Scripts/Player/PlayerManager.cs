@@ -187,20 +187,33 @@ public class PlayerManager : MonoBehaviour
         var charGO = BuildCharacterObject();
         var gc = charGO.GetComponent<GroundController>();
 
-        // 이륙 존 (탑승 포인트) — Configure() 호출 후 Start()에서 비주얼 생성
+        // Zone은 반드시 지면에 붙어야 함 — spawnPos가 공중 좌표일 수 있으므로 지형 스냅
+        Vector3 groundPos = SnapToGround(spawnPos);
+
+        // 이륙 존 (탑승 포인트)
         var takeoffZoneGO = new GameObject("TakeoffZone");
-        takeoffZoneGO.transform.position = spawnPos;
+        takeoffZoneGO.transform.position = groundPos;
         var takeoffZone = takeoffZoneGO.AddComponent<AircraftZone>();
-        takeoffZone.Configure(AircraftZone.Type.Takeoff, 12f);
+        takeoffZone.Configure(AircraftZone.Type.Takeoff, 15f); // 반경 여유 확보
 
-        // 착륙 존 (하차 포인트) — 같은 위치, 반경 더 크게 (비행 중 착지 허용 범위)
+        // 착륙 존 (하차 포인트) — 비행 중 진입 허용 반경 더 크게
         var landingZoneGO = new GameObject("LandingZone");
-        landingZoneGO.transform.position = spawnPos;
+        landingZoneGO.transform.position = groundPos;
         var landingZone = landingZoneGO.AddComponent<AircraftZone>();
-        landingZone.Configure(AircraftZone.Type.Landing, 30f);
+        landingZone.Configure(AircraftZone.Type.Landing, 35f);
 
-        // 초기화
-        GameModeManager.Instance.Init(gc, pc, spawnPos);
+        // 초기화 — groundPos 기준으로 지상 캐릭터 위치 결정
+        GameModeManager.Instance.Init(gc, pc, spawnPos, groundPos);
+    }
+
+    // 주어진 위치 아래로 지형을 찾아 Y를 스냅. 지형 없으면 Y=0 사용.
+    static Vector3 SnapToGround(Vector3 pos)
+    {
+        Vector3 origin = pos + Vector3.up * 500f;
+        if (Physics.Raycast(origin, Vector3.down, out RaycastHit hit, 1000f,
+                            Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
+            return hit.point;
+        return new Vector3(pos.x, 0f, pos.z);
     }
 
     GameObject BuildCharacterObject()

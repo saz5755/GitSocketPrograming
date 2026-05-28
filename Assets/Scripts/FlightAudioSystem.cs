@@ -64,8 +64,8 @@ public class FlightAudioSystem : MonoBehaviour
     {
         if (_local == null)
         {
-            foreach (var pc in FindObjectsOfType<PlayerController>())
-                if (pc.isLocalPlayer) { _local = pc; break; }
+            foreach (var pc in PlayerController.All)
+                if (pc != null && pc.isLocalPlayer) { _local = pc; break; }
             if (_local == null) return;
         }
 

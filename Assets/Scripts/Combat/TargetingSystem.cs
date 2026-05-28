@@ -3,6 +3,8 @@ using UnityEngine;
 
 public class TargetingSystem : MonoBehaviour
 {
+    public static readonly List<TargetingSystem> All = new List<TargetingSystem>(8);
+
     [SerializeField] float   detectRange    = 20000f;
     [SerializeField] float   lockOnDuration = 2.5f;
     [SerializeField] KeyCode lockKey        = KeyCode.Tab;
@@ -28,6 +30,9 @@ public class TargetingSystem : MonoBehaviour
     float   _prevRange;
     Camera  _cam;
 
+    void Awake()     => All.Add(this);
+    void OnDestroy() => All.Remove(this);
+
     void Start()
     {
         _cam = Camera.main;
@@ -36,8 +41,8 @@ public class TargetingSystem : MonoBehaviour
 
     void FindLocal()
     {
-        foreach (var pc in FindObjectsOfType<PlayerController>())
-            if (pc.isLocalPlayer) { LocalPlayer = pc; break; }
+        foreach (var pc in PlayerController.All)
+            if (pc != null && pc.isLocalPlayer) { LocalPlayer = pc; break; }
     }
 
     void Update()
@@ -57,8 +62,8 @@ public class TargetingSystem : MonoBehaviour
     void RefreshEnemies()
     {
         _enemies.Clear();
-        foreach (var pc in FindObjectsOfType<PlayerController>())
-            if (!pc.isLocalPlayer) _enemies.Add(pc);
+        foreach (var pc in PlayerController.All)
+            if (pc != null && !pc.isLocalPlayer) _enemies.Add(pc);
     }
 
     void HandleLockInput()

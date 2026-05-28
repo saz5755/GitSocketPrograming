@@ -56,14 +56,14 @@ public class BulletController : MonoBehaviour
     void CheckHit(Vector3 prevPos)
     {
         string myNick = NetworkManager.Instance?.socketClient.myNickname ?? "";
+        const float hitRadiusSq = HitRadius * HitRadius;
 
-        foreach (var pc in FindObjectsOfType<PlayerController>())
+        foreach (var pc in PlayerController.All)
         {
-            if (pc.isLocalPlayer) continue;
+            if (pc == null || pc.isLocalPlayer) continue;
 
-            // 탄 궤적 선분에서 적 기체까지 최단 거리 판정
             Vector3 closest = ClosestPointOnSegment(prevPos, transform.position, pc.transform.position);
-            if (Vector3.Distance(closest, pc.transform.position) < HitRadius)
+            if ((closest - pc.transform.position).sqrMagnitude < hitRadiusSq)
             {
                 NetworkManager.Instance?.socketClient.SendGunHit(myNick, pc.nickname, closest);
                 HitEffectSystem.Instance?.TriggerBulletHit(closest, hitLocalPlayer: false);

@@ -38,8 +38,8 @@ public class CountermeasureSystem : MonoBehaviour
 
     void FindLocal()
     {
-        foreach (var pc in FindObjectsOfType<PlayerController>())
-            if (pc.isLocalPlayer) { _local = pc; break; }
+        foreach (var pc in PlayerController.All)
+            if (pc != null && pc.isLocalPlayer) { _local = pc; break; }
     }
 
     void Update()
