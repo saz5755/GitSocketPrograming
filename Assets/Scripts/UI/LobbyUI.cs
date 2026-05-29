@@ -130,19 +130,19 @@ public class LobbyUI : MonoBehaviour
 
         // 파일럿 정보
         pilotLabel = MakeText(topBar, "PILOT  —",
-            new Vector2(28, 0), new Vector2(360, 72),
+            new Vector2(208, 0), new Vector2(360, 0),
             14, FontStyle.Bold, C_ACCENT, TextAnchor.MiddleLeft,
             new Vector2(0, 0), new Vector2(0, 1));
 
         // 타이틀
         MakeText(topBar, "F · 22   TACTICAL  OPERATIONS  CENTER",
-            new Vector2(0, 0), new Vector2(700, 72),
+            new Vector2(0, 0), new Vector2(700, 0),
             18, FontStyle.Bold, C_TEXT, TextAnchor.MiddleCenter,
             new Vector2(0.5f, 0), new Vector2(0.5f, 1));
 
         // 연결 상태
         onlineLabel = MakeText(topBar, "◉  SECURE LINK ACTIVE",
-            new Vector2(-28, 0), new Vector2(300, 72),
+            new Vector2(-178, 0), new Vector2(300, 0),
             12, FontStyle.Bold, C_ACTIVE, TextAnchor.MiddleRight,
             new Vector2(1, 0), new Vector2(1, 1));
 
@@ -175,7 +175,7 @@ public class LobbyUI : MonoBehaviour
 
         // 상태 텍스트 (하단 중앙)
         statusText = MakeText(botBar, "Loading...",
-            new Vector2(0, 0), new Vector2(600, 68),
+            new Vector2(0, 0), new Vector2(600, 0),
             12, FontStyle.Normal, C_DIM, TextAnchor.MiddleCenter,
             new Vector2(0.5f, 0), new Vector2(0.5f, 1));
 
@@ -216,12 +216,12 @@ public class LobbyUI : MonoBehaviour
         AddImg(sHdrAccent, C_ACCENT);
 
         MakeText(sectionHeader, "▸  COMBAT ZONE SELECTION",
-            new Vector2(20, 0), new Vector2(600, 52),
+            new Vector2(320, 0), new Vector2(600, 0),
             16, FontStyle.Bold, C_ACCENT, TextAnchor.MiddleLeft,
             new Vector2(0, 0), new Vector2(0, 1));
 
         var timeText = MakeText(sectionHeader, "UTC 00:00:00",
-            new Vector2(-20, 0), new Vector2(200, 52),
+            new Vector2(-120, 0), new Vector2(200, 0),
             11, FontStyle.Normal, new Color(C_DIM.r, C_DIM.g, C_DIM.b, 0.7f),
             TextAnchor.MiddleRight, new Vector2(1, 0), new Vector2(1, 1));
         StartCoroutine(UpdateClock(timeText));
@@ -611,7 +611,7 @@ public class LobbyUI : MonoBehaviour
         go.transform.SetParent(parent, false);
         var rt  = go.AddComponent<RectTransform>();
         rt.anchorMin = ancMin; rt.anchorMax = ancMax;
-        rt.offsetMin = pos;    rt.offsetMax = Vector2.zero;
+        rt.anchoredPosition = pos;
         rt.sizeDelta = size;
         var txt = go.AddComponent<Text>();
         txt.text = content; txt.font = uiFont; txt.fontSize = fs;

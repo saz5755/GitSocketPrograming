@@ -46,7 +46,12 @@
       "Bash(Get-Content \"C:\\\\Unity\\\\GitSocketPrograming\\\\Assets\\\\Prefabs\\\\Player.prefab\")",
       "Bash(Select-Object -First 100)",
       "mcp__coplay-mcp__capture_scene_object",
-      "mcp__coplay-mcp__play_game"
+      "mcp__coplay-mcp__play_game",
+      "Bash(Get-ChildItem -Path \"C:\\\\Unity\\\\GitSocketPrograming\" -Recurse -Force)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(dir \"C:\\\\Unity\\\\GitSocketPrograming\\\\Packages\")",
+      "Bash(Select-Object -ExpandProperty Name)",
+      "PowerShell(Get-ChildItem \"C:\\\\Unity\\\\GitSocketPrograming\\\\Packages\\\\Coplay\" -Recurse | Where-Object {$_.Extension -eq \".cs\"} | Select-Object -ExpandProperty FullName | Select-Object -First 10)"
     ]
   }
 }
