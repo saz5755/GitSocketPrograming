@@ -128,6 +128,7 @@ public class MFDController : MonoBehaviour
         Transform parent = _local.transform;
 
         _leftCanvas   = CreateMFDCanvas("MFD_Left",   parent, LeftMFDPos,   MFDSize,  MFDSize);
+        _leftCanvas.transform.localRotation = Quaternion.Euler(7f, 0f, 0f);
         _rightCanvas  = CreateMFDCanvas("MFD_Right",  parent, RightMFDPos,  MFDSize,  MFDSize);
         _centerCanvas = CreateMFDCanvas("MFD_Center", parent, CenterMFDPos, UFCWidth, UFCHeight);
 

@@ -71,13 +71,13 @@ public class AircraftZone : MonoBehaviour
             };
 
             Color currentColor = _lastAppliedColor == Color.clear
-                ? _discMaterial.GetColor("_Color")
+                ? _discMaterial.color
                 : _lastAppliedColor;
             Color newColor = Color.Lerp(currentColor, targetColor, Time.deltaTime * 5f);
 
             if (newColor != _lastAppliedColor)
             {
-                _discMaterial.SetColor("_Color", newColor);
+                _discMaterial.color = newColor;
                 _lastAppliedColor = newColor;
 
                 if (_portalLight != null)
@@ -194,7 +194,11 @@ public class AircraftZone : MonoBehaviour
         size.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(new Keyframe(0, 1f), new Keyframe(1, 0f)));
 
         var rend = _portalParticles.GetComponent<ParticleSystemRenderer>();
-        rend.material = new Material(Shader.Find("Mobile/Particles/Additive"));
+        Shader pShader = Shader.Find("Universal Render Pipeline/Particles/Unlit")
+                      ?? Shader.Find("Particles/Additive")
+                      ?? Shader.Find("Mobile/Particles/Additive")
+                      ?? Shader.Find("Sprites/Default");
+        rend.material = new Material(pShader);
         rend.renderMode = ParticleSystemRenderMode.Stretch;
         rend.lengthScale = 2f;
         rend.velocityScale = 0.1f;

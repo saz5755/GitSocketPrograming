@@ -8,7 +8,7 @@ public class FlightCamera : MonoBehaviour
     [SerializeField] float chaseSmooth = 6f;
 
     [Header("Cockpit Camera")]
-    [SerializeField] Vector3 cockpitOffset    = new Vector3(0f, 0.43f, 2.45f);
+    [SerializeField] Vector3 cockpitOffset    = new Vector3(0f, 0.45f, 2.45f);
     [SerializeField] float   cockpitDownTilt  = 8f;    // 기본 하향 시선 각도 (도)
     [SerializeField] float   cockpitFOV       = 55f;
     [SerializeField] float   chaseFOV         = 60f;
@@ -26,6 +26,9 @@ public class FlightCamera : MonoBehaviour
     PlayerController localPlayer;
     CockpitBuilder   cockpitBuilder;
     MFDController    mfdController;
+    FlightHUD        _flightHUD;
+
+    public Transform CockpitObj10 { get; private set; }
 
     // KF-21 모델 오브젝트 이름으로 렌더러 분류
     // 코크핏 모드에서만 표시 (조종석 내부)
@@ -119,6 +122,7 @@ public class FlightCamera : MonoBehaviour
             else if (CockpitInteriorNames.Contains(n))
             {
                 interior.Add(r);
+                if (n == "Object_10") CockpitObj10 = r.transform;
             }
             else
             {
@@ -271,6 +275,10 @@ public class FlightCamera : MonoBehaviour
         // 프로시저럴 코크핏 지오메트리는 비활성화 (실제 모델 사용)
         cockpitBuilder?.SetVisible(false);
         mfdController?.SetVisible(cockpit);
+
+        // HUD를 캐노피 유리에 투영 (ScreenSpaceCamera ↔ Overlay 전환)
+        if (_flightHUD == null) _flightHUD = FindObjectOfType<FlightHUD>();
+        _flightHUD?.SetCockpitGlass(cockpit, GetComponent<Camera>());
     }
 
     // ── 캐노피 유리 재질 생성 ────────────────────────────────────────────────
