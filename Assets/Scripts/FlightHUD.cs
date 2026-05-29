@@ -84,6 +84,21 @@ public class FlightHUD : MonoBehaviour
     string  _raltCache = "RALT ---";
     const float RALT_INTERVAL = 0.1f;
 
+    // ── ILS 인디케이터 (warningCanvas) ──────────────────────────────────────
+    RectTransform _ilsPanel;
+    RectTransform _ilsLocBar;   // 로컬라이저 — 좌우 이동
+    RectTransform _ilsGsBar;    // 글라이드슬로프 — 상하 이동
+    Image         _ilsLocImg;
+    Image         _ilsGsImg;
+    Text          _ilsDistText;
+    Text          _ilsLabel;
+
+    ILSBeacon _activeILS;
+    float     _ilsScanTimer;
+    const float ILS_SCAN_INTERVAL  = 1.0f;
+    const float ILS_DEFLECT_PX     = 52f;   // ±52 px = 풀 스케일 편차
+    const float ILS_DEFLECT_M      = 200f;  // ±200 m = 풀 스케일 기준
+
     void Start()
     {
         CountermeasureSystem.OnDeploy += OnCMSDeploy;
@@ -226,6 +241,7 @@ public class FlightHUD : MonoBehaviour
         cmsDeployText.fontStyle = FontStyle.Bold;
 
         BuildWarningRWR();
+        BuildILSIndicator();
     }
 
     RectTransform _warnRwrNeedle;
@@ -353,6 +369,118 @@ public class FlightHUD : MonoBehaviour
                 _warnRwrLabel.color = missileInbound ? CRIT : WARN;
             }
         }
+
+        UpdateILS();
+    }
+
+    // ── ILS 인디케이터 빌드 ──────────────────────────────────────────────────
+    // 화면 하단 중앙에 로컬라이저(좌우)·글라이드슬로프(상하) 십자 편차 표시.
+    // ILS 비컨 수신 범위 내 진입 시 자동 표시, 벗어나면 자동 숨김.
+    void BuildILSIndicator()
+    {
+        float pw = 160f, ph = 160f;
+        _ilsPanel = Rect("ILS_Panel", warningCanvas.transform, new Vector2(0f, -330f), new Vector2(pw, ph));
+        Img(_ilsPanel, new Color(0f, 0f, 0f, 0.65f));
+
+        // 스케일 도트 (±1/2 풀스케일)
+        float half = ILS_DEFLECT_PX * 0.5f;
+        Color dot  = new Color(HG.r, HG.g, HG.b, 0.45f);
+        for (int s = -1; s <= 1; s += 2)
+        {
+            Img(Rect($"ILS_DH{s}", _ilsPanel, new Vector2(half * s, 0f), new Vector2(4f, 4f)), dot);
+            Img(Rect($"ILS_DV{s}", _ilsPanel, new Vector2(0f, half * s), new Vector2(4f, 4f)), dot);
+        }
+
+        // 중심 고정 십자선
+        Img(Rect("ILS_CX", _ilsPanel, Vector2.zero, new Vector2(28f, 2f)), HGD);
+        Img(Rect("ILS_CY", _ilsPanel, Vector2.zero, new Vector2(2f, 28f)), HGD);
+
+        // 중심 다이아몬드
+        var diam = Rect("ILS_Diam", _ilsPanel, Vector2.zero, new Vector2(8f, 8f));
+        diam.localRotation = Quaternion.Euler(0f, 0f, 45f);
+        Img(diam, HG);
+
+        // 로컬라이저 바 (수직 막대, 좌우로 이동)
+        _ilsLocBar = Rect("ILS_Loc", _ilsPanel, Vector2.zero, new Vector2(4f, 56f));
+        Img(_ilsLocBar, HG);
+        _ilsLocImg = _ilsLocBar.GetComponent<Image>();
+
+        // 글라이드슬로프 바 (수평 막대, 상하로 이동)
+        _ilsGsBar = Rect("ILS_GS", _ilsPanel, Vector2.zero, new Vector2(56f, 4f));
+        Img(_ilsGsBar, HG);
+        _ilsGsImg = _ilsGsBar.GetComponent<Image>();
+
+        // 레이블
+        _ilsLabel    = AddTxt(_ilsPanel, "ILS",  new Vector2(0f,  ph * 0.5f - 14f), new Vector2(pw, 18f), 10, HG,  TextAnchor.MiddleCenter);
+        _ilsDistText = AddTxt(_ilsPanel, "",      new Vector2(0f, -ph * 0.5f + 10f), new Vector2(pw, 16f), 9,  HGD, TextAnchor.MiddleCenter);
+
+        _ilsPanel.gameObject.SetActive(false);
+    }
+
+    // ── ILS 인디케이터 업데이트 ──────────────────────────────────────────────
+    void UpdateILS()
+    {
+        if (_ilsPanel == null) return;
+
+        bool flying = GameModeManager.Instance != null && GameModeManager.Instance.IsFlying;
+        if (!flying || localPlayer == null)
+        {
+            _ilsPanel.gameObject.SetActive(false);
+            return;
+        }
+
+        // 1초마다 가장 가까운 ILS 비컨 탐색
+        _ilsScanTimer -= Time.deltaTime;
+        if (_ilsScanTimer <= 0f)
+        {
+            _ilsScanTimer = ILS_SCAN_INTERVAL;
+            _activeILS    = FindNearestILS(localPlayer.transform.position);
+        }
+
+        if (_activeILS == null)
+        {
+            _ilsPanel.gameObject.SetActive(false);
+            return;
+        }
+
+        _ilsPanel.gameObject.SetActive(true);
+
+        Vector3 pos  = localPlayer.transform.position;
+        float   dist = Vector3.Distance(pos, _activeILS.transform.position);
+
+        float latDev = _activeILS.LateralDeviation(pos);
+        float vDev   = _activeILS.VerticalDeviation(pos);
+
+        // 편차를 픽셀로 변환 (로컬라이저: 좌우 반전 없음, 글라이드슬로프: 위 = 강하 필요)
+        float locPx = Mathf.Clamp(-latDev / ILS_DEFLECT_M * ILS_DEFLECT_PX, -ILS_DEFLECT_PX, ILS_DEFLECT_PX);
+        float gsPx  = Mathf.Clamp(-vDev   / ILS_DEFLECT_M * ILS_DEFLECT_PX, -ILS_DEFLECT_PX, ILS_DEFLECT_PX);
+
+        if (_ilsLocBar != null) _ilsLocBar.anchoredPosition = new Vector2(locPx, 0f);
+        if (_ilsGsBar  != null) _ilsGsBar.anchoredPosition  = new Vector2(0f, gsPx);
+
+        // 큰 편차 시 경고색
+        bool offScale = Mathf.Abs(latDev) > ILS_DEFLECT_M * 0.75f
+                     || Mathf.Abs(vDev)   > ILS_DEFLECT_M * 0.75f;
+        Color barCol = offScale ? WARN : HG;
+        if (_ilsLocImg != null) _ilsLocImg.color = barCol;
+        if (_ilsGsImg  != null) _ilsGsImg.color  = barCol;
+
+        if (_ilsDistText != null)
+            _ilsDistText.text = dist < 1000f ? $"{dist:F0} m" : $"{dist / 1000f:F1} km";
+    }
+
+    ILSBeacon FindNearestILS(Vector3 pos)
+    {
+        var       beacons = FindObjectsOfType<ILSBeacon>();
+        ILSBeacon nearest = null;
+        float     minDist = float.MaxValue;
+        foreach (var b in beacons)
+        {
+            if (!b.IsInRange(pos)) continue;
+            float d = Vector3.Distance(pos, b.transform.position);
+            if (d < minDist) { minDist = d; nearest = b; }
+        }
+        return nearest;
     }
 
     // ═══════════════════════════════════════════════════════════════════════

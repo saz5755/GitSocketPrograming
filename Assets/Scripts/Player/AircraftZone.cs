@@ -3,8 +3,10 @@ using UnityEngine.UI;
 
 /// <summary>
 /// 항공기 탑승(이륙) / 하차(착륙) 존.
+/// [ExecuteAlways] — 에디터에서도 디스크·파티클·라벨이 보임.
 /// AddComponent() 후 Configure()를 호출하면 Start()에서 올바른 비주얼을 생성.
 /// </summary>
+[ExecuteAlways]
 public class AircraftZone : MonoBehaviour
 {
     public enum Type { Takeoff, Landing, Carrier }
@@ -48,6 +50,7 @@ public class AircraftZone : MonoBehaviour
 
     void Update()
     {
+        if (!Application.isPlaying) return;
         var gm = GameModeManager.Instance;
         if (gm == null) return;
 
@@ -117,7 +120,15 @@ public class AircraftZone : MonoBehaviour
     {
         var disc = GameObject.CreatePrimitive(PrimitiveType.Quad);
         disc.name = "PortalDisc";
-        Destroy(disc.GetComponent<Collider>());
+        var discCol = disc.GetComponent<Collider>();
+        if (discCol != null)
+        {
+#if UNITY_EDITOR
+            if (!Application.isPlaying) DestroyImmediate(discCol);
+            else
+#endif
+            Destroy(discCol);
+        }
         disc.transform.SetParent(transform, false);
         disc.transform.localScale    = new Vector3(_radius * 2f, _radius * 2f, 1f);
         disc.transform.localPosition = new Vector3(0f, 0.1f, 0f); // 약간 띄움
@@ -141,10 +152,10 @@ public class AircraftZone : MonoBehaviour
         }
 
         _discRenderer = disc.GetComponent<Renderer>();
-        _discRenderer.material = mat;
+        _discRenderer.sharedMaterial = mat;
         _discRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         _discRenderer.receiveShadows    = false;
-        _discMaterial = _discRenderer.material;
+        _discMaterial = mat;
 
         // 조명 추가
         _portalLight = disc.AddComponent<Light>();

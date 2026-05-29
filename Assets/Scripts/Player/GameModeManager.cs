@@ -24,6 +24,13 @@ public class GameModeManager : MonoBehaviour
     // 범위 내 존
     AircraftZone _activeZone;
 
+    // 항모 카타펄트: 이함 직전 항모 참조를 임시 저장
+    CarrierController _boardingCarrier;
+
+    // 항모 착함 자동 감속 (어레스팅 와이어)
+    bool      _trapping;
+    Coroutine _trapRoutine;
+
     // 화면 하단 프롬프트 UI
     Canvas _promptCanvas;
     Text   _promptText;
@@ -68,10 +75,24 @@ public class GameModeManager : MonoBehaviour
     }
 
     // ── 존 알림 ─────────────────────────────────────────────────────────────
-    public void NotifyZoneEnter(AircraftZone zone) => _activeZone = zone;
+    public void NotifyZoneEnter(AircraftZone zone)
+    {
+        _activeZone = zone;
+
+        // 항모 착함 존 진입 시 속도 조건 충족하면 자동 TRAP 시작
+        if (IsFlying && zone.ZoneType == AircraftZone.Type.Carrier && !_trapping && _pc != null)
+        {
+            float kph = _pc.CurrentSpeed * 3.6f;
+            if (kph <= 360f)
+                _trapRoutine = StartCoroutine(TrapCoroutine(zone.transform));
+            // kph > 360: WAVE OFF — Update()에서 표시, 재진입 시 재시도
+        }
+    }
+
     public void NotifyZoneExit(AircraftZone zone)
     {
         if (_activeZone == zone) _activeZone = null;
+        // 트래핑 중이면 코루틴 유지 — 이미 감속 시작했으므로 완주
     }
 
     // ── 매 프레임: 프롬프트 표시 + F키 처리 ────────────────────────────────
@@ -81,22 +102,54 @@ public class GameModeManager : MonoBehaviour
 
         bool canBoard   = !IsFlying && _activeZone.ZoneType == AircraftZone.Type.Takeoff;
         bool canExit    =  IsFlying && _activeZone.ZoneType == AircraftZone.Type.Landing;
-        // Carrier: 비행 중 항모 갑판에 착함 (항모 이동 시 transform 기준 위치 전달)
         bool canCarrier =  IsFlying && _activeZone.ZoneType == AircraftZone.Type.Carrier;
 
         if (!canBoard && !canExit && !canCarrier) { ShowPrompt(false); return; }
 
-        string prompt = canBoard   ? "[F]  BOARD AIRCRAFT"
-                      : canCarrier ? "[F]  LAND ON CARRIER"
-                      :              "[F]  EXIT AIRCRAFT";
-        ShowPrompt(true, prompt);
-
-        if (Input.GetKeyDown(KeyCode.F))
+        // ── 항모 착함 ────────────────────────────────────────────────────────
+        if (canCarrier)
         {
-            if (canBoard)        EnterFlight(_activeZone.transform.position);
-            else if (canCarrier) ExitFlight(_activeZone.transform.position, _activeZone.transform);
-            else                 ExitFlight(_activeZone.transform.position);
+            if (_trapping)
+            {
+                // 자동 감속 중 — F키로 즉시 강제 착함 (스킵)
+                ShowPrompt(true, "[F]  MANUAL TRAP — SKIP DECEL", new Color(1f, 0.75f, 0f, 1f));
+                if (Input.GetKeyDown(KeyCode.F))
+                {
+                    StopTrap();
+                    ExitFlight(_activeZone.transform.position, _activeZone.transform);
+                }
+                return;
+            }
+
+            float kph     = _pc.CurrentSpeed * 3.6f;
+            bool  waveOff = kph > 360f;
+            ShowPrompt(true,
+                waveOff ? $"WAVE OFF  {kph:F0} KPH — REDUCE SPEED"
+                        : $"AUTO TRAP  {kph:F0} KPH  /  [F] MANUAL",
+                waveOff ? new Color(1f, 0.2f, 0.1f, 1f) : new Color(0f, 1f, 0.5f, 1f));
+            // WAVE OFF가 아니면 수동 즉시 착함도 허용
+            if (!waveOff && Input.GetKeyDown(KeyCode.F))
+                ExitFlight(_activeZone.transform.position, _activeZone.transform);
+            return;
         }
+
+        // ── 항모 이함: 카타펄트 여부 감지 ────────────────────────────────────
+        if (canBoard)
+        {
+            _boardingCarrier = _activeZone.GetComponentInParent<CarrierController>();
+            string boardPrompt = _boardingCarrier != null
+                ? "[F]  CATAPULT LAUNCH"
+                : "[F]  BOARD AIRCRAFT";
+            ShowPrompt(true, boardPrompt);
+            if (Input.GetKeyDown(KeyCode.F))
+                EnterFlight(_activeZone.transform.position);
+            return;
+        }
+
+        // ── 일반 착륙 ─────────────────────────────────────────────────────────
+        ShowPrompt(true, "[F]  EXIT AIRCRAFT");
+        if (Input.GetKeyDown(KeyCode.F))
+            ExitFlight(_activeZone.transform.position);
     }
 
     // ── 비행 모드 진입 ───────────────────────────────────────────────────────
@@ -110,8 +163,18 @@ public class GameModeManager : MonoBehaviour
         SetCharRenderers(false);
 
         // 항공기: 탑승 존 위치에 배치 후 활성화
-        _pc.transform.SetPositionAndRotation(boardingPos, Quaternion.identity);
+        // 항모 카타펄트: 항모 방향으로 정렬 후 초기 속도 부여
+        Quaternion launchRot = _boardingCarrier != null
+            ? _boardingCarrier.transform.rotation
+            : Quaternion.identity;
+        _pc.transform.SetPositionAndRotation(boardingPos, launchRot);
         _pc.enabled = true;
+
+        if (_boardingCarrier != null)
+        {
+            _pc.SetInitialSpeed(_boardingCarrier.CatapultSpeed);
+            _boardingCarrier = null;
+        }
 
         // 카메라·HUD 전환
         _fc?.SetFlightTarget(_pc);
@@ -155,6 +218,56 @@ public class GameModeManager : MonoBehaviour
         Cursor.visible   = false;
 
         Debug.Log(platform != null ? $"[GameMode] → Carrier Mode ({platform.name})" : "[GameMode] → Ground Mode");
+    }
+
+    // ── 어레스팅 와이어 자동 감속 코루틴 ────────────────────────────────────────
+    System.Collections.IEnumerator TrapCoroutine(Transform platform)
+    {
+        _trapping = true;
+        _pc.BeginArrest();
+
+        // 착함 충격 카메라 쉐이크
+        _fc?.TriggerShake(0.7f, 1.8f);
+
+        ShowPrompt(true, "■  ARRESTED  ■  DECELERATING", new Color(1f, 0.75f, 0f, 1f));
+
+        float     deckY = platform.position.y + 0.3f;
+        Transform pcT   = _pc.transform;
+
+        while (_pc != null && _pc.CurrentSpeed >= 0.2f)
+        {
+            Vector3 pos = pcT.position;
+            pos.y       = Mathf.MoveTowards(pos.y, deckY, 35f * Time.deltaTime);
+            pcT.position = pos;
+
+            float     yaw  = pcT.eulerAngles.y;
+            pcT.rotation   = Quaternion.Slerp(pcT.rotation, Quaternion.Euler(0f, yaw, 0f), 6f * Time.deltaTime);
+
+            yield return null;
+        }
+
+        if (_pc != null)
+        {
+            Vector3 snapPos = pcT.position;
+            snapPos.y = deckY;
+            pcT.SetPositionAndRotation(snapPos, Quaternion.Euler(0f, pcT.eulerAngles.y, 0f));
+        }
+
+        // 정지 후 0.4초 대기 (착지 연출)
+        yield return new WaitForSeconds(0.4f);
+
+        _pc.EndArrest();
+        ExitFlight(platform.position, platform);
+
+        _trapping    = false;
+        _trapRoutine = null;
+    }
+
+    void StopTrap()
+    {
+        if (_trapRoutine != null) { StopCoroutine(_trapRoutine); _trapRoutine = null; }
+        if (_pc != null) _pc.EndArrest();
+        _trapping = false;
     }
 
     // ── 내부 헬퍼 ────────────────────────────────────────────────────────────
@@ -218,10 +331,12 @@ public class GameModeManager : MonoBehaviour
         _promptCanvas.enabled = false;
     }
 
-    void ShowPrompt(bool show, string msg = "")
+    void ShowPrompt(bool show, string msg = "", Color color = default)
     {
         if (_promptCanvas == null) return;
         _promptCanvas.enabled = show;
-        if (show && _promptText != null) _promptText.text = msg;
+        if (!show || _promptText == null) return;
+        _promptText.text  = msg;
+        _promptText.color = color == default ? new Color(0f, 1f, 0.5f, 1f) : color;
     }
 }

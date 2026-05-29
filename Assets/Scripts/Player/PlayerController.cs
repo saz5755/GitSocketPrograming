@@ -37,8 +37,16 @@ public class PlayerController : MonoBehaviour
     float currentSpeed;
     public float CurrentSpeed => currentSpeed;
 
+    // ── 어레스팅 와이어 감속 ─────────────────────────────────────────────────
+    bool  _arrested;
+    const float ArrestDecel = 50f; // m/s² — 약 1.5s 만에 240 kph → 0
+
+    public void BeginArrest() => _arrested = true;
+    public void EndArrest()   => _arrested = false;
+
     const int MaxHistory = 64;
-    readonly Queue<TickRecord> _inputHistory = new();
+    readonly Queue<TickRecord>  _inputHistory = new();
+    readonly RaycastHit[]       _groundHits   = new RaycastHit[8];
 
     void Awake()
     {
@@ -81,6 +89,15 @@ public class PlayerController : MonoBehaviour
     {
         float dt = Time.deltaTime;
 
+        // 어레스팅 와이어 감속 중 — 입력 차단, 강제 감속
+        if (_arrested)
+        {
+            currentSpeed = Mathf.MoveTowards(currentSpeed, 0f, ArrestDecel * dt);
+            transform.position += transform.forward * currentSpeed * dt;
+            ConstrainToSurface();
+            return;
+        }
+
         float throttle = 0f;
         if (Input.GetKey(KeyCode.W))      throttle =  1f;
         else if (Input.GetKey(KeyCode.S)) throttle = -1f;
@@ -102,6 +119,7 @@ public class PlayerController : MonoBehaviour
 
         transform.Rotate(pitch, yaw, roll, Space.Self);
         transform.position += transform.forward * currentSpeed * dt;
+        if (currentSpeed > 0.1f) ConstrainToSurface();
 
         if (anim != null) anim.SetBool("Move", currentSpeed > 0.5f);
 
@@ -127,6 +145,30 @@ public class PlayerController : MonoBehaviour
                 transform.position.x, transform.position.y, transform.position.z,
                 euler.x, euler.y, euler.z,
                 currentSpeed > 0.5f, localTick);
+        }
+    }
+
+    // ── 지면/갑판 관통 방지 ────────────────────────────────────────────────────────
+    void ConstrainToSurface()
+    {
+        int count = Physics.RaycastNonAlloc(
+            transform.position + Vector3.up * 3f, Vector3.down,
+            _groundHits, 7f,
+            Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+
+        float bestY = float.MinValue;
+        bool  found = false;
+        for (int i = 0; i < count; i++)
+        {
+            if (_groundHits[i].transform.IsChildOf(transform)) continue;
+            if (_groundHits[i].point.y > bestY) { bestY = _groundHits[i].point.y; found = true; }
+        }
+        if (!found) return;
+
+        float floor = bestY + 0.3f;
+        if (transform.position.y < floor)
+        {
+            var p = transform.position; p.y = floor; transform.position = p;
         }
     }
 
@@ -225,4 +267,7 @@ public class PlayerController : MonoBehaviour
     }
 
     public void ClearSnapshots() => snapshots.Clear();
+
+    /// <summary>카타펄트 사출 등 외부에서 초기 속도를 설정.</summary>
+    public void SetInitialSpeed(float speedMS) => currentSpeed = speedMS;
 }

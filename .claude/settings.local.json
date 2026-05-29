@@ -51,7 +51,14 @@
       "Bash(Select-Object -ExpandProperty FullName)",
       "Bash(dir \"C:\\\\Unity\\\\GitSocketPrograming\\\\Packages\")",
       "Bash(Select-Object -ExpandProperty Name)",
-      "PowerShell(Get-ChildItem \"C:\\\\Unity\\\\GitSocketPrograming\\\\Packages\\\\Coplay\" -Recurse | Where-Object {$_.Extension -eq \".cs\"} | Select-Object -ExpandProperty FullName | Select-Object -First 10)"
+      "PowerShell(Get-ChildItem \"C:\\\\Unity\\\\GitSocketPrograming\\\\Packages\\\\Coplay\" -Recurse | Where-Object {$_.Extension -eq \".cs\"} | Select-Object -ExpandProperty FullName | Select-Object -First 10)",
+      "mcp__coplay-mcp__delete_game_object",
+      "mcp__coplay-mcp__create_game_object",
+      "mcp__coplay-mcp__add_component",
+      "mcp__coplay-mcp__set_property",
+      "mcp__coplay-mcp__save_scene",
+      "PowerShell(Get-ChildItem \"C:\\\\Obsidian Vault\" -Recurse | Where-Object { $_.Extension -match \"\\\\.\\(png|jpg|jpeg|webp|bmp|gif|tif|tiff\\)$\" } | Select-Object FullName, Extension)",
+      "PowerShell(Get-ChildItem \"C:\\\\Obsidian Vault\" -Recurse | Select-Object FullName, Extension | Where-Object { $_.Extension -ne \"\" } | Format-Table -AutoSize)"
     ]
   }
 }

@@ -281,9 +281,22 @@ public class SocketClient : MonoBehaviour
                     }
                 }
             }
+            catch (SocketException se)
+                when (se.SocketErrorCode == SocketError.Interrupted ||
+                      se.SocketErrorCode == SocketError.OperationAborted)
+            {
+                // udp.Close()로 인한 정상 종료 — 로그 불필요
+                break;
+            }
+            catch (ObjectDisposedException)
+            {
+                // 소켓 Dispose 이후 접근 — 정상 종료
+                break;
+            }
             catch (Exception e)
             {
                 if (isRunning) Debug.LogError($"[UDP] {e.Message}");
+                break;
             }
         }
     }
