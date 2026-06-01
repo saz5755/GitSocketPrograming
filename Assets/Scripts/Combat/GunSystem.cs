@@ -19,13 +19,18 @@ public class GunSystem : MonoBehaviour
     public int Ammo    => _ammo;
     public int MaxAmmo => maxAmmo;
 
+    public void SetHUDVisible(bool v)
+    {
+        if (_overlayCanvas != null) _overlayCanvas.enabled = v;
+    }
+
     // ── 오디오 ────────────────────────────────────────────────────────────────
     AudioSource _gunSrc;
 
     // ── UI ────────────────────────────────────────────────────────────────────
-    Canvas        _overlayCanvas;
-    Text          _ammoText;
-    RectTransform _leadRT;
+    [SerializeField] Canvas        _overlayCanvas;  // Inspector 할당 가능 — null이면 자동 생성
+    [SerializeField] Text          _ammoText;       // Inspector 할당 가능 — null이면 자동 생성
+    [SerializeField] RectTransform _leadRT;         // Inspector 할당 가능 — null이면 자동 생성
     bool          _uiBuilt;
 
     // ── 조준 예측용 적 추적 ───────────────────────────────────────────────────
@@ -205,53 +210,71 @@ public class GunSystem : MonoBehaviour
     {
         var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
-        var go = new GameObject("GunOverlay_Canvas");
-        _overlayCanvas = go.AddComponent<Canvas>();
-        _overlayCanvas.renderMode   = RenderMode.ScreenSpaceOverlay;
-        _overlayCanvas.sortingOrder = 22;   // hudCanvas(20) 위, warningCanvas(30) 아래
-        var cs = go.AddComponent<CanvasScaler>();
-        cs.uiScaleMode         = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        cs.referenceResolution = new Vector2(1920f, 1080f);
-        cs.matchWidthOrHeight  = 0.5f;
-        go.AddComponent<GraphicRaycaster>();
+        if (_overlayCanvas == null)
+        {
+            var hud = GetComponent<FlightHUD>();
+            var go = new GameObject("GunOverlay_Canvas");
+            if (hud != null && hud.HudRoot != null)
+                go.transform.SetParent(hud.HudRoot, false);
+            _overlayCanvas = go.AddComponent<Canvas>();
+            _overlayCanvas.renderMode   = RenderMode.ScreenSpaceOverlay;
+            _overlayCanvas.sortingOrder = 22;   // HUD_Canvas(20) 위, Warning_Canvas(30) 아래
+            var cs = go.AddComponent<CanvasScaler>();
+            cs.uiScaleMode         = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            cs.referenceResolution = new Vector2(1920f, 1080f);
+            cs.matchWidthOrHeight  = 0.5f;
+            go.AddComponent<GraphicRaycaster>();
+        }
+        else
+        {
+            var hud = GetComponent<FlightHUD>();
+            if (hud != null && hud.HudRoot != null)
+                _overlayCanvas.transform.SetParent(hud.HudRoot, false);
+        }
 
-        // 탄수 표시 (우측 하단)
-        var ammoGO = new GameObject("GunAmmoText");
-        ammoGO.transform.SetParent(go.transform, false);
-        var ammoRT = ammoGO.AddComponent<RectTransform>();
-        ammoRT.anchorMin = ammoRT.anchorMax = new Vector2(0.5f, 0.5f);
-        ammoRT.anchoredPosition = new Vector2(636f, -296f);
-        ammoRT.sizeDelta        = new Vector2(170f, 28f);
-        _ammoText               = ammoGO.AddComponent<Text>();
-        _ammoText.text          = $"GUN  {_ammo:D3}";
-        _ammoText.font          = font;
-        _ammoText.fontSize      = 14;
-        _ammoText.color         = HGD;
-        _ammoText.alignment     = TextAnchor.MiddleLeft;
-        _ammoText.raycastTarget = false;
+        // 탄수 표시 (우측 글레어실드 영역) — 씬에 없을 때만 생성
+        if (_ammoText == null)
+        {
+            var ammoGO = new GameObject("GunAmmoText");
+            ammoGO.transform.SetParent(_overlayCanvas.transform, false);
+            var ammoRT = ammoGO.AddComponent<RectTransform>();
+            ammoRT.anchorMin = ammoRT.anchorMax = new Vector2(0.5f, 0.5f);
+            ammoRT.anchoredPosition = new Vector2(636f, -296f);
+            ammoRT.sizeDelta        = new Vector2(170f, 28f);
+            _ammoText               = ammoGO.AddComponent<Text>();
+            _ammoText.text          = $"GUN  {_ammo:D3}";
+            _ammoText.font          = font;
+            _ammoText.fontSize      = 14;
+            _ammoText.color         = HGD;
+            _ammoText.alignment     = TextAnchor.MiddleLeft;
+            _ammoText.raycastTarget = false;
+        }
 
-        // Lead indicator: 링 + 십자선
-        var leadGO = new GameObject("LeadIndicator");
-        leadGO.transform.SetParent(go.transform, false);
-        _leadRT = leadGO.AddComponent<RectTransform>();
-        _leadRT.anchorMin = _leadRT.anchorMax = new Vector2(0.5f, 0.5f);
-        _leadRT.sizeDelta = new Vector2(44f, 44f);
-        _leadRT.anchoredPosition = Vector2.zero;
-        _leadRT.gameObject.SetActive(false);
+        // Lead indicator: 링 + 십자선 — 씬에 없을 때만 생성
+        if (_leadRT == null)
+        {
+            var leadGO = new GameObject("LeadIndicator");
+            leadGO.transform.SetParent(_overlayCanvas.transform, false);
+            _leadRT = leadGO.AddComponent<RectTransform>();
+            _leadRT.anchorMin = _leadRT.anchorMax = new Vector2(0.5f, 0.5f);
+            _leadRT.sizeDelta = new Vector2(44f, 44f);
+            _leadRT.anchoredPosition = Vector2.zero;
+            _leadRT.gameObject.SetActive(false);
 
-        var ring = leadGO.AddComponent<Image>();
-        ring.sprite        = MakeRingSprite(64);
-        ring.color         = new Color(0f, 1f, 0f, 0.90f);
-        ring.raycastTarget = false;
+            var ring = leadGO.AddComponent<Image>();
+            ring.sprite        = MakeRingSprite(64);
+            ring.color         = new Color(0f, 1f, 0f, 0.90f);
+            ring.raycastTarget = false;
 
-        // 중심 점
-        MkImg(go.transform, leadGO.transform, Vector2.zero, new Vector2(5f, 5f), new Color(0f, 1f, 0f, 1f));
+            // 중심 점
+            MkImg(_overlayCanvas.transform, leadGO.transform, Vector2.zero, new Vector2(5f, 5f), new Color(0f, 1f, 0f, 1f));
 
-        // 십자 팔
-        MkImg(go.transform, leadGO.transform, new Vector2(-27f, 0f), new Vector2(10f, 2f), new Color(0f, 1f, 0f, 0.70f));
-        MkImg(go.transform, leadGO.transform, new Vector2( 27f, 0f), new Vector2(10f, 2f), new Color(0f, 1f, 0f, 0.70f));
-        MkImg(go.transform, leadGO.transform, new Vector2(0f,  27f), new Vector2(2f, 10f), new Color(0f, 1f, 0f, 0.70f));
-        MkImg(go.transform, leadGO.transform, new Vector2(0f, -27f), new Vector2(2f, 10f), new Color(0f, 1f, 0f, 0.70f));
+            // 십자 팔
+            MkImg(_overlayCanvas.transform, leadGO.transform, new Vector2(-27f, 0f), new Vector2(10f, 2f), new Color(0f, 1f, 0f, 0.70f));
+            MkImg(_overlayCanvas.transform, leadGO.transform, new Vector2( 27f, 0f), new Vector2(10f, 2f), new Color(0f, 1f, 0f, 0.70f));
+            MkImg(_overlayCanvas.transform, leadGO.transform, new Vector2(0f,  27f), new Vector2(2f, 10f), new Color(0f, 1f, 0f, 0.70f));
+            MkImg(_overlayCanvas.transform, leadGO.transform, new Vector2(0f, -27f), new Vector2(2f, 10f), new Color(0f, 1f, 0f, 0.70f));
+        }
     }
 
     static void MkImg(Transform canvasT, Transform parent, Vector2 pos, Vector2 size, Color col)

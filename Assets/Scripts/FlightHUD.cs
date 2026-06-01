@@ -21,8 +21,51 @@ public class FlightHUD : MonoBehaviour
     const int   ALT_LINES = 9;  const float ALT_STEP = 100f; const float ALT_PX = 34f;
     const int   HDG_LINES = 15; const float HDG_STEP =  10f; const float HDG_PX = 44f;
 
-    Canvas           hudCanvas;
-    Canvas           _hudGlassCanvas;  // WorldSpace — 플레이어 로컬 HUD 콤바이너 유리 패널
+    [SerializeField] Canvas    hudCanvas;       // HUD_Canvas — Inspector에서 미리 배치된 Canvas 할당 가능
+    [SerializeField] Canvas    _hudGlassCanvas; // HUD_GlassCanvas (WorldSpace) — Inspector에서 할당 가능
+    [SerializeField] Canvas    warningCanvas;   // Warning_Canvas — Inspector에서 미리 배치된 Canvas 할당 가능
+    [SerializeField] Transform hudRoot;         // HUD_Canvas·Warning_Canvas·GunOverlay_Canvas 공통 부모
+
+    public Transform HudRoot => hudRoot;
+    bool _hudGlassBuilt;
+
+    // ── 레이아웃 — 콕핏 프레임 ───────────────────────────────────────────────────
+    [Header("Layout — Cockpit Frame")]
+    [SerializeField] Vector2 _frameLPos     = new Vector2(-916f,   0f);
+    [SerializeField] Vector2 _frameLSize    = new Vector2(  88f, 1080f);
+    [SerializeField] Vector2 _frameRPos     = new Vector2( 916f,   0f);
+    [SerializeField] Vector2 _frameRSize    = new Vector2(  88f, 1080f);
+    [SerializeField] Vector2 _canopyTopPos  = new Vector2(   0f,  517f);
+    [SerializeField] Vector2 _canopyTopSize = new Vector2(1920f,   32f);
+
+    // ── 레이아웃 — 글레어실드 ─────────────────────────────────────────────────────
+    [Header("Layout — Glareshield")]
+    [SerializeField] Vector2 _gsLPos   = new Vector2(-605f, -390f);
+    [SerializeField] Vector2 _gsLSize  = new Vector2( 710f,  300f);
+    [SerializeField] Vector2 _gsRPos   = new Vector2( 605f, -390f);
+    [SerializeField] Vector2 _gsRSize  = new Vector2( 710f,  300f);
+    [SerializeField] float   _engScrX  = -700f;
+    [SerializeField] float   _mfdLScrX = -452f;
+    [SerializeField] float   _mfdRScrX =  452f;
+    [SerializeField] float   _wpnScrX  =  700f;
+
+    // ── 레이아웃 — HUD 유리 캔버스 ──────────────────────────────────────────────
+    [Header("Layout — HUD Glass Canvas")]
+    [SerializeField] Vector3 _glassLocalPos   = new Vector3(0f, 0.45f, 2.90f);
+    [SerializeField] float   _glassLocalScale = 0.0003f;
+    [SerializeField] Vector2 _glassSizeDelta  = new Vector2(1920f, 1080f);
+    [SerializeField] float   _glassBorderHW   =  860f;
+    [SerializeField] float   _glassBorderHH   =  430f;
+
+    // ── 레이아웃 — 계기 패널 ─────────────────────────────────────────────────────
+    [Header("Layout — Instruments")]
+    [SerializeField] float   _spdTapeX     = -752f;
+    [SerializeField] float   _altTapeX     =  752f;
+    [SerializeField] float   _hdgStripY    =  430f;
+    [SerializeField] float   _statusStripY = -218f;
+    [SerializeField] float   _warnBannerY  =  364f;
+    [SerializeField] Vector2 _ahMaskSize   = new Vector2(1744f, 741f);
+
     PlayerController localPlayer;
     FlightCamera     flightCamera;
     Font             fnt;
@@ -45,33 +88,39 @@ public class FlightHUD : MonoBehaviour
     Text aoaText, gText, warnText;
     RectTransform fpvRoot;
 
-    Text n1Text, fuelText, clockText, modeText, weaponText, gearText;
-    RectTransform n1Fill, fuelFill;
+    // ── 글레어실드 UI refs ────────────────────────────────────────────────────
+    [Header("Refs — Glareshield Left")]
+    [SerializeField] Text          n1Text, fuelText, clockText, modeText;
+    [SerializeField] RectTransform n1Fill, fuelFill;
 
-    // ── 타겟팅 오버레이 ──────────────────────────────────────────────────────
+    [Header("Refs — Glareshield Right")]
+    [SerializeField] Text          weaponText, gearText;
+    [SerializeField] Text          aim120CountText, flareCountText, chaffCountText;
+
+    // ── 타겟팅 오버레이 UI refs ───────────────────────────────────────────────
+    [Header("Refs — Targeting")]
     TargetingSystem    targeting;
     MissileLauncher    launcher;
     ThreatWarningSystem threatWarn;
     CountermeasureSystem cmsys;
-    RectTransform   tdbRoot;
+    [SerializeField] RectTransform   tdbRoot;
     RectTransform[] tdbArms = new RectTransform[8];
-    Text            tdbLabel, tdbRange, tdbClosure, tdbAspect, tdbName;
-    RectTransform   offScreenRoot;
-    Text            offScreenDist;
-    Text            aim120CountText;
+    [SerializeField] Text            tdbLabel, tdbRange, tdbClosure, tdbAspect, tdbName;
+    [SerializeField] RectTransform   offScreenRoot;
+    [SerializeField] Text            offScreenDist;
     float           tdbFlash;
 
-    // ── 위협 경고 UI (코크핏 HUD 내부) ─────────────────────────────────────
-    Text          threatWarningText;
-    RectTransform rwrNeedle;
-    Text          flareCountText, chaffCountText;
+    // ── 위협 경고 UI refs ─────────────────────────────────────────────────────
+    [Header("Refs — Threat / RWR")]
+    [SerializeField] Text          threatWarningText;
+    [SerializeField] RectTransform rwrNeedle;
 
-    // ── 상시 표시 경고 캔버스 (chase/cockpit 무관) ──────────────────────
-    Canvas  warningCanvas;
-    Image   missileAlertOverlay;
-    Text    missileAlertText;
-    Text    missileDistText;
-    Text    cmsDeployText;
+    // ── 경고 캔버스 UI refs ───────────────────────────────────────────────────
+    [Header("Refs — Warning Canvas")]
+    [SerializeField] Image   missileAlertOverlay;
+    [SerializeField] Text    missileAlertText;
+    [SerializeField] Text    missileDistText;
+    [SerializeField] Text    cmsDeployText;
     float   _deployTimer;
     string  _deployMsg;
 
@@ -84,14 +133,15 @@ public class FlightHUD : MonoBehaviour
     string  _raltCache = "RALT ---";
     const float RALT_INTERVAL = 0.1f;
 
-    // ── ILS 인디케이터 (warningCanvas) ──────────────────────────────────────
-    RectTransform _ilsPanel;
-    RectTransform _ilsLocBar;   // 로컬라이저 — 좌우 이동
-    RectTransform _ilsGsBar;    // 글라이드슬로프 — 상하 이동
-    Image         _ilsLocImg;
-    Image         _ilsGsImg;
-    Text          _ilsDistText;
-    Text          _ilsLabel;
+    // ── ILS 인디케이터 UI refs ────────────────────────────────────────────────
+    [Header("Refs — ILS Indicator")]
+    [SerializeField] RectTransform _ilsPanel;
+    [SerializeField] RectTransform _ilsLocBar;
+    [SerializeField] RectTransform _ilsGsBar;
+    [SerializeField] Image         _ilsLocImg;
+    [SerializeField] Image         _ilsGsImg;
+    [SerializeField] Text          _ilsDistText;
+    [SerializeField] Text          _ilsLabel;
 
     ILSBeacon _activeILS;
     float     _ilsScanTimer;
@@ -116,8 +166,17 @@ public class FlightHUD : MonoBehaviour
 
     public void SetVisible(bool visible)
     {
-        if (hudCanvas     != null) hudCanvas.enabled     = visible;
-        if (warningCanvas != null) warningCanvas.enabled = visible;
+        // 레이더: 비행 중 항상 표시, 지상 전환 시 숨김
+        GetComponent<RadarMiniMap>()?.SetVisible(visible);
+
+        // HUD/Warning/GunOverlay: 콕핏 모드 전용 — SetCockpitGlass가 제어
+        // 비행 이탈 시에만 강제 끔
+        if (!visible)
+        {
+            if (hudCanvas     != null) hudCanvas.enabled     = false;
+            if (warningCanvas != null) warningCanvas.enabled = false;
+            GetComponent<GunSystem>()?.SetHUDVisible(false);
+        }
     }
 
     /// <summary>
@@ -129,12 +188,24 @@ public class FlightHUD : MonoBehaviour
         if (hudCanvas == null) return;
         if (cockpitMode && cam != null)
         {
+            hudCanvas.enabled       = true;
             hudCanvas.renderMode    = RenderMode.ScreenSpaceCamera;
             hudCanvas.worldCamera   = cam;
             hudCanvas.planeDistance = 0.5f;
 
+            if (warningCanvas != null)
+            {
+                warningCanvas.enabled       = true;
+                warningCanvas.renderMode    = RenderMode.ScreenSpaceCamera;
+                warningCanvas.worldCamera   = cam;
+                warningCanvas.planeDistance = 0.5f;
+            }
+
+            GetComponent<GunSystem>()?.SetHUDVisible(true);
+            GetComponent<RadarMiniMap>()?.SetVisible(false);
+
             // HUD 유리 캔버스 최초 진입 시 빌드 (localPlayer transform이 확보된 뒤)
-            if (_hudGlassCanvas == null)
+            if (!_hudGlassBuilt)
             {
                 if (localPlayer == null) FindRefs();
                 if (localPlayer != null)
@@ -144,8 +215,20 @@ public class FlightHUD : MonoBehaviour
         }
         else
         {
+            hudCanvas.enabled     = false;
             hudCanvas.renderMode  = RenderMode.ScreenSpaceOverlay;
             hudCanvas.worldCamera = null;
+
+            if (warningCanvas != null)
+            {
+                warningCanvas.enabled     = false;
+                warningCanvas.renderMode  = RenderMode.ScreenSpaceOverlay;
+                warningCanvas.worldCamera = null;
+            }
+
+            GetComponent<GunSystem>()?.SetHUDVisible(false);
+            GetComponent<RadarMiniMap>()?.SetVisible(true);
+
             if (_hudGlassCanvas != null) _hudGlassCanvas.gameObject.SetActive(false);
         }
     }
@@ -155,20 +238,30 @@ public class FlightHUD : MonoBehaviour
     // 모든 비행 계기(AH/FPV/Speed/Alt/Hdg/Status/Boresight)를 이 유리면 위에 렌더링.
     void BuildHUDGlass(Transform playerTransform)
     {
-        var go = new GameObject("HUD_GlassCanvas");
-        go.transform.SetParent(playerTransform, false);
-        go.transform.localPosition = new Vector3(0f, 0.45f, 2.90f);
-        go.transform.localRotation = Quaternion.identity;
-        go.transform.localScale    = Vector3.one * 0.0003f;  // 1920 canvas units = 19.2 cm 물리
+        if (_hudGlassCanvas == null)
+        {
+            var go = new GameObject("HUD_GlassCanvas");
+            go.transform.SetParent(playerTransform, false);
+            go.transform.localPosition = _glassLocalPos;
+            go.transform.localRotation = Quaternion.identity;
+            go.transform.localScale    = Vector3.one * _glassLocalScale;
 
-        var canvas = go.AddComponent<Canvas>();
-        canvas.renderMode   = RenderMode.WorldSpace;
-        canvas.sortingOrder = 15;
+            var canvas = go.AddComponent<Canvas>();
+            canvas.renderMode   = RenderMode.WorldSpace;
+            canvas.sortingOrder = 15;
 
-        var rt = canvas.GetComponent<RectTransform>();
-        rt.sizeDelta = new Vector2(1920f, 1080f);
+            var rt = canvas.GetComponent<RectTransform>();
+            rt.sizeDelta = _glassSizeDelta;
 
-        Transform p = canvas.transform;
+            _hudGlassCanvas = canvas;
+        }
+        else
+        {
+            // Inspector에서 미리 배치된 경우 플레이어 하위로 이동
+            _hudGlassCanvas.transform.SetParent(playerTransform, false);
+        }
+
+        Transform p = _hudGlassCanvas.transform;
         BuildHUDGlassBorder(p);
         BuildArtificialHorizon(p);
         BuildFPV(p);
@@ -179,7 +272,7 @@ public class FlightHUD : MonoBehaviour
         BuildStatusStrip(p);
         BuildBoresight(p);
 
-        _hudGlassCanvas = canvas;
+        _hudGlassBuilt = true;
         _hudGlassCanvas.gameObject.SetActive(false);
     }
 
@@ -210,45 +303,78 @@ public class FlightHUD : MonoBehaviour
         UpdateHUD();
     }
 
+    // ── 에디터에서 우클릭 → "Build HUD" 로 씬에 미리 빌드 ───────────────────────
+    [ContextMenu("Build HUD")]
+    void BuildHUDFromEditor()
+    {
+        fnt = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        if (hudCanvas     != null) ClearChildren(hudCanvas.transform);
+        if (warningCanvas != null) ClearChildren(warningCanvas.transform);
+        BuildHUD();
+        BuildWarningCanvas();
+#if UNITY_EDITOR
+        UnityEditor.EditorUtility.SetDirty(gameObject);
+        UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(
+            UnityEditor.SceneManagement.EditorSceneManager.GetActiveScene());
+#endif
+    }
+
     // ═══════════════════════════════════════════════════════════════════════
     // ── 상시 표시 경고 캔버스 빌드 ─────────────────────────────────────────
     void BuildWarningCanvas()
     {
-        var go = new GameObject("Warning_Canvas");
-        warningCanvas = go.AddComponent<Canvas>();
-        warningCanvas.renderMode   = RenderMode.ScreenSpaceOverlay;
-        warningCanvas.sortingOrder = 30;
-        var cs = go.AddComponent<CanvasScaler>();
-        cs.uiScaleMode         = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        cs.referenceResolution = new Vector2(1920, 1080);
-        cs.matchWidthOrHeight  = 0.5f;
-        go.AddComponent<GraphicRaycaster>();
+        if (warningCanvas == null)
+        {
+            var go = new GameObject("Warning_Canvas");
+            go.transform.SetParent(hudRoot, false);
+            warningCanvas = go.AddComponent<Canvas>();
+            warningCanvas.renderMode   = RenderMode.ScreenSpaceOverlay;
+            warningCanvas.sortingOrder = 30;
+            var cs = go.AddComponent<CanvasScaler>();
+            cs.uiScaleMode         = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            cs.referenceResolution = new Vector2(1920, 1080);
+            cs.matchWidthOrHeight  = 0.5f;
+            go.AddComponent<GraphicRaycaster>();
+        }
+        else
+        {
+            warningCanvas.transform.SetParent(hudRoot, false);
+        }
 
-        var overlay = MakeStretch("MissileAlert", warningCanvas.transform);
-        missileAlertOverlay = overlay.gameObject.AddComponent<Image>();
-        missileAlertOverlay.color = Color.clear;
-        missileAlertOverlay.raycastTarget = false;
-
-        missileAlertText = AddTxt(warningCanvas.transform, "",
-            new Vector2(0f, 400f), new Vector2(900f, 60f), 28, CRIT, TextAnchor.MiddleCenter);
-        missileAlertText.fontStyle = FontStyle.Bold;
-
-        missileDistText = AddTxt(warningCanvas.transform, "",
-            new Vector2(0f, 360f), new Vector2(400f, 30f), 14, WARN, TextAnchor.MiddleCenter);
-
-        cmsDeployText = AddTxt(warningCanvas.transform, "",
-            new Vector2(700f, 380f), new Vector2(200f, 36f), 18, WARN, TextAnchor.MiddleCenter);
-        cmsDeployText.fontStyle = FontStyle.Bold;
+        if (missileAlertOverlay == null)
+        {
+            var overlay = MakeStretch("MissileAlert", warningCanvas.transform);
+            missileAlertOverlay = overlay.gameObject.AddComponent<Image>();
+            missileAlertOverlay.color = Color.clear;
+            missileAlertOverlay.raycastTarget = false;
+        }
+        if (missileAlertText == null)
+        {
+            missileAlertText = AddTxt(warningCanvas.transform, "",
+                new Vector2(0f, 400f), new Vector2(900f, 60f), 28, CRIT, TextAnchor.MiddleCenter);
+            missileAlertText.fontStyle = FontStyle.Bold;
+        }
+        if (missileDistText == null)
+            missileDistText = AddTxt(warningCanvas.transform, "",
+                new Vector2(0f, 360f), new Vector2(400f, 30f), 14, WARN, TextAnchor.MiddleCenter);
+        if (cmsDeployText == null)
+        {
+            cmsDeployText = AddTxt(warningCanvas.transform, "",
+                new Vector2(700f, 380f), new Vector2(200f, 36f), 18, WARN, TextAnchor.MiddleCenter);
+            cmsDeployText.fontStyle = FontStyle.Bold;
+        }
 
         BuildWarningRWR();
         BuildILSIndicator();
     }
 
-    RectTransform _warnRwrNeedle;
-    Text          _warnRwrLabel;
+    [Header("Refs — Warning RWR")]
+    [SerializeField] RectTransform _warnRwrNeedle;
+    [SerializeField] Text          _warnRwrLabel;
 
     void BuildWarningRWR()
     {
+        if (_warnRwrNeedle != null) return;
         var root = Rect("WRWR", warningCanvas.transform, new Vector2(-800f, 0f), new Vector2(90f, 90f));
         Img(root, new Color(0f, 0f, 0f, 0.60f));
         var ol = root.gameObject.AddComponent<Outline>();
@@ -378,8 +504,9 @@ public class FlightHUD : MonoBehaviour
     // ILS 비컨 수신 범위 내 진입 시 자동 표시, 벗어나면 자동 숨김.
     void BuildILSIndicator()
     {
+        if (_ilsPanel != null) return;
         float pw = 160f, ph = 160f;
-        _ilsPanel = Rect("ILS_Panel", warningCanvas.transform, new Vector2(0f, -330f), new Vector2(pw, ph));
+        _ilsPanel = Rect("ILS_Panel", warningCanvas.transform, new Vector2(-680f, -330f), new Vector2(pw, ph));
         Img(_ilsPanel, new Color(0f, 0f, 0f, 0.65f));
 
         // 스케일 도트 (±1/2 풀스케일)
@@ -487,15 +614,31 @@ public class FlightHUD : MonoBehaviour
     void BuildHUD()
     {
         fnt = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        var go = new GameObject("HUD_Canvas");
-        hudCanvas = go.AddComponent<Canvas>();
-        hudCanvas.renderMode   = RenderMode.ScreenSpaceOverlay;
-        hudCanvas.sortingOrder = 20;
-        var sc = go.AddComponent<CanvasScaler>();
-        sc.uiScaleMode         = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        sc.referenceResolution = new Vector2(1920, 1080);
-        sc.matchWidthOrHeight  = 0.5f;
-        go.AddComponent<GraphicRaycaster>();
+
+        if (hudRoot == null)
+        {
+            var rootGO = new GameObject("HUD");
+            hudRoot = rootGO.transform;
+        }
+
+        if (hudCanvas == null)
+        {
+            var go = new GameObject("HUD_Canvas");
+            go.transform.SetParent(hudRoot, false);
+            hudCanvas = go.AddComponent<Canvas>();
+            hudCanvas.renderMode   = RenderMode.ScreenSpaceOverlay;
+            hudCanvas.sortingOrder = 20;
+            var sc = go.AddComponent<CanvasScaler>();
+            sc.uiScaleMode         = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            sc.referenceResolution = new Vector2(1920, 1080);
+            sc.matchWidthOrHeight  = 0.5f;
+            go.AddComponent<GraphicRaycaster>();
+        }
+        else
+        {
+            hudCanvas.transform.SetParent(hudRoot, false);
+        }
+
         hudCanvas.enabled = false;
 
         // 콕핏 프레임(캐노피·글레어실드)만 hudCanvas에 — 계기류는 BuildHUDGlass에서 WorldSpace에 빌드
@@ -514,16 +657,16 @@ public class FlightHUD : MonoBehaviour
     // ── 인공수평선: WorldSpace 유리 캔버스(parent)에 빌드 ──────────────────────
     void BuildArtificialHorizon(Transform parent)
     {
-        var mask = Rect("AH_Mask", parent, Vector2.zero, new Vector2(1744f, 741f));
+        var mask = Rect("AH_Mask", parent, Vector2.zero, _ahMaskSize);
         mask.gameObject.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0.01f);
         mask.gameObject.AddComponent<Mask>().showMaskGraphic = false;
 
-        ahRoot  = Rect("AH_Root",  mask,   Vector2.zero, new Vector2(1744f, 741f));
-        ahSlide = Rect("AH_Slide", ahRoot, Vector2.zero, new Vector2(1744f, 3200f));
+        ahRoot  = Rect("AH_Root",  mask,   Vector2.zero, _ahMaskSize);
+        ahSlide = Rect("AH_Slide", ahRoot, Vector2.zero, new Vector2(_ahMaskSize.x, 3200f));
 
-        Img(Rect("HL", ahSlide, Vector2.zero, new Vector2(1744f, 2f)), HG);
+        Img(Rect("HL", ahSlide, Vector2.zero, new Vector2(_ahMaskSize.x, 2f)), HG);
 
-        var ladder = Rect("Ladder", ahSlide, Vector2.zero, new Vector2(1744f, 3200f));
+        var ladder = Rect("Ladder", ahSlide, Vector2.zero, new Vector2(_ahMaskSize.x, 3200f));
         const float GAP = 155f;
         foreach (int deg in PitchMarks)
         {
@@ -565,55 +708,98 @@ public class FlightHUD : MonoBehaviour
     // ── 콕핏 프레임 (캐노피 보우 + 글레어실드) ─────────────────────────────
     void BuildCockpitFrame()
     {
-        var L = Rect("FrameL", hudCanvas.transform, new Vector2(-916f, 0f), new Vector2(88f, 1080f));
-        Img(L, PANEL);
-        Img(Rect("FLE", hudCanvas.transform, new Vector2(-872f, 0f), new Vector2(2f, 1080f)),
-            new Color(HG.r, HG.g, HG.b, 0.14f));
+        // 프레임 구조 — 씬에 없을 때만 생성
+        if (hudCanvas.transform.Find("FrameL") == null)
+        {
+            var L = Rect("FrameL", hudCanvas.transform, _frameLPos, _frameLSize);
+            Img(L, PANEL);
+            Img(Rect("FLE", hudCanvas.transform, new Vector2(_frameLPos.x + 44f, 0f), new Vector2(2f, _frameLSize.y)),
+                new Color(HG.r, HG.g, HG.b, 0.14f));
 
-        var R = Rect("FrameR", hudCanvas.transform, new Vector2( 916f, 0f), new Vector2(88f, 1080f));
-        Img(R, PANEL);
-        Img(Rect("FRE", hudCanvas.transform, new Vector2( 872f, 0f), new Vector2(2f, 1080f)),
-            new Color(HG.r, HG.g, HG.b, 0.14f));
+            var R = Rect("FrameR", hudCanvas.transform, _frameRPos, _frameRSize);
+            Img(R, PANEL);
+            Img(Rect("FRE", hudCanvas.transform, new Vector2(_frameRPos.x - 44f, 0f), new Vector2(2f, _frameRSize.y)),
+                new Color(HG.r, HG.g, HG.b, 0.14f));
 
-        var T = Rect("CanopyTop", hudCanvas.transform, new Vector2(0f, 517f), new Vector2(1920f, 32f));
-        Img(T, PANEL);
-        AddTxt(T, "KAI  KF-21 BORAMAE",
-            Vector2.zero, new Vector2(700f, 28f), 10, HGX, TextAnchor.MiddleCenter);
-        Img(Rect("TopEdge", hudCanvas.transform, new Vector2(0f, 501f), new Vector2(1920f, 1f)),
-            new Color(HG.r, HG.g, HG.b, 0.18f));
+            var T = Rect("CanopyTop", hudCanvas.transform, _canopyTopPos, _canopyTopSize);
+            Img(T, PANEL);
+            AddTxt(T, "KAI  KF-21 BORAMAE",
+                Vector2.zero, new Vector2(700f, 28f), 10, HGX, TextAnchor.MiddleCenter);
+            Img(Rect("TopEdge", hudCanvas.transform, new Vector2(0f, _canopyTopPos.y - 16f), new Vector2(_canopyTopSize.x, 1f)),
+                new Color(HG.r, HG.g, HG.b, 0.18f));
+        }
 
-        var B = Rect("Glareshield", hudCanvas.transform, new Vector2(0f, -390f), new Vector2(1920f, 300f));
-        Img(B, PANEL);
-        Img(Rect("GsEdge", hudCanvas.transform, new Vector2(0f, -240f), new Vector2(1920f, 1f)),
-            new Color(HG.r, HG.g, HG.b, 0.18f));
-        BuildGlareshield(B);
+        // 글레어실드 L — 씬에 있으면 Find, 없으면 생성
+        var gsLt = hudCanvas.transform.Find("GlareshieldL");
+        var BL = gsLt != null ? gsLt.GetComponent<RectTransform>()
+                              : Rect("GlareshieldL", hudCanvas.transform, _gsLPos, _gsLSize);
+        if (gsLt == null)
+        {
+            Img(BL, PANEL);
+            Img(Rect("GsEdgeL", hudCanvas.transform, new Vector2(_gsLPos.x, _gsLPos.y + _gsLSize.y * 0.5f), new Vector2(_gsLSize.x, 1f)),
+                new Color(HG.r, HG.g, HG.b, 0.18f));
+        }
+        BuildGlareshieldLeft(BL);
+
+        // 글레어실드 R
+        var gsRt = hudCanvas.transform.Find("GlareshieldR");
+        var BR = gsRt != null ? gsRt.GetComponent<RectTransform>()
+                              : Rect("GlareshieldR", hudCanvas.transform, _gsRPos, _gsRSize);
+        if (gsRt == null)
+        {
+            Img(BR, PANEL);
+            Img(Rect("GsEdgeR", hudCanvas.transform, new Vector2(_gsRPos.x, _gsRPos.y + _gsRSize.y * 0.5f), new Vector2(_gsRSize.x, 1f)),
+                new Color(HG.r, HG.g, HG.b, 0.18f));
+        }
+        BuildGlareshieldRight(BR);
     }
 
-    void BuildGlareshield(RectTransform p)
+    // ── 좌측 글레어실드 (엔진/연료/클럭 + SA/EW MFD) ─────────────────────────
+    void BuildGlareshieldLeft(RectTransform p)
     {
-        // ── 좌측: 엔진/연료/클럭 ─────────────────────────────────────────────
-        AddTxt(p, "ENGINE", new Vector2(-700f, 118f), new Vector2(110f, 20f), 9, HGD, TextAnchor.MiddleCenter);
-        Img(Rect("LD1", p, new Vector2(-700f, 107f), new Vector2(100f, 1f)), HGX);
-        AddTxt(p, "N1", new Vector2(-730f, 88f), new Vector2(38f, 20f), 9, HGD, TextAnchor.MiddleLeft);
-        n1Text = AddTxt(p, "30%", new Vector2(-675f, 88f), new Vector2(58f, 20f), 10, HG, TextAnchor.MiddleRight);
-        var n1BG = Rect("N1BG", p, new Vector2(-700f, 72f), new Vector2(88f, 8f));
-        Img(n1BG, new Color(HG.r*.1f, HG.g*.1f, HG.b*.1f, 0.8f));
-        n1Fill = Rect("N1F", p, new Vector2(-744f, 72f), new Vector2(0f, 8f));
-        n1Fill.pivot = new Vector2(0f, 0.5f); Img(n1Fill, HG);
-        AddTxt(p, "FUEL", new Vector2(-700f, 46f), new Vector2(110f, 20f), 9, HGD, TextAnchor.MiddleCenter);
-        Img(Rect("LD2", p, new Vector2(-700f, 35f), new Vector2(100f, 1f)), HGX);
-        fuelText = AddTxt(p, "100.0%", new Vector2(-700f, 17f), new Vector2(100f, 20f), 11, HG, TextAnchor.MiddleCenter);
-        var fBG = Rect("FBG", p, new Vector2(-700f, -1f), new Vector2(88f, 8f));
-        Img(fBG, new Color(HG.r*.1f, HG.g*.1f, HG.b*.1f, 0.8f));
-        fuelFill = Rect("FF", p, new Vector2(-744f, -1f), new Vector2(88f, 8f));
-        fuelFill.pivot = new Vector2(0f, 0.5f); Img(fuelFill, HG);
-        AddTxt(p, "MIS TIME", new Vector2(-700f, -28f), new Vector2(100f, 16f), 7, HGX, TextAnchor.MiddleCenter);
-        clockText = AddTxt(p, "00:00:00", new Vector2(-700f, -46f), new Vector2(100f, 20f), 10, HGD, TextAnchor.MiddleCenter);
-        modeText  = AddTxt(p, "NAV", new Vector2(-700f, -78f), new Vector2(100f, 26f), 13, HG, TextAnchor.MiddleCenter);
-        AddTxt(p, "A/P OFF", new Vector2(-700f, -102f), new Vector2(100f, 18f), 8, HGX, TextAnchor.MiddleCenter);
+        float ex = _engScrX  - _gsLPos.x;  // 엔진 섹션 로컬 x
+        float lx = _mfdLScrX - _gsLPos.x;  // 좌측 MFD 로컬 x
 
-        // ── 좌측 MFD (SA/EW) ─────────────────────────────────────────────────
-        var lMFD = Rect("MFDL", p, new Vector2(-452f, 8f), new Vector2(220f, 170f));
+        // 엔진·N1 섹션
+        if (n1Text == null)
+        {
+            AddTxt(p, "ENGINE", new Vector2(ex, 118f), new Vector2(110f, 20f), 9, HGD, TextAnchor.MiddleCenter);
+            Img(Rect("LD1", p, new Vector2(ex, 107f), new Vector2(100f, 1f)), HGX);
+            AddTxt(p, "N1", new Vector2(ex - 30f, 88f), new Vector2(38f, 20f), 9, HGD, TextAnchor.MiddleLeft);
+            n1Text = AddTxt(p, "30%", new Vector2(ex + 25f, 88f), new Vector2(58f, 20f), 10, HG, TextAnchor.MiddleRight);
+            var n1BG = Rect("N1BG", p, new Vector2(ex, 72f), new Vector2(88f, 8f));
+            Img(n1BG, new Color(HG.r*.1f, HG.g*.1f, HG.b*.1f, 0.8f));
+            n1Fill = Rect("N1F", p, new Vector2(ex - 44f, 72f), new Vector2(0f, 8f));
+            n1Fill.pivot = new Vector2(0f, 0.5f); Img(n1Fill, HG);
+        }
+
+        // 연료 섹션
+        if (fuelText == null)
+        {
+            AddTxt(p, "FUEL", new Vector2(ex, 46f), new Vector2(110f, 20f), 9, HGD, TextAnchor.MiddleCenter);
+            Img(Rect("LD2", p, new Vector2(ex, 35f), new Vector2(100f, 1f)), HGX);
+            fuelText = AddTxt(p, "100.0%", new Vector2(ex, 17f), new Vector2(100f, 20f), 11, HG, TextAnchor.MiddleCenter);
+            var fBG = Rect("FBG", p, new Vector2(ex, -1f), new Vector2(88f, 8f));
+            Img(fBG, new Color(HG.r*.1f, HG.g*.1f, HG.b*.1f, 0.8f));
+            fuelFill = Rect("FF", p, new Vector2(ex - 44f, -1f), new Vector2(88f, 8f));
+            fuelFill.pivot = new Vector2(0f, 0.5f); Img(fuelFill, HG);
+        }
+
+        // 미션 클럭·모드
+        if (clockText == null)
+        {
+            AddTxt(p, "MIS TIME", new Vector2(ex, -28f), new Vector2(100f, 16f), 7, HGX, TextAnchor.MiddleCenter);
+            clockText = AddTxt(p, "00:00:00", new Vector2(ex, -46f), new Vector2(100f, 20f), 10, HGD, TextAnchor.MiddleCenter);
+        }
+        if (modeText == null)
+        {
+            modeText = AddTxt(p, "NAV", new Vector2(ex, -78f), new Vector2(100f, 26f), 13, HG, TextAnchor.MiddleCenter);
+            AddTxt(p, "A/P OFF", new Vector2(ex, -102f), new Vector2(100f, 18f), 8, HGX, TextAnchor.MiddleCenter);
+        }
+
+        // SA/EW MFD
+        if (p.Find("MFDL") != null) return;
+        var lMFD = Rect("MFDL", p, new Vector2(lx, 8f), new Vector2(220f, 170f));
         Img(lMFD, MFD);
         var lOl = lMFD.gameObject.AddComponent<Outline>();
         lOl.effectColor = new Color(HG.r,HG.g,HG.b,.3f); lOl.effectDistance = new Vector2(1,1);
@@ -624,58 +810,64 @@ public class FlightHUD : MonoBehaviour
         mc.gameObject.AddComponent<Image>().color = Color.clear;
         mc.gameObject.AddComponent<Outline>().effectColor = new Color(HG.r,HG.g,HG.b,.5f);
         AddTxt(lMFD, "NO THREAT", new Vector2(0f,-68f), new Vector2(190f,16f), 8, HGX, TextAnchor.MiddleCenter);
+    }
 
-        // ── 중앙: 스로틀/UFC ─────────────────────────────────────────────────
-        AddTxt(p, "THROTTLE", new Vector2(0f,118f), new Vector2(120f,18f), 7, HGX, TextAnchor.MiddleCenter);
-        var tBG = Rect("TBG", p, new Vector2(0f,50f), new Vector2(90f,80f));
-        Img(tBG, new Color(0f,0f,0f,.5f));
-        AddTxt(p, "IDLE", new Vector2(0f, 12f), new Vector2(70f,16f), 7, HGX, TextAnchor.MiddleCenter);
-        AddTxt(p, "MIL",  new Vector2(0f, 82f), new Vector2(70f,16f), 7, HGX, TextAnchor.MiddleCenter);
-        var ab = Rect("AB", p, new Vector2(36f,100f), new Vector2(10f,18f));
-        Img(ab, new Color(ExhGlow.r*.3f, ExhGlow.g*.3f, ExhGlow.b*.3f, .6f));
-        AddTxt(p, "UFC", new Vector2(0f,-32f), new Vector2(120f,18f), 7, HGX, TextAnchor.MiddleCenter);
-        var ufc = Rect("UFC", p, new Vector2(0f,-80f), new Vector2(100f,60f));
-        Img(ufc, new Color(.02f,.04f,.03f,.9f));
-        ufc.gameObject.AddComponent<Outline>().effectColor = new Color(HG.r,HG.g,HG.b,.2f);
+    // ── 우측 글레어실드 (NAV/HSI MFD + 무장/시스템) ──────────────────────────
+    void BuildGlareshieldRight(RectTransform p)
+    {
+        float rx = _mfdRScrX - _gsRPos.x;  // 우측 MFD 로컬 x
+        float wx = _wpnScrX  - _gsRPos.x;  // 무장 섹션 로컬 x
 
-        // ── 우측 MFD (NAV/HSI) ───────────────────────────────────────────────
-        var rMFD = Rect("MFDR", p, new Vector2(452f, 8f), new Vector2(220f,170f));
-        Img(rMFD, MFD);
-        var rOl = rMFD.gameObject.AddComponent<Outline>();
-        rOl.effectColor = new Color(HG.r,HG.g,HG.b,.3f); rOl.effectDistance = new Vector2(1,1);
-        AddTxt(rMFD, "NAV / HSI", new Vector2(0f, 72f), new Vector2(200f,18f), 8, HGD, TextAnchor.MiddleCenter);
-        var hsi = Rect("HSI", rMFD, new Vector2(0f,-10f), new Vector2(85f,85f));
-        hsi.gameObject.AddComponent<Image>().color = Color.clear;
-        hsi.gameObject.AddComponent<Outline>().effectColor = new Color(HG.r,HG.g,HG.b,.35f);
-        AddTxt(rMFD, "N", new Vector2(0f, 32f), new Vector2(18f,16f), 8, HGD, TextAnchor.MiddleCenter);
-        AddTxt(rMFD, "S", new Vector2(0f,-54f), new Vector2(18f,16f), 8, HGD, TextAnchor.MiddleCenter);
-        AddTxt(rMFD, "E", new Vector2( 34f,-12f), new Vector2(18f,16f), 8, HGD, TextAnchor.MiddleCenter);
-        AddTxt(rMFD, "W", new Vector2(-34f,-12f), new Vector2(18f,16f), 8, HGD, TextAnchor.MiddleCenter);
+        // NAV/HSI MFD
+        if (p.Find("MFDR") == null)
+        {
+            var rMFD = Rect("MFDR", p, new Vector2(rx, 8f), new Vector2(220f,170f));
+            Img(rMFD, MFD);
+            var rOl = rMFD.gameObject.AddComponent<Outline>();
+            rOl.effectColor = new Color(HG.r,HG.g,HG.b,.3f); rOl.effectDistance = new Vector2(1,1);
+            AddTxt(rMFD, "NAV / HSI", new Vector2(0f, 72f), new Vector2(200f,18f), 8, HGD, TextAnchor.MiddleCenter);
+            var hsi = Rect("HSI", rMFD, new Vector2(0f,-10f), new Vector2(85f,85f));
+            hsi.gameObject.AddComponent<Image>().color = Color.clear;
+            hsi.gameObject.AddComponent<Outline>().effectColor = new Color(HG.r,HG.g,HG.b,.35f);
+            AddTxt(rMFD, "N", new Vector2(0f, 32f), new Vector2(18f,16f), 8, HGD, TextAnchor.MiddleCenter);
+            AddTxt(rMFD, "S", new Vector2(0f,-54f), new Vector2(18f,16f), 8, HGD, TextAnchor.MiddleCenter);
+            AddTxt(rMFD, "E", new Vector2( 34f,-12f), new Vector2(18f,16f), 8, HGD, TextAnchor.MiddleCenter);
+            AddTxt(rMFD, "W", new Vector2(-34f,-12f), new Vector2(18f,16f), 8, HGD, TextAnchor.MiddleCenter);
+        }
 
-        // ── 우측: 무장/시스템 ─────────────────────────────────────────────────
-        AddTxt(p, "WEAPON", new Vector2(700f, 118f), new Vector2(110f,20f), 9, HGD, TextAnchor.MiddleCenter);
-        Img(Rect("RD1", p, new Vector2(700f,107f), new Vector2(100f,1f)), HGX);
-        weaponText = AddTxt(p, "SAFE", new Vector2(700f,88f), new Vector2(100f,26f), 13, HGD, TextAnchor.MiddleCenter);
-        aim120CountText = AddTxt(p, "AIM-120  x4", new Vector2(700f,66f), new Vector2(110f,18f), 8, HGX, TextAnchor.MiddleCenter);
-        AddTxt(p, "AIM-9X   x2", new Vector2(700f,48f), new Vector2(110f,18f), 8, HGX, TextAnchor.MiddleCenter);
-        AddTxt(p, "SYSTEMS", new Vector2(700f,20f), new Vector2(110f,20f), 9, HGD, TextAnchor.MiddleCenter);
-        Img(Rect("RD2", p, new Vector2(700f,9f), new Vector2(100f,1f)), HGX);
-        gearText = AddTxt(p, "GEAR  UP",  new Vector2(700f,-10f), new Vector2(110f,20f), 9, HGD, TextAnchor.MiddleCenter);
-        AddTxt(p, "FLAP  RET",  new Vector2(700f,-30f), new Vector2(110f,20f), 9, HGD, TextAnchor.MiddleCenter);
-        AddTxt(p, "ECM  STBY",  new Vector2(700f,-50f), new Vector2(110f,20f), 9, HGD, TextAnchor.MiddleCenter);
-        AddTxt(p, "IFF  ON",    new Vector2(700f,-70f), new Vector2(110f,20f), 9, HGD, TextAnchor.MiddleCenter);
-        AddTxt(p, "APG-81  ACT",new Vector2(700f,-96f), new Vector2(110f,20f), 9, HGD, TextAnchor.MiddleCenter);
+        // 무장 섹션
+        if (weaponText == null)
+        {
+            AddTxt(p, "WEAPON", new Vector2(wx, 118f), new Vector2(110f,20f), 9, HGD, TextAnchor.MiddleCenter);
+            Img(Rect("RD1", p, new Vector2(wx,107f), new Vector2(100f,1f)), HGX);
+            weaponText = AddTxt(p, "SAFE", new Vector2(wx,88f), new Vector2(100f,26f), 13, HGD, TextAnchor.MiddleCenter);
+            if (aim120CountText == null)
+                aim120CountText = AddTxt(p, "AIM-120  x4", new Vector2(wx,66f), new Vector2(110f,18f), 8, HGX, TextAnchor.MiddleCenter);
+            AddTxt(p, "AIM-9X   x2", new Vector2(wx,48f), new Vector2(110f,18f), 8, HGX, TextAnchor.MiddleCenter);
+            AddTxt(p, "SYSTEMS", new Vector2(wx,20f), new Vector2(110f,20f), 9, HGD, TextAnchor.MiddleCenter);
+            Img(Rect("RD2", p, new Vector2(wx,9f), new Vector2(100f,1f)), HGX);
+            if (gearText == null)
+                gearText = AddTxt(p, "GEAR  UP", new Vector2(wx,-10f), new Vector2(110f,20f), 9, HGD, TextAnchor.MiddleCenter);
+            AddTxt(p, "FLAP  RET",  new Vector2(wx,-30f), new Vector2(110f,20f), 9, HGD, TextAnchor.MiddleCenter);
+            AddTxt(p, "ECM  STBY",  new Vector2(wx,-50f), new Vector2(110f,20f), 9, HGD, TextAnchor.MiddleCenter);
+            AddTxt(p, "IFF  ON",    new Vector2(wx,-70f), new Vector2(110f,20f), 9, HGD, TextAnchor.MiddleCenter);
+            AddTxt(p, "APG-81  ACT",new Vector2(wx,-96f), new Vector2(110f,20f), 9, HGD, TextAnchor.MiddleCenter);
+        }
 
-        AddTxt(p, "COUNTERMEASURE", new Vector2(700f,-116f), new Vector2(130f,14f), 7, HGX, TextAnchor.MiddleCenter);
-        Img(Rect("CMD", p, new Vector2(700f,-126f), new Vector2(110f,1f)), HGX);
-        flareCountText = AddTxt(p, "FLARE  30", new Vector2(700f,-138f), new Vector2(110f,16f), 9, HGD, TextAnchor.MiddleCenter);
-        chaffCountText = AddTxt(p, "CHAFF  30", new Vector2(700f,-152f), new Vector2(110f,16f), 9, HGD, TextAnchor.MiddleCenter);
+        // 카운터메저 섹션
+        if (flareCountText == null)
+        {
+            AddTxt(p, "COUNTERMEASURE", new Vector2(wx,-116f), new Vector2(130f,14f), 7, HGX, TextAnchor.MiddleCenter);
+            Img(Rect("CMD", p, new Vector2(wx,-126f), new Vector2(110f,1f)), HGX);
+            flareCountText = AddTxt(p, "FLARE  30", new Vector2(wx,-138f), new Vector2(110f,16f), 9, HGD, TextAnchor.MiddleCenter);
+            chaffCountText = AddTxt(p, "CHAFF  30", new Vector2(wx,-152f), new Vector2(110f,16f), 9, HGD, TextAnchor.MiddleCenter);
+        }
     }
 
     // ── HUD 유리 코너 브래킷 (WorldSpace 유리 캔버스 경계 표시) ───────────────
     void BuildHUDGlassBorder(Transform parent)
     {
-        float hw=860f, hh=430f, arm=60f, thk=2f;
+        float hw=_glassBorderHW, hh=_glassBorderHH, arm=60f, thk=2f;
         Color bc = new Color(HG.r, HG.g, HG.b, 0.50f);
         MkBracket(parent, -hw,  hh,  1f,-1f, arm, thk, bc);
         MkBracket(parent,  hw,  hh, -1f,-1f, arm, thk, bc);
@@ -699,7 +891,7 @@ public class FlightHUD : MonoBehaviour
     // ── 속도 테이프 ──────────────────────────────────────────────────────────
     void BuildSpeedTape(Transform parent)
     {
-        float px = -752f;
+        float px = _spdTapeX;
         var panel = Rect("SpdPanel", parent, new Vector2(px,0f), new Vector2(130f,SPD_LINES*SPD_PX+24f));
         Img(panel, new Color(0f,0f,0f,.60f));
         var msk = Rect("SM", panel, Vector2.zero, new Vector2(110f,SPD_LINES*SPD_PX));
@@ -738,7 +930,7 @@ public class FlightHUD : MonoBehaviour
     // ── 고도 테이프 ──────────────────────────────────────────────────────────
     void BuildAltTape(Transform parent)
     {
-        float px=752f;
+        float px = _altTapeX;
         var panel=Rect("AltPanel",parent,new Vector2(px,0f),new Vector2(130f,ALT_LINES*ALT_PX+24f));
         Img(panel,new Color(0f,0f,0f,.60f));
         var msk=Rect("AM",panel,Vector2.zero,new Vector2(110f,ALT_LINES*ALT_PX));
@@ -769,7 +961,7 @@ public class FlightHUD : MonoBehaviour
     // ── 헤딩 스트립 ──────────────────────────────────────────────────────────
     void BuildHeadingStrip(Transform parent)
     {
-        var panel=Rect("HdgPanel",parent,new Vector2(0f,430f),new Vector2(HDG_LINES*HDG_PX+24f,50f));
+        var panel=Rect("HdgPanel",parent,new Vector2(0f,_hdgStripY),new Vector2(HDG_LINES*HDG_PX+24f,50f));
         Img(panel,new Color(0f,0f,0f,.60f));
         var msk=Rect("HM",panel,Vector2.zero,new Vector2(HDG_LINES*HDG_PX,42f));
         msk.gameObject.AddComponent<Image>().color=new Color(0f,0f,0f,.01f);
@@ -792,13 +984,13 @@ public class FlightHUD : MonoBehaviour
     // ── 상태 스트립 ──────────────────────────────────────────────────────────
     void BuildStatusStrip(Transform parent)
     {
-        var panel=Rect("Status",parent,new Vector2(0f,-218f),new Vector2(540f,36f));
+        var panel=Rect("Status",parent,new Vector2(0f,_statusStripY),new Vector2(540f,36f));
         Img(panel,new Color(0f,0f,0f,.54f));
         panel.gameObject.AddComponent<Outline>().effectColor=new Color(HG.r,HG.g,HG.b,.22f);
         aoaText=AddTxt(panel,"AOA +0.0°",new Vector2(-180f,0f),new Vector2(155f,36f),11,HGD,TextAnchor.MiddleCenter);
         gText  =AddTxt(panel,"G  1.0",  new Vector2(0f,0f),   new Vector2(110f,36f),15,HG, TextAnchor.MiddleCenter);
         AddTxt(panel,"SAFE",new Vector2(180f,0f),new Vector2(100f,36f),10,HGD,TextAnchor.MiddleCenter);
-        var wp=Rect("Warn",parent,new Vector2(0f,364f),new Vector2(360f,38f));
+        var wp=Rect("Warn",parent,new Vector2(0f,_warnBannerY),new Vector2(360f,38f));
         Img(wp,new Color(0f,0f,0f,0f));
         warnText=AddTxt(wp,"",Vector2.zero,new Vector2(360f,38f),16,WARN,TextAnchor.MiddleCenter);
     }
@@ -990,6 +1182,7 @@ public class FlightHUD : MonoBehaviour
 
     void BuildThreatWarningUI()
     {
+        if (threatWarningText != null && rwrNeedle != null) return;
         var wp = Rect("ThreatWarn", hudCanvas.transform, new Vector2(0f, 475f), new Vector2(700f, 38f));
         Img(wp, new Color(0f, 0f, 0f, 0f));
         threatWarningText = AddTxt(wp, "", Vector2.zero, new Vector2(700f, 38f), 18, CRIT, TextAnchor.MiddleCenter);
@@ -1010,6 +1203,7 @@ public class FlightHUD : MonoBehaviour
 
     void BuildTargetBox()
     {
+        if (tdbRoot != null) return;
         tdbRoot = Rect("TDB_Root", hudCanvas.transform, Vector2.zero, Vector2.zero);
         tdbRoot.gameObject.SetActive(false);
 
@@ -1028,6 +1222,7 @@ public class FlightHUD : MonoBehaviour
 
     void BuildOffScreenIndicator()
     {
+        if (offScreenRoot != null) return;
         offScreenRoot = Rect("OSI_Root", hudCanvas.transform, Vector2.zero, new Vector2(28f, 28f));
         offScreenRoot.gameObject.SetActive(false);
         AddTxt(offScreenRoot, "▲", Vector2.zero, new Vector2(28f, 28f), 16, HG, TextAnchor.MiddleCenter);
@@ -1222,6 +1417,12 @@ public class FlightHUD : MonoBehaviour
         if (deg < 90f)  return "BEAM";
         if (deg < 150f) return "NOSE";
         return "HTB";
+    }
+
+    static void ClearChildren(Transform t)
+    {
+        for (int i = t.childCount - 1; i >= 0; i--)
+            DestroyImmediate(t.GetChild(i).gameObject);
     }
 
     RectTransform Rect(string name,Transform parent,Vector2 pos,Vector2 size)

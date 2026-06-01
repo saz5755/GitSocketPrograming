@@ -278,6 +278,11 @@ public class RadarMiniMap : MonoBehaviour
         _nickLabels[nick] = lbl;
     }
 
+    public void SetVisible(bool v)
+    {
+        if (_canvas != null) _canvas.enabled = v;
+    }
+
     void SetVisible(string nick, bool on)
     {
         if (_blipRoots.TryGetValue(nick, out var rt)) rt.gameObject.SetActive(on);
