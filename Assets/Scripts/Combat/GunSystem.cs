@@ -91,7 +91,8 @@ public class GunSystem : MonoBehaviour
 
         UpdateLeadIndicator();
 
-        bool firing = Input.GetMouseButton(0) && _ammo > 0;
+        bool firing = Input.GetMouseButton(0) && _ammo > 0
+                   && GameModeManager.Instance?.IsBoardedInCockpit != true;
 
         if (firing && !_gunSrc.isPlaying) _gunSrc.Play();
         else if (!firing && _gunSrc.isPlaying) _gunSrc.Stop();

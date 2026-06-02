@@ -16,6 +16,11 @@ public class F35VFXController : MonoBehaviour
     ParticleSystem corePS;
     Light afterburnerLight;
 
+    [Header("Engine Idle Exhaust")]
+    ParticleSystem _idleExhaustPS;
+    Light          _idleLight;
+    bool           _engineIdleOn;
+
     PlayerController playerController;
     Vector3 lastForward;
 
@@ -26,6 +31,7 @@ public class F35VFXController : MonoBehaviour
 
         SetupContrails();
         SetupAfterburner();
+        SetupIdleExhaust();
     }
 
     void SetupContrails()
@@ -169,6 +175,91 @@ public class F35VFXController : MonoBehaviour
         afterburnerLight.color = new Color(1f, 0.6f, 0.2f);
         afterburnerLight.intensity = 0f;
         afterburnerLight.range = 20f;
+    }
+
+    void SetupIdleExhaust()
+    {
+        if (engineNozzle == null) return;
+
+        var go = new GameObject("IdleExhaustVFX");
+        go.transform.SetParent(engineNozzle);
+        go.transform.localPosition = Vector3.zero;
+        go.transform.localRotation = Quaternion.Euler(180f, 0f, 0f);
+
+        _idleExhaustPS = go.AddComponent<ParticleSystem>();
+        _idleExhaustPS.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+
+        var m = _idleExhaustPS.main;
+        m.duration        = 1f;
+        m.loop            = true;
+        m.startLifetime   = new ParticleSystem.MinMaxCurve(0.4f, 0.8f);
+        m.startSpeed      = new ParticleSystem.MinMaxCurve(6f, 14f);
+        m.startSize       = new ParticleSystem.MinMaxCurve(0.25f, 0.55f);
+        m.startColor      = new ParticleSystem.MinMaxGradient(
+            new Color(1f, 0.55f, 0.15f, 0.65f),
+            new Color(0.75f, 0.30f, 0.05f, 0.30f));
+        m.simulationSpace = ParticleSystemSimulationSpace.World;
+        m.playOnAwake     = false;
+
+        var em = _idleExhaustPS.emission;
+        em.rateOverTime = 30f;
+
+        var sh = _idleExhaustPS.shape;
+        sh.shapeType = ParticleSystemShapeType.Cone;
+        sh.angle     = 4f;
+        sh.radius    = 0.28f;
+
+        var col = _idleExhaustPS.colorOverLifetime;
+        col.enabled = true;
+        var g = new Gradient();
+        g.SetKeys(
+            new GradientColorKey[] {
+                new GradientColorKey(new Color(1.0f, 0.65f, 0.25f), 0f),
+                new GradientColorKey(new Color(0.55f, 0.55f, 0.55f), 1f) },
+            new GradientAlphaKey[] {
+                new GradientAlphaKey(0.7f, 0f),
+                new GradientAlphaKey(0.0f, 1f) });
+        col.color = g;
+
+        var sz = _idleExhaustPS.sizeOverLifetime;
+        sz.enabled = true;
+        sz.size = new ParticleSystem.MinMaxCurve(1f,
+            new AnimationCurve(new Keyframe(0f, 0.4f), new Keyframe(1f, 1.8f)));
+
+        var rend = _idleExhaustPS.GetComponent<ParticleSystemRenderer>();
+        var addMat = Resources.Load<Material>("VFX/Mat_Additive");
+        if (addMat == null)
+        {
+            var fallbackSh = Shader.Find("Particles/Additive")
+                          ?? Shader.Find("Sprites/Default");
+            addMat = new Material(fallbackSh);
+        }
+        rend.material   = addMat;
+        rend.renderMode = ParticleSystemRenderMode.Stretch;
+        rend.velocityScale = 0.06f;
+
+        _idleLight = go.AddComponent<Light>();
+        _idleLight.type      = LightType.Point;
+        _idleLight.color     = new Color(1f, 0.50f, 0.10f);
+        _idleLight.range     = 7f;
+        _idleLight.intensity = 0f;
+    }
+
+    // 지상 프리플라이트 중 엔진 IDLE 상태 배기 VFX 제어
+    public void SetEngineIdle(bool on)
+    {
+        _engineIdleOn = on;
+        if (_idleExhaustPS == null) return;
+        if (on)
+        {
+            if (!_idleExhaustPS.isPlaying) _idleExhaustPS.Play();
+            _idleLight.intensity = 1.8f;
+        }
+        else
+        {
+            _idleExhaustPS.Stop(false, ParticleSystemStopBehavior.StopEmitting);
+            _idleLight.intensity = 0f;
+        }
     }
 
     void Update()

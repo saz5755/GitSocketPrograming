@@ -126,6 +126,7 @@ public class CarrierController : MonoBehaviour
         BuildIsland();
         BuildRunwayMarkings();
         BuildZones();
+        BuildLaunchOfficer();
     }
 
     void BuildHull()
@@ -211,6 +212,22 @@ public class CarrierController : MonoBehaviour
         tzGO.transform.localPosition = takeoffZoneLocal;
         _takeoffZone = tzGO.AddComponent<AircraftZone>();
         _takeoffZone.Configure(AircraftZone.Type.Takeoff, takeoffZoneRadius);
+    }
+
+    // 카타펄트 오피서 NPC — 탑승 존 앞쪽, 항모 진행 방향을 바라보며 대기
+    void BuildLaunchOfficer()
+    {
+        if (!Application.isPlaying) return;
+
+        float deckY = deckCenter.y + 0.05f;
+
+        // 탑승 존(Z=95) 앞에 배치, 카타펄트 트랙(X≈-15) 오른쪽에 서서 후방(−Z)을 바라봄
+        var go = new GameObject("LaunchOfficer");
+        go.transform.SetParent(transform, false);
+        go.transform.localPosition = new Vector3(-10f, deckY, 108f);
+        go.transform.localRotation = Quaternion.Euler(0f, 180f, 0f); // 후방(항공기 방향)을 향함
+
+        go.AddComponent<LaunchOfficerNPC>();
     }
 
     // ── FLOLS ─────────────────────────────────────────────────────────────────

@@ -8,6 +8,11 @@ public class PlayerManager : MonoBehaviour
     [Tooltip("지상 캐릭터용 FBX 프리팹 (Humanoid 리그). 비워두면 임시 프로시저럴 모델 사용.")]
     [SerializeField] GameObject groundCharPrefab;
 
+    [Header("씬 사전 배치 (선택, 미설정 시 프리팹 인스턴스화로 폴백)")]
+    [Tooltip("항모 위에 미리 배치해 둔 로컬 플레이어 전투기. 설정 시 Instantiate 생략.")]
+    [SerializeField] PlayerController _localAircraftInScene;
+
+
     readonly Dictionary<string, PlayerController>  players        = new();
     readonly Dictionary<string, RemoteMissileView> remoteMissiles = new();
 
@@ -147,28 +152,36 @@ public class PlayerManager : MonoBehaviour
     {
         if (players.ContainsKey(nickname)) return;
 
-        GameObject obj    = Instantiate(playerPrefab);
-        PlayerController player = obj.GetComponent<PlayerController>();
-
         string myName = GameManager.Instance?.myNickname
                      ?? NetworkManager.Instance?.socketClient.myNickname;
         bool isLocal = nickname == myName;
 
-        player.nickname      = nickname;
-        player.isLocalPlayer = isLocal;
-        player.transform.SetPositionAndRotation(pos, rot);
-        player.ClearSnapshots();
-        player.AddSnapshot(pos, rot, isMove);
+        PlayerController player;
 
-        if (isLocal)
+        if (isLocal && _localAircraftInScene != null)
         {
-            InitLocalPlayerGround(player, pos);
+            // 씬 사전 배치 항공기 재사용 — 항모 자식으로 배치해도 런타임에 de-parent
+            player = _localAircraftInScene;
+            player.transform.SetParent(null, true);   // 월드 좌표 유지하며 최상위로
+            Debug.Log("[Player] Using scene-placed local aircraft");
         }
         else
         {
-            var label = obj.AddComponent<PlayerLabel>();
-            label.SetNickname(nickname);
+            // 프리팹 인스턴스화 (기존 동작 — 폴백)
+            GameObject obj = Instantiate(playerPrefab);
+            player = obj.GetComponent<PlayerController>();
+            player.transform.SetPositionAndRotation(pos, rot);
         }
+
+        player.nickname      = nickname;
+        player.isLocalPlayer = isLocal;
+        player.ClearSnapshots();
+        player.AddSnapshot(player.transform.position, player.transform.rotation, isMove);
+
+        if (isLocal)
+            InitLocalPlayerGround(player, player.transform.position);
+        else
+            player.gameObject.AddComponent<PlayerLabel>().SetNickname(nickname);
 
         players[nickname] = player;
         Debug.Log($"[Player] Spawned: {nickname}  local={isLocal}");
@@ -176,33 +189,21 @@ public class PlayerManager : MonoBehaviour
 
     void InitLocalPlayerGround(PlayerController pc, Vector3 spawnPos)
     {
-        // GameModeManager 생성
         if (GameModeManager.Instance == null)
         {
             var gmGO = new GameObject("GameModeManager");
             gmGO.AddComponent<GameModeManager>();
         }
 
-        // 보행 캐릭터 오브젝트 생성
         var charGO = BuildCharacterObject();
-        var gc = charGO.GetComponent<GroundController>();
+        var gc     = charGO.GetComponent<GroundController>();
 
-        // Zone은 반드시 지면에 붙어야 함 — spawnPos가 공중 좌표일 수 있으므로 지형 스냅
+        // spawnPos가 공중(항공기 높이)일 수 있으므로 지형 스냅
         Vector3 groundPos = SnapToGround(spawnPos);
 
-        // 이륙 존 (탑승 포인트)
-        var takeoffZoneGO = new GameObject("TakeoffZone");
-        takeoffZoneGO.transform.position = groundPos;
-        var takeoffZone = takeoffZoneGO.AddComponent<AircraftZone>();
-        takeoffZone.Configure(AircraftZone.Type.Takeoff, 15f); // 반경 여유 확보
+        // TakeoffZone 제거 — 탑승은 AircraftBoardingTrigger(근접 감지)가 담당
+        // LandingZone은 씬에서 수동 배치 (AircraftZone Type.Landing)
 
-        // 착륙 존 (하차 포인트) — 비행 중 진입 허용 반경 더 크게
-        var landingZoneGO = new GameObject("LandingZone");
-        landingZoneGO.transform.position = groundPos;
-        var landingZone = landingZoneGO.AddComponent<AircraftZone>();
-        landingZone.Configure(AircraftZone.Type.Landing, 35f);
-
-        // 초기화 — groundPos 기준으로 지상 캐릭터 위치 결정
         GameModeManager.Instance.Init(gc, pc, spawnPos, groundPos);
     }
 

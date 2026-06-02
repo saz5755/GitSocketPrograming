@@ -24,7 +24,6 @@ public class FlightCamera : MonoBehaviour
     bool isCockpit = false;
     public bool IsCockpit => isCockpit;
     PlayerController localPlayer;
-    CockpitBuilder   cockpitBuilder;
     MFDController    mfdController;
     FlightHUD        _flightHUD;
 
@@ -62,6 +61,10 @@ public class FlightCamera : MonoBehaviour
     GroundController _groundController;
     float            _groundPitch = 10f;
 
+    // ── 탑승(보딩) 모드 ────────────────────────────────────────────────────
+    bool      _isBoardingMode  = false;
+    Transform _boardingAircraft;
+
     [Header("Ground Camera")]
     [SerializeField] Vector3 groundOffset = new Vector3(0f, 2.5f, -5f);
     [SerializeField] float   groundSmooth = 8f;
@@ -75,7 +78,6 @@ public class FlightCamera : MonoBehaviour
 
     void Awake()
     {
-        cockpitBuilder = gameObject.AddComponent<CockpitBuilder>();
         mfdController  = gameObject.AddComponent<MFDController>();
     }
 
@@ -142,10 +144,49 @@ public class FlightCamera : MonoBehaviour
     // ── 외부 API ────────────────────────────────────────────────────────────
     public void SetGroundTarget(Transform t)
     {
+        _isBoardingMode   = false;
+        _boardingAircraft = null;
+        for (int i = 0; i < 3; i++) { var sw = CockpitSwitch.Get(i); sw?.SetVisible(false); sw?.Unregister(); }
         _groundTarget     = t;
         _groundController = t != null ? t.GetComponent<GroundController>() : null;
         _groundPitch      = 10f;
         if (isCockpit) SetCockpit(false);
+    }
+
+    // 콕핏 탑승 모드 진입 — 항모 갑판에서 탑승, HUD 없이 1인칭 조종석 시점
+    public void BeginCockpitBoarding(PlayerController pc)
+    {
+        if (pc == null) return;
+        _groundTarget     = null;
+        _boardingAircraft = pc.transform;
+        _isBoardingMode   = true;
+        if (_cockpitRenderers == null || _cockpitRenderers.Length == 0)
+            BuildRendererLists(pc);
+        SetCockpit(true, false);   // 조종석 모델 표시, HUD 미활성
+
+        // 이 항공기의 CockpitSwitch를 레지스트리에 등록 후 표시
+        // (원격 플레이어 항공기의 동일 컴포넌트를 덮어쓰지 않도록 Awake 등록 대신 여기서만 등록)
+        foreach (var sw in pc.GetComponentsInChildren<CockpitSwitch>(true))
+        {
+            sw.Register();
+            sw.SetVisible(true);
+            sw.SetState(CockpitSwitch.State.Locked);
+        }
+    }
+
+    // 콕핏 탑승 모드 종료 — ESC 취소 또는 출격 직전 정리
+    public void EndCockpitBoarding()
+    {
+        for (int i = 0; i < 3; i++)
+        {
+            var sw = CockpitSwitch.Get(i);
+            if (sw == null) continue;
+            sw.SetVisible(false);
+            sw.Unregister();
+        }
+        _isBoardingMode   = false;
+        _boardingAircraft = null;
+        SetCockpit(false, false);
     }
 
     public void SetFlightTarget(PlayerController pc)
@@ -160,6 +201,12 @@ public class FlightCamera : MonoBehaviour
         if (_groundTarget != null)
         {
             UpdateGround();
+            return;
+        }
+
+        if (_isBoardingMode)
+        {
+            UpdateBoardingCockpit();
             return;
         }
 
@@ -196,6 +243,28 @@ public class FlightCamera : MonoBehaviour
             float decay = _shakeDur > 0f ? _shakeTimer / _shakeDur : 0f;
             transform.position += Random.insideUnitSphere * (_shakeMag * decay);
         }
+    }
+
+    // ── 탑승 모드: 주기된 항공기 콕핏 1인칭 ────────────────────────────────
+    void UpdateBoardingCockpit()
+    {
+        if (_boardingAircraft == null) return;
+        bool rmb = Input.GetMouseButton(1);
+        if (rmb)
+        {
+            freeLookYaw   += Input.GetAxis("Mouse X") * freeLookSensitivity;
+            freeLookPitch -= Input.GetAxis("Mouse Y") * freeLookSensitivity;
+            freeLookPitch  = Mathf.Clamp(freeLookPitch, -freeLookMaxPitch, freeLookMaxPitch);
+        }
+        else
+        {
+            freeLookYaw   = Mathf.Lerp(freeLookYaw,   0f, freeLookReturnSpeed * Time.deltaTime);
+            freeLookPitch = Mathf.Lerp(freeLookPitch, 0f, freeLookReturnSpeed * Time.deltaTime);
+        }
+        Transform  t        = _boardingAircraft;
+        transform.position  = t.TransformPoint(cockpitOffset);
+        Quaternion baseTilt = t.rotation * Quaternion.Euler(cockpitDownTilt, 0f, 0f);
+        transform.rotation  = baseTilt * Quaternion.Euler(freeLookPitch, freeLookYaw, 0f);
     }
 
     // ── 지상 3인칭 카메라 ──────────────────────────────────────────────────
@@ -249,7 +318,8 @@ public class FlightCamera : MonoBehaviour
         transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, chaseSmooth * Time.deltaTime);
     }
 
-    void SetCockpit(bool cockpit)
+    // withHUD=false: 탑승 모드용 — 조종석 뷰는 활성화하되 HUD·MFD는 미표시
+    void SetCockpit(bool cockpit, bool withHUD = true)
     {
         isCockpit = cockpit;
 
@@ -272,13 +342,11 @@ public class FlightCamera : MonoBehaviour
         if (_canopyRenderer != null)
             _canopyRenderer.material = cockpit ? _canopyGlassMat : _canopySolidMat;
 
-        // 프로시저럴 코크핏 지오메트리는 비활성화 (실제 모델 사용)
-        cockpitBuilder?.SetVisible(false);
-        mfdController?.SetVisible(cockpit);
+        mfdController?.SetVisible(cockpit && withHUD);
 
-        // HUD를 캐노피 유리에 투영 (ScreenSpaceCamera ↔ Overlay 전환)
+        // HUD를 캐노피 유리에 투영 (탑승 중에는 HUD 미활성)
         if (_flightHUD == null) _flightHUD = FindObjectOfType<FlightHUD>();
-        _flightHUD?.SetCockpitGlass(cockpit, GetComponent<Camera>());
+        _flightHUD?.SetCockpitGlass(cockpit && withHUD, GetComponent<Camera>());
     }
 
     // ── 캐노피 유리 재질 생성 ────────────────────────────────────────────────

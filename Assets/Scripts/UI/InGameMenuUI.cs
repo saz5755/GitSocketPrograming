@@ -37,7 +37,12 @@ public class InGameMenuUI : MonoBehaviour
     void Update()
     {
         if (Input.GetKeyDown(KeyCode.Escape))
+        {
+            var gm = GameModeManager.Instance;
+            // 전투기 탑승 중(콕핏 or 비행)에는 룸 나가기 메뉴 차단
+            if (gm != null && (gm.IsBoardedInCockpit || gm.IsFlying)) return;
             SetMenuVisible(!menuOpen);
+        }
     }
 
     void SetMenuVisible(bool visible)

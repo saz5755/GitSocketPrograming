@@ -9,7 +9,8 @@ public class GameModeManager : MonoBehaviour
 {
     public static GameModeManager Instance { get; private set; }
 
-    public bool IsFlying { get; private set; }
+    public bool IsFlying          { get; private set; }
+    public bool IsBoardedInCockpit { get; private set; }
 
     // 외부(AircraftZone)에서 접근
     public Transform GroundCharacter => _gc != null ? _gc.transform : null;
@@ -27,13 +28,18 @@ public class GameModeManager : MonoBehaviour
     // 항모 카타펄트: 이함 직전 항모 참조를 임시 저장
     CarrierController _boardingCarrier;
 
+    // 근접 탑승 트리거 — AircraftBoardingTrigger가 설정
+    AircraftBoardingTrigger _boardingTrigger;
+
     // 항모 착함 자동 감속 (어레스팅 와이어)
     bool      _trapping;
     Coroutine _trapRoutine;
 
     // 화면 하단 프롬프트 UI
-    Canvas _promptCanvas;
-    Text   _promptText;
+    Canvas    _promptCanvas;
+    Text      _promptText;
+    Image     _keyBoxImage;
+    Text      _keyBoxText;
 
     void Awake()
     {
@@ -56,6 +62,17 @@ public class GameModeManager : MonoBehaviour
         _fc  = FindObjectOfType<FlightCamera>();
         _hud = FindObjectOfType<FlightHUD>();
         _charRenderers = gc.GetComponentsInChildren<Renderer>(true);
+
+        // 프리플라이트 시스템 초기화
+        if (GetComponent<PreflightSystem>() == null)
+        {
+            var pf = gameObject.AddComponent<PreflightSystem>();
+            pf.Initialize(LaunchOfficerNPC.Instance);
+        }
+
+        // 콕핏 인터랙션 시스템 초기화
+        if (GetComponent<CockpitInteractionSystem>() == null)
+            gameObject.AddComponent<CockpitInteractionSystem>();
 
         BuildPromptUI();
 
@@ -85,71 +102,99 @@ public class GameModeManager : MonoBehaviour
             float kph = _pc.CurrentSpeed * 3.6f;
             if (kph <= 360f)
                 _trapRoutine = StartCoroutine(TrapCoroutine(zone.transform));
-            // kph > 360: WAVE OFF — Update()에서 표시, 재진입 시 재시도
         }
     }
 
     public void NotifyZoneExit(AircraftZone zone)
     {
-        if (_activeZone == zone) _activeZone = null;
-        // 트래핑 중이면 코루틴 유지 — 이미 감속 시작했으므로 완주
+        if (_activeZone == zone)
+            _activeZone = null;
+        // 트래핑 중이면 코루틴 유지
     }
 
-    // ── 매 프레임: 프롬프트 표시 + F키 처리 ────────────────────────────────
+    // ── 근접 탑승 트리거 API (AircraftBoardingTrigger에서 호출) ─────────────
+    public void SetBoardingTarget(AircraftBoardingTrigger trigger)   => _boardingTrigger = trigger;
+    public void ClearBoardingTarget(AircraftBoardingTrigger trigger) { if (_boardingTrigger == trigger) _boardingTrigger = null; }
+
+    // ── 매 프레임: 프롬프트 표시 + E키 처리 ────────────────────────────────
     void Update()
     {
-        if (_activeZone == null) { ShowPrompt(false); return; }
-
-        bool canBoard   = !IsFlying && _activeZone.ZoneType == AircraftZone.Type.Takeoff;
-        bool canExit    =  IsFlying && _activeZone.ZoneType == AircraftZone.Type.Landing;
-        bool canCarrier =  IsFlying && _activeZone.ZoneType == AircraftZone.Type.Carrier;
-
-        if (!canBoard && !canExit && !canCarrier) { ShowPrompt(false); return; }
-
-        // ── 항모 착함 ────────────────────────────────────────────────────────
-        if (canCarrier)
+        // ── 비행 중: 착함·착륙 존 처리 ──────────────────────────────────────
+        if (IsFlying)
         {
-            if (_trapping)
+            if (_activeZone == null) { ShowPrompt(false); return; }
+
+            if (_activeZone.ZoneType == AircraftZone.Type.Carrier)
             {
-                // 자동 감속 중 — F키로 즉시 강제 착함 (스킵)
-                ShowPrompt(true, "[F]  MANUAL TRAP — SKIP DECEL", new Color(1f, 0.75f, 0f, 1f));
-                if (Input.GetKeyDown(KeyCode.F))
+                if (_trapping)
                 {
-                    StopTrap();
-                    ExitFlight(_activeZone.transform.position, _activeZone.transform);
+                    ShowPrompt(true, "MANUAL TRAP — SKIP DECEL", new Color(1f, 0.75f, 0f, 1f));
+                    if (Input.GetKeyDown(KeyCode.E))
+                    {
+                        StopTrap();
+                        ExitFlight(_activeZone.transform.position, _activeZone.transform);
+                    }
+                    return;
                 }
+                float kph     = _pc.CurrentSpeed * 3.6f;
+                bool  waveOff = kph > 360f;
+                ShowPrompt(true,
+                    waveOff ? $"WAVE OFF  {kph:F0} KPH — REDUCE SPEED" : $"AUTO TRAP  {kph:F0} KPH",
+                    waveOff ? new Color(1f, 0.2f, 0.1f, 1f) : new Color(0f, 1f, 0.5f, 1f),
+                    keyLabel: waveOff ? "" : "E");
+                if (!waveOff && Input.GetKeyDown(KeyCode.E))
+                    ExitFlight(_activeZone.transform.position, _activeZone.transform);
                 return;
             }
 
-            float kph     = _pc.CurrentSpeed * 3.6f;
-            bool  waveOff = kph > 360f;
-            ShowPrompt(true,
-                waveOff ? $"WAVE OFF  {kph:F0} KPH — REDUCE SPEED"
-                        : $"AUTO TRAP  {kph:F0} KPH  /  [F] MANUAL",
-                waveOff ? new Color(1f, 0.2f, 0.1f, 1f) : new Color(0f, 1f, 0.5f, 1f));
-            // WAVE OFF가 아니면 수동 즉시 착함도 허용
-            if (!waveOff && Input.GetKeyDown(KeyCode.F))
-                ExitFlight(_activeZone.transform.position, _activeZone.transform);
+            if (_activeZone.ZoneType == AircraftZone.Type.Landing)
+            {
+                ShowPrompt(true, "EXIT AIRCRAFT");
+                if (Input.GetKeyDown(KeyCode.E))
+                    ExitFlight(_activeZone.transform.position);
+                return;
+            }
+
+            ShowPrompt(false);
             return;
         }
 
-        // ── 항모 이함: 카타펄트 여부 감지 ────────────────────────────────────
-        if (canBoard)
+        // ── 지상: 콕핏 탑승 중 (프리플라이트 → 출격) ────────────────────────
+        if (IsBoardedInCockpit)
         {
-            _boardingCarrier = _activeZone.GetComponentInParent<CarrierController>();
-            string boardPrompt = _boardingCarrier != null
-                ? "[F]  CATAPULT LAUNCH"
-                : "[F]  BOARD AIRCRAFT";
-            ShowPrompt(true, boardPrompt);
-            if (Input.GetKeyDown(KeyCode.F))
-                EnterFlight(_activeZone.transform.position);
+            var pf = PreflightSystem.Instance;
+            if (pf != null && pf.IsReadyForLaunch)
+            {
+                _boardingCarrier ??= FindObjectOfType<CarrierController>();
+                string lbl = _boardingCarrier != null ? "CATAPULT LAUNCH" : "TAKE OFF";
+                ShowPrompt(true, lbl, new Color(0f, 1f, 0.5f, 1f));
+                if (Input.GetKeyDown(KeyCode.E))
+                {
+                    IsBoardedInCockpit = false;
+                    _fc?.EndCockpitBoarding();
+                    pf.ResetPreflight();
+                    CockpitInteractionSystem.Instance?.SetActive(false);
+                    EnterFlight(_pc.transform.position);
+                }
+            }
+            else
+            {
+                ShowPrompt(true, "[ESC]  EXIT COCKPIT", new Color(1f, 0.72f, 0.20f, 1f), keyLabel: "");
+            }
+            if (Input.GetKeyDown(KeyCode.Escape)) ExitCockpit();
             return;
         }
 
-        // ── 일반 착륙 ─────────────────────────────────────────────────────────
-        ShowPrompt(true, "[F]  EXIT AIRCRAFT");
-        if (Input.GetKeyDown(KeyCode.F))
-            ExitFlight(_activeZone.transform.position);
+        // ── 지상: 근접 항공기에 E키 탑승 ────────────────────────────────────
+        // (원형 E키 UI는 AircraftBoardingTrigger 월드 UI가 표시)
+        if (_boardingTrigger != null && Input.GetKeyDown(KeyCode.E))
+        {
+            _pc              = _boardingTrigger.Aircraft;
+            _boardingCarrier = FindObjectOfType<CarrierController>();
+            EnterCockpit(_pc.transform.position);
+        }
+
+        ShowPrompt(false);
     }
 
     // ── 비행 모드 진입 ───────────────────────────────────────────────────────
@@ -163,10 +208,10 @@ public class GameModeManager : MonoBehaviour
         SetCharRenderers(false);
 
         // 항공기: 탑승 존 위치에 배치 후 활성화
-        // 항모 카타펄트: 항모 방향으로 정렬 후 초기 속도 부여
+        // 항모 카타펄트: 항모 방향으로 정렬 후 초기 속도 부여. 없으면 사전 배치 회전 유지.
         Quaternion launchRot = _boardingCarrier != null
             ? _boardingCarrier.transform.rotation
-            : Quaternion.identity;
+            : _pc.transform.rotation;
         _pc.transform.SetPositionAndRotation(boardingPos, launchRot);
         _pc.enabled = true;
 
@@ -184,6 +229,57 @@ public class GameModeManager : MonoBehaviour
         Cursor.visible   = false;
 
         Debug.Log("[GameMode] → Flight Mode");
+    }
+
+    // ── 콕핏 탑승 모드 진입 — 항공기 내부 1인칭, 프리플라이트 수행 후 출격 ────
+    public void EnterCockpit(Vector3 zonePos)
+    {
+        if (IsBoardedInCockpit || IsFlying || _gc == null || _pc == null) return;
+        IsBoardedInCockpit = true;
+
+        // 항모 카타펄트가 있으면 항모 방향 정렬. 없으면 사전 배치 위치·회전 그대로 유지.
+        if (_boardingCarrier != null)
+            _pc.transform.SetPositionAndRotation(zonePos, _boardingCarrier.transform.rotation);
+
+        // 캐릭터 숨기기
+        _gc.enabled = false;
+        SetCharRenderers(false);
+
+        // 카메라를 콕핏 탑승 모드로 전환 (HUD 미활성)
+        _fc?.BeginCockpitBoarding(_pc);
+
+        // 프리플라이트 시퀀스 시작
+        var vfx = _pc.GetComponent<F35VFXController>();
+        PreflightSystem.Instance?.BeginCockpitPreflight(vfx);
+        CockpitInteractionSystem.Instance?.SetActive(true);
+
+        // 커서 해제 — 스위치 클릭을 위해 마우스 이동 허용
+        Cursor.lockState = CursorLockMode.Confined;
+        Cursor.visible   = true;
+
+        Debug.Log("[GameMode] → Cockpit Boarding Mode");
+    }
+
+    // ── 콕핏 탑승 취소 (ESC) ────────────────────────────────────────────────
+    public void ExitCockpit()
+    {
+        if (!IsBoardedInCockpit) return;
+        IsBoardedInCockpit = false;
+
+        PreflightSystem.Instance?.ResetPreflight();
+        CockpitInteractionSystem.Instance?.SetActive(false);
+
+        _fc?.EndCockpitBoarding();
+        _fc?.SetGroundTarget(_gc.transform);
+
+        SetCharRenderers(true);
+        _gc.enabled = true;
+        _boardingCarrier = null;
+
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible   = false;
+
+        Debug.Log("[GameMode] → Ground Mode (exited cockpit)");
     }
 
     // ── 지상 모드 복귀 ───────────────────────────────────────────────────────
@@ -296,7 +392,6 @@ public class GameModeManager : MonoBehaviour
     void BuildPromptUI()
     {
         var go = new GameObject("ModePromptCanvas");
-
         _promptCanvas = go.AddComponent<Canvas>();
         _promptCanvas.renderMode   = RenderMode.ScreenSpaceOverlay;
         _promptCanvas.sortingOrder = 50;
@@ -304,39 +399,86 @@ public class GameModeManager : MonoBehaviour
 
         var panel = new GameObject("Prompt");
         panel.transform.SetParent(go.transform, false);
-
         var rt = panel.AddComponent<RectTransform>();
-        rt.anchorMin = new Vector2(0.5f, 0f);
-        rt.anchorMax = new Vector2(0.5f, 0f);
-        rt.pivot     = new Vector2(0.5f, 0f);
+        rt.anchorMin        = new Vector2(0.5f, 0f);
+        rt.anchorMax        = new Vector2(0.5f, 0f);
+        rt.pivot            = new Vector2(0.5f, 0f);
         rt.anchoredPosition = new Vector2(0f, 40f);
-        rt.sizeDelta        = new Vector2(420f, 52f);
+        rt.sizeDelta        = new Vector2(460f, 58f);
+        panel.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0.65f);
 
-        var bg = panel.AddComponent<Image>();
-        bg.color = new Color(0f, 0f, 0f, 0.60f);
+        // ── E 키 박스 (왼쪽) ─────────────────────────────────────────────────
+        var keyGO = new GameObject("KeyBox");
+        keyGO.transform.SetParent(panel.transform, false);
+        var keyRT       = keyGO.AddComponent<RectTransform>();
+        keyRT.anchorMin = new Vector2(0f, 0f);
+        keyRT.anchorMax = new Vector2(0f, 1f);
+        keyRT.pivot     = new Vector2(0f, 0.5f);
+        keyRT.offsetMin = new Vector2(10f,  8f);
+        keyRT.offsetMax = new Vector2(56f, -8f);
+        _keyBoxImage = keyGO.AddComponent<Image>();
+        _keyBoxImage.color = new Color(1f, 1f, 1f, 0.18f);
 
+        // 테두리 효과 — 흰색 outline
+        var outlineGO = new GameObject("Outline");
+        outlineGO.transform.SetParent(keyGO.transform, false);
+        var outRT       = outlineGO.AddComponent<RectTransform>();
+        outRT.anchorMin = Vector2.zero;
+        outRT.anchorMax = Vector2.one;
+        outRT.offsetMin = new Vector2(-1.5f, -1.5f);
+        outRT.offsetMax = new Vector2( 1.5f,  1.5f);
+        outlineGO.AddComponent<Image>().color = new Color(1f, 1f, 1f, 0.55f);
+        outlineGO.transform.SetAsFirstSibling();
+
+        var keyTxtGO = new GameObject("KeyTxt");
+        keyTxtGO.transform.SetParent(keyGO.transform, false);
+        var keyTxtRT       = keyTxtGO.AddComponent<RectTransform>();
+        keyTxtRT.anchorMin = Vector2.zero;
+        keyTxtRT.anchorMax = Vector2.one;
+        keyTxtRT.offsetMin = keyTxtRT.offsetMax = Vector2.zero;
+        _keyBoxText = keyTxtGO.AddComponent<Text>();
+        _keyBoxText.font      = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        _keyBoxText.fontSize  = 26;
+        _keyBoxText.fontStyle = FontStyle.Bold;
+        _keyBoxText.color     = Color.white;
+        _keyBoxText.alignment = TextAnchor.MiddleCenter;
+        _keyBoxText.text      = "E";
+
+        // ── 액션 텍스트 (키 박스 오른쪽) ────────────────────────────────────
         var txtGO = new GameObject("Text");
         txtGO.transform.SetParent(panel.transform, false);
         var tRT = txtGO.AddComponent<RectTransform>();
-        tRT.anchorMin = Vector2.zero; tRT.anchorMax = Vector2.one;
-        tRT.offsetMin = tRT.offsetMax = Vector2.zero;
-
+        tRT.anchorMin = Vector2.zero;
+        tRT.anchorMax = Vector2.one;
+        tRT.offsetMin = new Vector2(70f, 0f);
+        tRT.offsetMax = new Vector2(-8f, 0f);
         _promptText = txtGO.AddComponent<Text>();
         _promptText.font      = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         _promptText.fontSize  = 22;
         _promptText.fontStyle = FontStyle.Bold;
         _promptText.color     = new Color(0f, 1f, 0.5f, 1f);
-        _promptText.alignment = TextAnchor.MiddleCenter;
+        _promptText.alignment = TextAnchor.MiddleLeft;
 
         _promptCanvas.enabled = false;
     }
 
-    void ShowPrompt(bool show, string msg = "", Color color = default)
+    // keyLabel: "E" = E키 박스 표시, "" = 키 박스 숨김 (ESC·경고 메시지 등)
+    void ShowPrompt(bool show, string msg = "", Color color = default, string keyLabel = "E")
     {
         if (_promptCanvas == null) return;
         _promptCanvas.enabled = show;
-        if (!show || _promptText == null) return;
-        _promptText.text  = msg;
-        _promptText.color = color == default ? new Color(0f, 1f, 0.5f, 1f) : color;
+
+        bool showKey = show && !string.IsNullOrEmpty(keyLabel);
+        if (_keyBoxImage != null) _keyBoxImage.transform.parent.gameObject.SetActive(showKey);
+        if (_keyBoxText  != null) _keyBoxText.text = keyLabel;
+
+        if (_promptText != null)
+        {
+            _promptText.text  = msg;
+            _promptText.color = color == default ? new Color(0f, 1f, 0.5f, 1f) : color;
+            // 키 박스가 없으면 텍스트를 패널 전체 너비로
+            var tRT = _promptText.GetComponent<RectTransform>();
+            tRT.offsetMin = showKey ? new Vector2(70f, 0f) : new Vector2(10f, 0f);
+        }
     }
 }

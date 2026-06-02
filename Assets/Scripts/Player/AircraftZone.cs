@@ -15,7 +15,11 @@ public class AircraftZone : MonoBehaviour
     float _radius    = 12f;
     float _radiusSq  = 144f;
 
-    public Type ZoneType => _zoneType;
+    [Tooltip("이 존에 연결된 항공기. 진입 시 GameModeManager의 활성 항공기가 이것으로 전환됨.")]
+    [SerializeField] PlayerController _linkedAircraft;
+
+    public Type             ZoneType       => _zoneType;
+    public PlayerController LinkedAircraft => _linkedAircraft;
 
     Renderer _discRenderer;
     Material _discMaterial;
@@ -33,12 +37,13 @@ public class AircraftZone : MonoBehaviour
     ParticleSystem _portalParticles;
     Light _portalLight;
 
-    /// <summary>AddComponent() 직후 반드시 호출.</summary>
-    public void Configure(Type zoneType, float radius)
+    /// <summary>AddComponent() 직후 반드시 호출. linkedAircraft를 전달하면 진입 시 해당 항공기로 전환.</summary>
+    public void Configure(Type zoneType, float radius, PlayerController linkedAircraft = null)
     {
         _zoneType = zoneType;
         _radius   = radius;
         _radiusSq = radius * radius;
+        if (linkedAircraft != null) _linkedAircraft = linkedAircraft;
     }
 
     void Start()
@@ -106,9 +111,7 @@ public class AircraftZone : MonoBehaviour
 
     bool CheckInRange(GameModeManager gm)
     {
-        if (_zoneType == Type.Takeoff && !gm.IsFlying && gm.GroundCharacter != null)
-            return (gm.GroundCharacter.position - transform.position).sqrMagnitude <= _radiusSq;
-
+        // Takeoff 감지는 AircraftBoardingTrigger가 담당 — 여기선 비행 중 존만 확인
         if ((_zoneType == Type.Landing || _zoneType == Type.Carrier) && gm.IsFlying && gm.LocalAircraft != null)
             return (gm.LocalAircraft.position - transform.position).sqrMagnitude <= _radiusSq;
 
