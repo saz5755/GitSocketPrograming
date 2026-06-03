@@ -52,6 +52,9 @@ class PacketHandler
             = GunHandler.HandleHit;
         udpHandlers[PacketType.GUN_FIRE]
             = GunHandler.HandleFire;
+
+        handlers[PacketType.QUEST_UPDATE]
+            = QuestHandler.Handle;
     }
 
     // 기본적으로 TCP Handle

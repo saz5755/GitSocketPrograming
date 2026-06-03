@@ -113,6 +113,7 @@ public class GameModeManager : MonoBehaviour
     }
 
     // ── 근접 탑승 트리거 API (AircraftBoardingTrigger에서 호출) ─────────────
+    public bool HasBoardingTarget => _boardingTrigger != null;
     public void SetBoardingTarget(AircraftBoardingTrigger trigger)   => _boardingTrigger = trigger;
     public void ClearBoardingTarget(AircraftBoardingTrigger trigger) { if (_boardingTrigger == trigger) _boardingTrigger = null; }
 
@@ -128,8 +129,8 @@ public class GameModeManager : MonoBehaviour
             {
                 if (_trapping)
                 {
-                    ShowPrompt(true, "MANUAL TRAP — SKIP DECEL", new Color(1f, 0.75f, 0f, 1f));
-                    if (Input.GetKeyDown(KeyCode.E))
+                    ShowPrompt(true, "MANUAL TRAP — SKIP DECEL", new Color(1f, 0.75f, 0f, 1f), keyLabel: "F");
+                    if (Input.GetKeyDown(KeyCode.F))
                     {
                         StopTrap();
                         ExitFlight(_activeZone.transform.position, _activeZone.transform);
@@ -141,16 +142,16 @@ public class GameModeManager : MonoBehaviour
                 ShowPrompt(true,
                     waveOff ? $"WAVE OFF  {kph:F0} KPH — REDUCE SPEED" : $"AUTO TRAP  {kph:F0} KPH",
                     waveOff ? new Color(1f, 0.2f, 0.1f, 1f) : new Color(0f, 1f, 0.5f, 1f),
-                    keyLabel: waveOff ? "" : "E");
-                if (!waveOff && Input.GetKeyDown(KeyCode.E))
+                    keyLabel: waveOff ? "" : "F");
+                if (!waveOff && Input.GetKeyDown(KeyCode.F))
                     ExitFlight(_activeZone.transform.position, _activeZone.transform);
                 return;
             }
 
             if (_activeZone.ZoneType == AircraftZone.Type.Landing)
             {
-                ShowPrompt(true, "EXIT AIRCRAFT");
-                if (Input.GetKeyDown(KeyCode.E))
+                ShowPrompt(true, "EXIT AIRCRAFT", keyLabel: "F");
+                if (Input.GetKeyDown(KeyCode.F))
                     ExitFlight(_activeZone.transform.position);
                 return;
             }
@@ -167,8 +168,8 @@ public class GameModeManager : MonoBehaviour
             {
                 _boardingCarrier ??= FindObjectOfType<CarrierController>();
                 string lbl = _boardingCarrier != null ? "CATAPULT LAUNCH" : "TAKE OFF";
-                ShowPrompt(true, lbl, new Color(0f, 1f, 0.5f, 1f));
-                if (Input.GetKeyDown(KeyCode.E))
+                ShowPrompt(true, lbl, new Color(0f, 1f, 0.5f, 1f), keyLabel: "F");
+                if (Input.GetKeyDown(KeyCode.F))
                 {
                     IsBoardedInCockpit = false;
                     _fc?.EndCockpitBoarding();
@@ -187,7 +188,7 @@ public class GameModeManager : MonoBehaviour
 
         // ── 지상: 근접 항공기에 E키 탑승 ────────────────────────────────────
         // (원형 E키 UI는 AircraftBoardingTrigger 월드 UI가 표시)
-        if (_boardingTrigger != null && Input.GetKeyDown(KeyCode.E))
+        if (_boardingTrigger != null && Input.GetKeyDown(KeyCode.F))
         {
             _pc              = _boardingTrigger.Aircraft;
             _boardingCarrier = FindObjectOfType<CarrierController>();

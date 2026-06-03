@@ -47,6 +47,7 @@ public class SocketClient : MonoBehaviour
     public event Action<GunHitPacket>           OnGunHit;
     public event Action<CreateRoomResultPacket> OnCreateRoomResult;
     public event Action<EnterRoomResultPacket>  OnEnterRoomResult;
+    public event Action<QuestUpdatePacket>      OnQuestUpdate;
 
     // ── 연결 ──────────────────────────────────────────────────────────────
     public void Connect(string ip = null)
@@ -195,6 +196,13 @@ public class SocketClient : MonoBehaviour
             {
                 var p = JsonConvert.DeserializeObject<EnterRoomResultPacket>(json);
                 UnityMainThreadDispatcher.Instance.Enqueue(() => OnEnterRoomResult?.Invoke(p));
+                break;
+            }
+
+            case PacketType.QUEST_UPDATE:
+            {
+                var p = JsonConvert.DeserializeObject<QuestUpdatePacket>(json);
+                UnityMainThreadDispatcher.Instance.Enqueue(() => OnQuestUpdate?.Invoke(p));
                 break;
             }
 
@@ -379,6 +387,16 @@ public class SocketClient : MonoBehaviour
         try { udp?.Send(data, data.Length); }
         catch { }
     }
+
+    public void SendQuestUpdate(string questId, string questName, int stepIndex, int totalSteps, bool isComplete)
+        => SendTCP(new QuestUpdatePacket {
+            type       = PacketType.QUEST_UPDATE,
+            nickname   = myNickname,
+            questId    = questId,
+            questName  = questName,
+            stepIndex  = stepIndex,
+            totalSteps = totalSteps,
+            isComplete = isComplete });
 
     public void SendGunHit(string shooterNick, string targetNick, Vector3 pos)
         => SendTCP(new GunHitPacket {

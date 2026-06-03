@@ -5,9 +5,8 @@ using Random = UnityEngine.Random;   // insideUnitSphere 등 로컬 VFX 전용
 
 public class CountermeasureSystem : MonoBehaviour
 {
-    [Header("Keys")]
-    [SerializeField] KeyCode flareKey = KeyCode.F;
-    [SerializeField] KeyCode chaffKey = KeyCode.X;
+    KeyCode flareKey = KeyCode.X;
+    KeyCode chaffKey = KeyCode.Z;
 
     [Header("Stock")]
     [SerializeField] int   maxFlares       = 30;

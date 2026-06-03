@@ -85,7 +85,14 @@ public class PreflightSystem : MonoBehaviour
     public void BeginCockpitPreflight(F35VFXController vfx)
     {
         if (Stage != PreflightStage.None) return;
-        _vfx        = vfx;
+        _vfx = vfx;
+
+        if (DevSettings.Instance != null && DevSettings.Instance.skipPreflight)
+        {
+            Stage = PreflightStage.ReadyForLaunch;
+            return;
+        }
+
         _stepReady  = false;
         _seqRoutine = StartCoroutine(Sequence());
     }

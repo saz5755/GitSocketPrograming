@@ -37,9 +37,15 @@ public class AircraftBoardingTrigger : MonoBehaviour
             return;
         }
 
-        // 탑승 중이거나 비행 중이면 UI 숨김
+        // 탑승 중이거나 비행 중이면 UI 숨김 + 범위 상태 리셋
+        // (하차 후 다시 범위 내에 있을 때 Enter()가 재발동되어 UI가 즉시 복원됨)
         if (gm.IsBoardedInCockpit || gm.IsFlying)
         {
+            if (_playerInRange)
+            {
+                _playerInRange = false;
+                gm.ClearBoardingTarget(this);
+            }
             SetUIVisible(false);
             return;
         }
@@ -115,7 +121,7 @@ public class AircraftBoardingTrigger : MonoBehaviour
         eTxt.fontStyle = FontStyle.Bold;
         eTxt.color     = new Color(1f, 0.90f, 0.20f, 1f);
         eTxt.alignment = TextAnchor.MiddleCenter;
-        eTxt.text      = "E";
+        eTxt.text      = "F";
     }
 
     static void SetRect(GameObject go, Vector2 anchorMin, Vector2 anchorMax)

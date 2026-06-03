@@ -67,7 +67,8 @@
       "mcp__coplay-mcp__set_unity_project_root",
       "Bash(dir \"C:\\\\Obsidian Vault\\\\F35 멀티플레이\\\\\" 2>&1 | head -40 *)",
       "mcp__coplay-mcp__place_asset_in_scene",
-      "mcp__coplay-mcp__parent_game_object"
+      "mcp__coplay-mcp__parent_game_object",
+      "Bash(git restore *)"
     ]
   }
 }
