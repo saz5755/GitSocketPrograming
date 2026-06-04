@@ -68,7 +68,13 @@
       "Bash(dir \"C:\\\\Obsidian Vault\\\\F35 멀티플레이\\\\\" 2>&1 | head -40 *)",
       "mcp__coplay-mcp__place_asset_in_scene",
       "mcp__coplay-mcp__parent_game_object",
-      "Bash(git restore *)"
+      "Bash(git restore *)",
+      "Bash(tasklist)",
+      "Bash(taskkill *)",
+      "PowerShell(Start-Process -FilePath \"C:\\\\Unity\\\\GitSocketPrograming\\\\SocketServer\\\\bin\\\\Debug\\\\net9.0\\\\SocketServer.exe\" -WindowStyle Normal; Write-Host \"서버 시작됨\")",
+      "Bash(Get-ChildItem -Path \"C:\\\\Unity\\\\GitSocketPrograming\\\\Assets\\\\Scripts\" -Recurse -Filter \"*.cs\")",
+      "Bash(Sort-Object)",
+      "PowerShell(Start-Process -FilePath \"dotnet\" -ArgumentList \"run --project C:\\\\Unity\\\\GitSocketPrograming\\\\SocketServer\\\\SocketServer.csproj\" -WorkingDirectory \"C:\\\\Unity\\\\GitSocketPrograming\\\\SocketServer\" -WindowStyle Normal)"
     ]
   }
 }

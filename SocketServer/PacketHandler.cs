@@ -55,6 +55,9 @@ class PacketHandler
 
         handlers[PacketType.QUEST_UPDATE]
             = QuestHandler.Handle;
+
+        handlers[PacketType.COCKPIT_STATE]
+            = CockpitStateHandler.Handle;
     }
 
     // 기본적으로 TCP Handle

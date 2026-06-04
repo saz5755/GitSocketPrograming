@@ -7,6 +7,7 @@ public class PlayerController : MonoBehaviour
 
     public string nickname;
     public bool   isLocalPlayer;
+    public bool   IsFlying { get; set; }
     public int    lastReceivedTick;
 
     List<Snapshot> snapshots = new();
@@ -144,7 +145,9 @@ public class PlayerController : MonoBehaviour
             NetworkManager.Instance.socketClient.SendMove(
                 transform.position.x, transform.position.y, transform.position.z,
                 euler.x, euler.y, euler.z,
-                currentSpeed > 0.5f, localTick);
+                currentSpeed > 0.5f,
+                GameModeManager.Instance != null && GameModeManager.Instance.IsFlying,
+                localTick);
         }
     }
 
@@ -267,6 +270,29 @@ public class PlayerController : MonoBehaviour
     }
 
     public void ClearSnapshots() => snapshots.Clear();
+
+    // GroundController가 단일 틱 시퀀스를 공유하도록 노출
+    public int GetNextTick() => ++localTick;
+
+    // 비행 상태 전환 시 즉시 한 번 전송 (비행 종료 시 isFlying=false 알림용)
+    public void SendFlightState(bool flying)
+    {
+        var sc = NetworkManager.Instance?.socketClient;
+        if (sc == null) return;
+        Vector3 euler = transform.eulerAngles;
+        sc.SendMove(
+            transform.position.x, transform.position.y, transform.position.z,
+            euler.x, euler.y, euler.z,
+            currentSpeed > 0.5f, flying, localTick);
+    }
+
+    // 콕핏 탑승 상태 전환 — TCP로 전송해 서버 상태를 즉시·확실하게 갱신
+    public void SendCockpitState(bool boarded)
+    {
+        var sc = NetworkManager.Instance?.socketClient;
+        if (sc == null) return;
+        sc.SendCockpitStateTCP(boarded, transform.position, transform.eulerAngles);
+    }
 
     /// <summary>카타펄트 사출 등 외부에서 초기 속도를 설정.</summary>
     public void SetInitialSpeed(float speedMS) => currentSpeed = speedMS;

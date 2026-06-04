@@ -12,9 +12,17 @@ public class PlayerManager : MonoBehaviour
     [Tooltip("항모 위에 미리 배치해 둔 로컬 플레이어 전투기. 설정 시 Instantiate 생략.")]
     [SerializeField] PlayerController _localAircraftInScene;
 
-
+    // 로컬 플레이어의 PlayerController만 저장 (원격 플레이어 항공기 동적 생성 없음)
     readonly Dictionary<string, PlayerController>  players        = new();
     readonly Dictionary<string, RemoteMissileView> remoteMissiles = new();
+    // 원격 플레이어 지상 캐릭터 (항공기 없이 지상 표현만 관리)
+    readonly Dictionary<string, GameObject>        _groundChars   = new();
+    // 콕핏 탑승 중인 원격 플레이어의 "READY" 항공기 상단 레이블
+    readonly Dictionary<string, GameObject>              _readyLabels      = new();
+    // nickname → 점령된 AircraftBoardingTrigger (IsOccupied 해제용)
+    readonly Dictionary<string, AircraftBoardingTrigger> _occupiedAircraft = new();
+
+    static Material _grayMat;
 
     void Start()
     {
@@ -42,45 +50,85 @@ public class PlayerManager : MonoBehaviour
             sc.OnMissileMove    -= HandleMissileMove;
             sc.OnMissileWarn    -= HandleMissileWarn;
         }
-        ClearPlayers();
+        ClearAll();
         ClearRemoteMissiles();
     }
 
     // ── 이벤트 핸들러 ─────────────────────────────────────────────────────
     void HandleSpawn(SpawnPacket p)
     {
-        CreatePlayer(p.nickname,
-            new Vector3(p.x, p.y, p.z),
-            Quaternion.Euler(p.rotX, p.rotY, p.rotZ),
-            p.isMove);
+        bool isLocal = p.nickname == GetMyName();
+
+        if (isLocal)
+            CreateLocalPlayer(p);
+        else
+        {
+            CreateRemoteGroundPlayer(p);
+            // 내가 콕핏/비행 중이면 새 입장자에게 현재 상태를 재전송
+            GameModeManager.Instance?.BroadcastCurrentState();
+        }
     }
 
-    void HandleDespawn(string nickname) => RemovePlayer(nickname);
+    void HandleDespawn(string nickname)
+    {
+        if (players.TryGetValue(nickname, out var pc))
+        {
+            players.Remove(nickname);
+            if (pc != null) Destroy(pc.gameObject);
+        }
+
+        if (_groundChars.TryGetValue(nickname, out var gc))
+        {
+            _groundChars.Remove(nickname);
+            if (gc != null) Destroy(gc);
+        }
+
+        HideReadyLabel(nickname);
+        Debug.Log($"[Player] Despawned: {nickname}");
+    }
 
     void HandleMove(MoveBroadcastPacket p)
     {
-        if (!players.TryGetValue(p.nickname, out var player)) return;
-        player.AddSnapshot(
-            new Vector3(p.posX, p.posY, p.posZ),
-            Quaternion.Euler(p.rotX, p.rotY, p.rotZ),
-            p.isMove);
+        // 자신의 패킷은 무시 (로컬에서 직접 제어)
+        if (p.nickname == GetMyName()) return;
+
+        if (!_groundChars.TryGetValue(p.nickname, out var gc) || gc == null) return;
+
+        var pos = new Vector3(p.posX, p.posY, p.posZ);
+        var rot = Quaternion.Euler(p.rotX, p.rotY, p.rotZ);
+
+        if (p.isBoardedInCockpit)
+        {
+            // 콕핏 탑승 중: 지상 캐릭터 숨기고 항공기 위에 READY 레이블 표시
+            if (gc.activeSelf) gc.SetActive(false);
+            ShowReadyLabel(p.nickname, pos);
+        }
+        else if (p.isFlying)
+        {
+            // 비행 중: 지상 캐릭터·READY 레이블 모두 숨김
+            if (gc.activeSelf) gc.SetActive(false);
+            HideReadyLabel(p.nickname);
+        }
+        else
+        {
+            // 지상 모드: 지상 캐릭터 표시, READY 레이블 제거
+            HideReadyLabel(p.nickname);
+            if (!gc.activeSelf) gc.SetActive(true);
+            gc.GetComponent<RemoteGroundInterp>()?.SetTarget(pos, rot, p.animState);
+        }
     }
 
-    // ── 원격 미사일 스폰: 상대방이 쏜 미사일을 시각적으로 생성 ─────────────
+    // ── 원격 미사일 ────────────────────────────────────────────────────────
     void HandleMissileSpawn(MissileSpawnPacket p)
     {
-        string myName = GameManager.Instance?.myNickname
-                     ?? NetworkManager.Instance?.socketClient.myNickname ?? "";
-
-        // 자신이 발사한 미사일은 MissileLauncher에서 이미 로컬 생성
+        string myName = GetMyName();
         if (p.shooterNickname == myName) return;
         if (remoteMissiles.ContainsKey(p.missileId)) return;
 
-        var go = new GameObject($"Missile_Remote_{p.missileId}");
-
-        // 캡슐로 미사일 외형 (콜라이더 없음)
+        var go   = new GameObject($"Missile_Remote_{p.missileId}");
         var body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
         Object.Destroy(body.GetComponent<CapsuleCollider>());
+        body.GetComponent<Renderer>().sharedMaterial = GetGrayMaterial();
         body.transform.SetParent(go.transform, false);
         body.transform.localScale    = new Vector3(0.2f, 0.5f, 0.2f);
         body.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
@@ -97,7 +145,6 @@ public class PlayerManager : MonoBehaviour
         Debug.Log($"[Missile] Remote spawned: {p.missileId} shooter={p.shooterNickname}");
     }
 
-    // ── 원격 미사일 위치 업데이트 (UDP 10Hz) ──────────────────────────────
     void HandleMissileMove(MissileMovePacket p)
     {
         if (!remoteMissiles.TryGetValue(p.missileId, out var view)) return;
@@ -110,13 +157,9 @@ public class PlayerManager : MonoBehaviour
 
     void HandleMissileDestroy(MissileDestroyPacket p)
     {
-        string myName = GameManager.Instance?.myNickname
-                     ?? NetworkManager.Instance?.socketClient.myNickname
-                     ?? "";
-        // 발사자는 Detonate()에서 이미 로컬 이펙트 처리 → 서버 에코 무시
+        string myName = GetMyName();
         if (p.shooterNickname == myName) return;
 
-        // 원격 미사일 오브젝트 제거
         if (remoteMissiles.TryGetValue(p.missileId, out var view))
         {
             if (view != null) Destroy(view.gameObject);
@@ -130,9 +173,7 @@ public class PlayerManager : MonoBehaviour
 
     void HandleMissileWarn(MissileWarnPacket p)
     {
-        string myName = GameManager.Instance?.myNickname
-                     ?? NetworkManager.Instance?.socketClient.myNickname
-                     ?? "";
+        string myName = GetMyName();
         if (p.targetNickname != myName) return;
 
         var threatWarn = FindObjectOfType<ThreatWarningSystem>();
@@ -141,52 +182,67 @@ public class PlayerManager : MonoBehaviour
         var level = (ThreatWarningSystem.ThreatLevel)Mathf.Clamp(p.lockLevel, 0, 5);
 
         Vector3 shooterPos = Vector3.zero;
-        if (players.TryGetValue(p.shooterNickname, out var shooter))
+        if (players.TryGetValue(p.shooterNickname, out var shooter) && shooter != null)
             shooterPos = shooter.transform.position;
+        else if (_groundChars.TryGetValue(p.shooterNickname, out var gc) && gc != null)
+            shooterPos = gc.transform.position;
 
         threatWarn.ReportNetworkThreat(level, shooterPos);
     }
 
-    // ── 플레이어 생성 / 제거 ──────────────────────────────────────────────
-    void CreatePlayer(string nickname, Vector3 pos, Quaternion rot, bool isMove)
+    // ── 로컬 플레이어 생성 ─────────────────────────────────────────────────
+    void CreateLocalPlayer(SpawnPacket p)
     {
-        if (players.ContainsKey(nickname)) return;
+        if (players.ContainsKey(p.nickname)) return;
 
-        string myName = GameManager.Instance?.myNickname
-                     ?? NetworkManager.Instance?.socketClient.myNickname;
-        bool isLocal = nickname == myName;
+        var pos = new Vector3(p.x, p.y, p.z);
+        var rot = Quaternion.Euler(p.rotX, p.rotY, p.rotZ);
 
         PlayerController player;
 
-        if (isLocal && _localAircraftInScene != null)
+        if (_localAircraftInScene != null)
         {
-            // 씬 사전 배치 항공기 재사용 — 항모 자식으로 배치해도 런타임에 de-parent
             player = _localAircraftInScene;
-            player.transform.SetParent(null, true);   // 월드 좌표 유지하며 최상위로
+            player.transform.SetParent(null, true);
             Debug.Log("[Player] Using scene-placed local aircraft");
         }
         else
         {
-            // 프리팹 인스턴스화 (기존 동작 — 폴백)
             GameObject obj = Instantiate(playerPrefab);
             player = obj.GetComponent<PlayerController>();
             player.transform.SetPositionAndRotation(pos, rot);
         }
 
-        player.nickname      = nickname;
-        player.isLocalPlayer = isLocal;
+        player.nickname      = p.nickname;
+        player.isLocalPlayer = true;
         player.ClearSnapshots();
-        player.AddSnapshot(player.transform.position, player.transform.rotation, isMove);
+        player.AddSnapshot(player.transform.position, player.transform.rotation, p.isMove);
 
-        if (isLocal)
-            InitLocalPlayerGround(player, player.transform.position);
-        else
-            player.gameObject.AddComponent<PlayerLabel>().SetNickname(nickname);
+        InitLocalPlayerGround(player, player.transform.position);
 
-        players[nickname] = player;
-        Debug.Log($"[Player] Spawned: {nickname}  local={isLocal}");
+        players[p.nickname] = player;
+        Debug.Log($"[Player] Spawned local: {p.nickname}");
     }
 
+    // ── 원격 플레이어: 지상 캐릭터만 생성 (항공기 동적 생성 없음) ──────────
+    void CreateRemoteGroundPlayer(SpawnPacket p)
+    {
+        if (_groundChars.ContainsKey(p.nickname)) return;
+
+        var pos = new Vector3(p.x, p.y, p.z);
+        var rot = Quaternion.Euler(p.rotX, p.rotY, p.rotZ);
+
+        var go = CreateRemoteGroundChar(p.nickname, pos, rot);
+        go.SetActive(false); // 항상 숨김으로 생성 — step-1.5 MOVE 패킷이 최종 상태 결정
+        _groundChars[p.nickname] = go;
+
+        // Spawn 패킷에 이미 콕핏 상태가 담겨 있으면 즉시 READY 레이블 표시
+        if (p.isBoardedInCockpit) ShowReadyLabel(p.nickname, pos);
+
+        Debug.Log($"[Player] Spawned remote ground: {p.nickname}  isFlying={p.isFlying}  inCockpit={p.isBoardedInCockpit}");
+    }
+
+    // ── 로컬 지상 캐릭터 초기화 ────────────────────────────────────────────
     void InitLocalPlayerGround(PlayerController pc, Vector3 spawnPos)
     {
         if (GameModeManager.Instance == null)
@@ -198,16 +254,11 @@ public class PlayerManager : MonoBehaviour
         var charGO = BuildCharacterObject();
         var gc     = charGO.GetComponent<GroundController>();
 
-        // spawnPos가 공중(항공기 높이)일 수 있으므로 지형 스냅
         Vector3 groundPos = SnapToGround(spawnPos);
-
-        // TakeoffZone 제거 — 탑승은 AircraftBoardingTrigger(근접 감지)가 담당
-        // LandingZone은 씬에서 수동 배치 (AircraftZone Type.Landing)
 
         GameModeManager.Instance.Init(gc, pc, spawnPos, groundPos);
     }
 
-    // 주어진 위치 아래로 지형을 찾아 Y를 스냅. 지형 없으면 Y=0 사용.
     static Vector3 SnapToGround(Vector3 pos)
     {
         Vector3 origin = pos + Vector3.up * 500f;
@@ -219,7 +270,6 @@ public class PlayerManager : MonoBehaviour
 
     GameObject BuildCharacterObject()
     {
-        // ── FBX 프리팹이 연결된 경우: Instantiate 후 필수 컴포넌트만 보완 ──
         if (groundCharPrefab != null)
         {
             var go = Instantiate(groundCharPrefab);
@@ -237,7 +287,6 @@ public class PlayerManager : MonoBehaviour
             return go;
         }
 
-        // ── 임시 프로시저럴 모델 (FBX 교체 전까지) ──────────────────────────
         var root = new GameObject("LocalGroundCharacter");
 
         var rootCc = root.AddComponent<CharacterController>();
@@ -252,19 +301,55 @@ public class PlayerManager : MonoBehaviour
         return root;
     }
 
-    void RemovePlayer(string nickname)
+    // 원격 지상 캐릭터 오브젝트 생성
+    GameObject CreateRemoteGroundChar(string nickname, Vector3 pos, Quaternion rot)
     {
-        if (!players.TryGetValue(nickname, out var player)) return;
-        players.Remove(nickname);
-        if (player != null) Destroy(player.gameObject);
-        Debug.Log($"[Player] Despawned: {nickname}");
+        GameObject go;
+        if (groundCharPrefab != null)
+        {
+            go = Instantiate(groundCharPrefab);
+            go.name = $"RemoteGround_{nickname}";
+            var gc = go.GetComponent<GroundController>();
+            if (gc != null) Destroy(gc);
+            var cc = go.GetComponent<CharacterController>();
+            if (cc != null) Destroy(cc);
+            // 루트 모션이 RemoteGroundInterp의 위치 제어를 방해하지 않도록 비활성화
+            var anim = go.GetComponentInChildren<Animator>();
+            if (anim != null) anim.applyRootMotion = false;
+        }
+        else
+        {
+            go = new GameObject($"RemoteGround_{nickname}");
+            var body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+            Destroy(body.GetComponent<CapsuleCollider>());
+            body.GetComponent<Renderer>().sharedMaterial = GetGrayMaterial();
+            body.transform.SetParent(go.transform, false);
+            body.transform.localScale    = new Vector3(0.5f, 0.9f, 0.5f);
+            body.transform.localPosition = new Vector3(0f, 0.9f, 0f);
+        }
+        go.transform.SetPositionAndRotation(pos, rot);
+        go.AddComponent<RemoteGroundInterp>().SetTarget(pos, rot);
+        go.AddComponent<PlayerLabel>().SetNickname(nickname);
+        return go;
     }
 
-    void ClearPlayers()
+    void ClearAll()
     {
         foreach (var p in players.Values)
             if (p != null) Destroy(p.gameObject);
         players.Clear();
+
+        foreach (var gc in _groundChars.Values)
+            if (gc != null) Destroy(gc);
+        _groundChars.Clear();
+
+        foreach (var rl in _readyLabels.Values)
+            if (rl != null) Destroy(rl);
+        _readyLabels.Clear();
+
+        foreach (var t in _occupiedAircraft.Values)
+            if (t != null) t.IsOccupied = false;
+        _occupiedAircraft.Clear();
     }
 
     void ClearRemoteMissiles()
@@ -273,6 +358,103 @@ public class PlayerManager : MonoBehaviour
             if (v != null) Destroy(v.gameObject);
         remoteMissiles.Clear();
     }
+
+    // ── READY 레이블: 원격 플레이어 콕핏 탑승 시 항공기 위에 표시 ───────────
+    void ShowReadyLabel(string nickname, Vector3 aircraftPos)
+    {
+        // 이미 있으면 위치만 갱신
+        if (_readyLabels.TryGetValue(nickname, out var existing) && existing != null)
+        {
+            existing.transform.position = aircraftPos + Vector3.up * 1.5f;
+            return;
+        }
+
+        var go = new GameObject($"ReadyLabel_{nickname}");
+        go.transform.position = aircraftPos + Vector3.up * 1.5f;
+
+        var canvas = go.AddComponent<Canvas>();
+        canvas.renderMode   = RenderMode.WorldSpace;
+        canvas.sortingOrder = 10;
+
+        var crt = go.GetComponent<RectTransform>();
+        crt.sizeDelta  = new Vector2(300f, 80f);
+        crt.localScale = Vector3.one * 0.012f;
+
+        var textGO = new GameObject("Text");
+        textGO.transform.SetParent(go.transform, false);
+        var trt = textGO.AddComponent<RectTransform>();
+        trt.sizeDelta         = new Vector2(300f, 80f);
+        trt.anchorMin         = trt.anchorMax = new Vector2(0.5f, 0.5f);
+        trt.anchoredPosition  = Vector2.zero;
+
+        var txt = textGO.AddComponent<UnityEngine.UI.Text>();
+        txt.font      = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        txt.text      = "▶ READY..";
+        txt.fontSize  = 32;
+        txt.fontStyle = FontStyle.Bold;
+        txt.color     = new Color(0.1f, 1f, 0.4f, 1f);
+        txt.alignment = TextAnchor.MiddleCenter;
+
+        go.AddComponent<ReadyLabelFaceCamera>();
+
+        _readyLabels[nickname] = go;
+
+        // 가장 가까운 탑승 트리거를 점령 상태로 표시
+        if (!_occupiedAircraft.ContainsKey(nickname))
+        {
+            var trigger = FindNearestBoardingTrigger(aircraftPos);
+            if (trigger != null)
+            {
+                trigger.IsOccupied = true;
+                _occupiedAircraft[nickname] = trigger;
+            }
+        }
+    }
+
+    void HideReadyLabel(string nickname)
+    {
+        if (_readyLabels.TryGetValue(nickname, out var go))
+        {
+            _readyLabels.Remove(nickname);
+            if (go != null) Destroy(go);
+        }
+
+        // 점령 해제
+        if (_occupiedAircraft.TryGetValue(nickname, out var trigger))
+        {
+            if (trigger != null) trigger.IsOccupied = false;
+            _occupiedAircraft.Remove(nickname);
+        }
+    }
+
+    AircraftBoardingTrigger FindNearestBoardingTrigger(Vector3 pos, float maxDist = 20f)
+    {
+        AircraftBoardingTrigger nearest = null;
+        float bestSqr = maxDist * maxDist;
+        foreach (var t in Object.FindObjectsByType<AircraftBoardingTrigger>(FindObjectsSortMode.None))
+        {
+            float sqr = (t.transform.position - pos).sqrMagnitude;
+            if (sqr < bestSqr) { bestSqr = sqr; nearest = t; }
+        }
+        return nearest;
+    }
+
+    // URP/Built-in 공용 회색 재질 (CreatePrimitive 마젠타 방지)
+    static Material GetGrayMaterial()
+    {
+        if (_grayMat != null) return _grayMat;
+        var shader = Shader.Find("Universal Render Pipeline/Lit")
+                  ?? Shader.Find("Standard");
+        if (shader == null) return null;
+        _grayMat       = new Material(shader);
+        _grayMat.color = new Color(0.7f, 0.7f, 0.7f);
+        return _grayMat;
+    }
+
+    string GetMyName() =>
+        GameManager.Instance?.myNickname
+        ?? NetworkManager.Instance?.socketClient?.myNickname
+        ?? "";
 
     public PlayerController GetPlayer(string nickname)
     {

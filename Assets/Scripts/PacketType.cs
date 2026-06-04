@@ -24,4 +24,5 @@ public enum PacketType
     CREATE_ROOM_RESULT = 22,
     ENTER_ROOM_RESULT  = 23,
     QUEST_UPDATE       = 24,
+    COCKPIT_STATE      = 25,
 }

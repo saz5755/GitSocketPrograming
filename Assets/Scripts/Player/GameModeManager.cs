@@ -35,6 +35,7 @@ public class GameModeManager : MonoBehaviour
     bool      _trapping;
     Coroutine _trapRoutine;
 
+
     // 화면 하단 프롬프트 UI
     Canvas    _promptCanvas;
     Text      _promptText;
@@ -110,6 +111,15 @@ public class GameModeManager : MonoBehaviour
         if (_activeZone == zone)
             _activeZone = null;
         // 트래핑 중이면 코루틴 유지
+    }
+
+    // 새 플레이어가 입장했을 때 현재 상태를 재전송 (타이밍 경쟁 보완)
+    public void BroadcastCurrentState()
+    {
+        if (IsBoardedInCockpit)
+            _pc?.SendCockpitState(true);
+        else if (IsFlying)
+            _pc?.SendFlightState(true);
     }
 
     // ── 근접 탑승 트리거 API (AircraftBoardingTrigger에서 호출) ─────────────
@@ -246,6 +256,9 @@ public class GameModeManager : MonoBehaviour
         _gc.enabled = false;
         SetCharRenderers(false);
 
+        // 콕핏 탑승 상태를 원격 플레이어에게 알림 (항공기 위치 포함)
+        _pc.SendCockpitState(true);
+
         // 카메라를 콕핏 탑승 모드로 전환 (HUD 미활성)
         _fc?.BeginCockpitBoarding(_pc);
 
@@ -270,6 +283,9 @@ public class GameModeManager : MonoBehaviour
         PreflightSystem.Instance?.ResetPreflight();
         CockpitInteractionSystem.Instance?.SetActive(false);
 
+        // 콕핏 하차 상태를 원격 플레이어에게 알림
+        _pc.SendCockpitState(false);
+
         _fc?.EndCockpitBoarding();
         _fc?.SetGroundTarget(_gc.transform);
 
@@ -292,7 +308,8 @@ public class GameModeManager : MonoBehaviour
 
         float yaw = _pc.transform.eulerAngles.y;
 
-        // 항공기 정지
+        // 비행 종료를 원격 플레이어에게 즉시 통보 (isFlying=false 패킷)
+        _pc.SendFlightState(false);
         _pc.enabled = false;
 
         // 캐릭터를 착륙 위치에 배치

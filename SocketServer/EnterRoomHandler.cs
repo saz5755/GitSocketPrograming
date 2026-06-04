@@ -40,8 +40,12 @@ class EnterRoomHandler
         if (session.player.room != null)
             session.player.room.Leave(session.player);
 
-        // 재입장 시 틱 카운터 리셋
+        // 재입장 시 상태 리셋 (비행 상태 포함)
         session.player.lastProcessedTick = 0;
+        session.player.isFlying           = false;
+        session.player.isMove             = false;
+        session.player.isBoardedInCockpit = false;
+        session.player.animState          = 0;
         session.player.posX = session.player.posY = session.player.posZ = 0;
         session.player.rotX = session.player.rotY = session.player.rotZ = 0;
 
@@ -58,9 +62,33 @@ class EnterRoomHandler
                 rotX     = player.rotX,
                 rotY     = player.rotY,
                 rotZ     = player.rotZ,
-                isMove   = player.isMove
+                isMove             = player.isMove,
+                isFlying           = player.isFlying,
+                isBoardedInCockpit = player.isBoardedInCockpit
             };
             ServerSender.SendPacket(session, spawn);
+        }
+
+        // 1.5. 기존 플레이어의 현재 상태를 TCP로 즉시 전송
+        //      Spawn 패킷의 isBoardedInCockpit/isFlying은 타이밍 경쟁으로 틀릴 수 있음.
+        //      여기서 서버가 알고 있는 최신 상태를 덮어쓰도록 한다.
+        foreach (Player player in room.GetPlayers())
+        {
+            ServerSender.SendPacket(session, new MoveBroadcastPacket
+            {
+                type               = PacketType.MOVE,
+                nickname           = player.nickname,
+                posX               = player.posX,
+                posY               = player.posY,
+                posZ               = player.posZ,
+                rotX               = player.rotX,
+                rotY               = player.rotY,
+                rotZ               = player.rotZ,
+                isMove             = player.isMove,
+                isFlying           = player.isFlying,
+                isBoardedInCockpit = player.isBoardedInCockpit,
+                animState          = player.animState
+            });
         }
 
         // 2. 입장 처리
@@ -73,7 +101,8 @@ class EnterRoomHandler
             nickname = session.player.nickname,
             x = 0, y = 0, z = 0,
             rotX = 0, rotY = 0, rotZ = 0,
-            isMove   = false
+            isMove   = false,
+            isFlying = false
         };
         room.Broadcast(mySpawn);
 

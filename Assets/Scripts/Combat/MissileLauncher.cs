@@ -20,7 +20,7 @@ public class MissileLauncher : MonoBehaviour
     void Update()
     {
         if (_cooldownTimer > 0f) _cooldownTimer -= Time.deltaTime;
-        if (GameModeManager.Instance?.IsBoardedInCockpit == true) return;
+        if (GameModeManager.Instance?.IsFlying != true) return;
         if (Input.GetKeyDown(fireKey)) TryFire();
 
         // 타겟 락온 상태 네트워크 경고 브로드캐스트

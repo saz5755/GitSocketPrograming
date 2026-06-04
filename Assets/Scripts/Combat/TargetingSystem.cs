@@ -63,7 +63,16 @@ public class TargetingSystem : MonoBehaviour
     {
         _enemies.Clear();
         foreach (var pc in PlayerController.All)
-            if (pc != null && !pc.isLocalPlayer) _enemies.Add(pc);
+            if (pc != null && !pc.isLocalPlayer && pc.IsFlying) _enemies.Add(pc);
+    }
+
+    // FlightHUD에서 비락온 적기 마커 위치 계산에 사용
+    public Vector2 WorldToCanvasPos(Vector3 worldPos, out bool onScreen)
+    {
+        if (_cam == null) { onScreen = false; return Vector2.zero; }
+        Vector3 vp = _cam.WorldToViewportPoint(worldPos);
+        onScreen = vp.z > 0f && vp.x > 0.01f && vp.x < 0.99f && vp.y > 0.01f && vp.y < 0.99f;
+        return new Vector2((vp.x - 0.5f) * 1920f, (vp.y - 0.5f) * 1080f);
     }
 
     void HandleLockInput()

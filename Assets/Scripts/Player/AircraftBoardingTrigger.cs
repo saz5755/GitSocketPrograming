@@ -15,7 +15,9 @@ public class AircraftBoardingTrigger : MonoBehaviour
     Canvas           _worldCanvas;
     bool             _playerInRange;
 
-    public PlayerController Aircraft => _pc;
+    public PlayerController Aircraft    => _pc;
+    // 다른 플레이어가 콕핏 탑승 중이면 true — PlayerManager가 설정
+    public bool             IsOccupied  { get; set; }
 
     void Awake()
     {
@@ -37,7 +39,15 @@ public class AircraftBoardingTrigger : MonoBehaviour
             return;
         }
 
-        // 탑승 중이거나 비행 중이면 UI 숨김 + 범위 상태 리셋
+        // 다른 플레이어가 탑승 중(READY 상태)이면 이 항공기의 탑승 UI 완전 차단
+        if (IsOccupied)
+        {
+            if (_playerInRange) Leave(gm);
+            SetUIVisible(false);
+            return;
+        }
+
+        // 자신이 탑승 중이거나 비행 중이면 UI 숨김 + 범위 상태 리셋
         // (하차 후 다시 범위 내에 있을 때 Enter()가 재발동되어 UI가 즉시 복원됨)
         if (gm.IsBoardedInCockpit || gm.IsFlying)
         {

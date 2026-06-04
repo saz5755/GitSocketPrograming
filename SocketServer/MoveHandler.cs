@@ -32,7 +32,10 @@ class MoveHandler
         session.player.rotX = packet.rotX;
         session.player.rotY = packet.rotY;
         session.player.rotZ = packet.rotZ;
-        session.player.isMove = packet.isMove;
+        session.player.isMove    = packet.isMove;
+        session.player.isFlying  = packet.isFlying;
+        // isBoardedInCockpit는 TCP COCKPIT_STATE 패킷이 단독으로 관리 — UDP MOVE가 덮어쓰면 안 됨
+        session.player.animState = packet.animState;
 
         // 발신자에게 ACK: 처리 완료 틱 + 서버 저장 위치 에코 (Reconciliation용)
         if (session.udpEndPoint != null)
@@ -68,7 +71,10 @@ class MoveHandler
             rotX = sender.rotX,
             rotY = sender.rotY,
             rotZ = sender.rotZ,
-            isMove = sender.isMove
+            isMove             = sender.isMove,
+            isFlying           = sender.isFlying,
+            isBoardedInCockpit = sender.isBoardedInCockpit,
+            animState          = sender.animState
         };
 
         foreach (Player target in sender.room!.GetPlayers())

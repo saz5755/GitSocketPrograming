@@ -18,6 +18,9 @@ public class Player
     public float rotZ;
 
     public bool isMove;
+    public bool isFlying;
+    public bool isBoardedInCockpit;
+    public int  animState;
     public int hp = 100;
 
     public DateTime lastInputTime;

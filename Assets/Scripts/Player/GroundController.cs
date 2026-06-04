@@ -28,6 +28,11 @@ public class GroundController : MonoBehaviour
     float _currentSpeed;
     Vector3 _lastMoveDir;
 
+    // ── 네트워크 송신 ────────────────────────────────────────────────────────
+    float            _sendTimer;
+    PlayerController _localPC;
+    const float      SendInterval = 0.05f;
+
     public float CameraYaw    => _cameraYaw;
     public float CurrentSpeed => _currentSpeed;
     public float WalkSpeed    => walkSpeed;
@@ -67,8 +72,9 @@ public class GroundController : MonoBehaviour
 
     void Update()
     {
-        // 카메라 수평 방향 (마우스 X) — 카메라 오빗 기준
-        _cameraYaw += Input.GetAxis("Mouse X") * mouseSens;
+        // 카메라 수평 방향 (마우스 X) — 팝업/커서 해제 중에는 회전 차단
+        if (Cursor.lockState == CursorLockMode.Locked)
+            _cameraYaw += Input.GetAxis("Mouse X") * mouseSens;
 
         float h   = Input.GetAxisRaw("Horizontal");
         float v   = Input.GetAxisRaw("Vertical");
@@ -124,5 +130,31 @@ public class GroundController : MonoBehaviour
                 _anim.SetFloat("Speed", animSpeed);
             }
         }
+
+        SendNetworkUpdate();
+    }
+
+    void SendNetworkUpdate()
+    {
+        if (_localPC == null)
+        {
+            foreach (var pc in PlayerController.All)
+                if (pc.isLocalPlayer) { _localPC = pc; break; }
+        }
+        if (_localPC == null) return;
+
+        var sc = NetworkManager.Instance?.socketClient;
+        if (sc == null) return;
+
+        _sendTimer += Time.deltaTime;
+        if (_sendTimer < SendInterval) return;
+        _sendTimer -= SendInterval;
+
+        Vector3 euler = transform.eulerAngles;
+        sc.SendMove(
+            transform.position.x, transform.position.y, transform.position.z,
+            euler.x, euler.y, euler.z,
+            _currentSpeed > 0.1f, false, _localPC.GetNextTick(),
+            animState: (int)CurrentAnimState);
     }
 }

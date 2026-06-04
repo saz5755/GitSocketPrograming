@@ -110,6 +110,11 @@ public class FlightHUD : MonoBehaviour
     [SerializeField] Text            offScreenDist;
     float           tdbFlash;
 
+    // ── 비락온 적기 마커 (비행 중인 모든 적기에 표시) ──────────────────────────
+    const int MAX_ENEMY_MARKERS = 8;
+    RectTransform[] _emRoots = new RectTransform[MAX_ENEMY_MARKERS];
+    Text[]          _emNicks = new Text[MAX_ENEMY_MARKERS];
+
     // ── 위협 경고 UI refs ─────────────────────────────────────────────────────
     [Header("Refs — Threat / RWR")]
     [SerializeField] Text          threatWarningText;
@@ -1178,6 +1183,19 @@ public class FlightHUD : MonoBehaviour
         BuildTargetBox();
         BuildOffScreenIndicator();
         BuildThreatWarningUI();
+        BuildEnemyMarkers();
+    }
+
+    void BuildEnemyMarkers()
+    {
+        for (int i = 0; i < MAX_ENEMY_MARKERS; i++)
+        {
+            var root = Rect($"EM_{i}", hudCanvas.transform, Vector2.zero, new Vector2(60f, 60f));
+            root.gameObject.SetActive(false);
+            _emNicks[i] = AddTxt(root, "", new Vector2(0f, 40f), new Vector2(180f, 18f), 10, HGD, TextAnchor.MiddleCenter);
+            AddTxt(root, "◇", Vector2.zero, new Vector2(40f, 30f), 15, HGD, TextAnchor.MiddleCenter);
+            _emRoots[i] = root;
+        }
     }
 
     void BuildThreatWarningUI()
@@ -1345,6 +1363,8 @@ public class FlightHUD : MonoBehaviour
             if (weaponText != null) { weaponText.text = "SAFE"; weaponText.color = HGD; }
         }
 
+        UpdateEnemyMarkers();
+
         if (aim120CountText != null && launcher != null)
             aim120CountText.text = $"AIM-120  x{launcher.MissileCount}";
 
@@ -1363,6 +1383,29 @@ public class FlightHUD : MonoBehaviour
         }
 
         UpdateThreatWarningUI();
+    }
+
+    void UpdateEnemyMarkers()
+    {
+        for (int i = 0; i < MAX_ENEMY_MARKERS; i++)
+            if (_emRoots[i] != null) _emRoots[i].gameObject.SetActive(false);
+
+        if (targeting == null) return;
+
+        int mi = 0;
+        foreach (var pc in PlayerController.All)
+        {
+            if (mi >= MAX_ENEMY_MARKERS) break;
+            if (pc == null || pc.isLocalPlayer || !pc.IsFlying || pc == targeting.Target) continue;
+
+            Vector2 cp = targeting.WorldToCanvasPos(pc.transform.position, out bool onScreen);
+            if (!onScreen) continue;
+
+            _emRoots[mi].anchoredPosition = cp;
+            _emNicks[mi].text = pc.nickname;
+            _emRoots[mi].gameObject.SetActive(true);
+            mi++;
+        }
     }
 
     void UpdateThreatWarningUI()

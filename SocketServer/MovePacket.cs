@@ -14,4 +14,7 @@ public class MovePacket : Packet
     public float rotZ;
 
     public bool isMove;
+    public bool isFlying;
+    public bool isBoardedInCockpit;
+    public int  animState;
 }

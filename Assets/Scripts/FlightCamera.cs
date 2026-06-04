@@ -272,8 +272,11 @@ public class FlightCamera : MonoBehaviour
     {
         if (_groundTarget == null) return;
 
-        _groundPitch -= Input.GetAxis("Mouse Y") * freeLookSensitivity;
-        _groundPitch  = Mathf.Clamp(_groundPitch, -15f, 55f);
+        if (Cursor.lockState == CursorLockMode.Locked)
+        {
+            _groundPitch -= Input.GetAxis("Mouse Y") * freeLookSensitivity;
+            _groundPitch  = Mathf.Clamp(_groundPitch, -15f, 55f);
+        }
 
         float cameraYaw = _groundController != null
             ? _groundController.CameraYaw

@@ -341,14 +341,18 @@ public class SocketClient : MonoBehaviour
 
     public void SendMove(float posX, float posY, float posZ,
                          float rotX, float rotY, float rotZ,
-                         bool isMove, int tick)
+                         bool isMove, bool isFlying, int tick,
+                         bool isBoardedInCockpit = false,
+                         int  animState          = 0)
     {
         byte[] data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(new MovePacket
         {
             type = PacketType.MOVE, tick = tick,
             posX = posX, posY = posY, posZ = posZ,
             rotX = rotX, rotY = rotY, rotZ = rotZ,
-            isMove = isMove
+            isMove = isMove, isFlying = isFlying,
+            isBoardedInCockpit = isBoardedInCockpit,
+            animState          = animState
         }));
         try { udp?.Send(data, data.Length); }
         catch { }
@@ -397,6 +401,13 @@ public class SocketClient : MonoBehaviour
             stepIndex  = stepIndex,
             totalSteps = totalSteps,
             isComplete = isComplete });
+
+    public void SendCockpitStateTCP(bool boarded, Vector3 pos, Vector3 rot)
+        => SendTCP(new CockpitStatePacket {
+            type               = PacketType.COCKPIT_STATE,
+            isBoardedInCockpit = boarded,
+            posX = pos.x, posY = pos.y, posZ = pos.z,
+            rotX = rot.x, rotY = rot.y, rotZ = rot.z });
 
     public void SendGunHit(string shooterNick, string targetNick, Vector3 pos)
         => SendTCP(new GunHitPacket {
