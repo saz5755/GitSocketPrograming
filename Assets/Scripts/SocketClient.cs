@@ -48,6 +48,9 @@ public class SocketClient : MonoBehaviour
     public event Action<CreateRoomResultPacket> OnCreateRoomResult;
     public event Action<EnterRoomResultPacket>  OnEnterRoomResult;
     public event Action<QuestUpdatePacket>      OnQuestUpdate;
+    public event Action<AISpawnPacket>          OnAISpawn;
+    public event Action<string>                 OnAIDespawn;
+    public event Action<AIMovePacket>           OnAIMove;
 
     // ── 연결 ──────────────────────────────────────────────────────────────
     public void Connect(string ip = null)
@@ -206,6 +209,24 @@ public class SocketClient : MonoBehaviour
                 break;
             }
 
+            case PacketType.AI_SPAWN:
+            {
+                var p = JsonConvert.DeserializeObject<AISpawnPacket>(json);
+                UnityMainThreadDispatcher.Instance.Enqueue(() => OnAISpawn?.Invoke(p));
+                break;
+            }
+
+            case PacketType.AI_DESPAWN:
+            {
+                var p = JsonConvert.DeserializeObject<DespawnPacket>(json);
+                UnityMainThreadDispatcher.Instance.Enqueue(() =>
+                {
+                    lastTicks.TryRemove(p.nickname, out _);
+                    OnAIDespawn?.Invoke(p.nickname);
+                });
+                break;
+            }
+
             default: break;
         }
     }
@@ -285,6 +306,13 @@ public class SocketClient : MonoBehaviour
                     {
                         var p = JsonConvert.DeserializeObject<GunFirePacket>(json);
                         UnityMainThreadDispatcher.Instance.Enqueue(() => OnGunFire?.Invoke(p));
+                        break;
+                    }
+
+                    case PacketType.AI_MOVE:
+                    {
+                        var p = JsonConvert.DeserializeObject<AIMovePacket>(json);
+                        UnityMainThreadDispatcher.Instance.Enqueue(() => OnAIMove?.Invoke(p));
                         break;
                     }
                 }
@@ -401,6 +429,29 @@ public class SocketClient : MonoBehaviour
             stepIndex  = stepIndex,
             totalSteps = totalSteps,
             isComplete = isComplete });
+
+    public void SendAISpawn(string nickname, Vector3 pos, Vector3 euler, int aiType)
+        => SendTCP(new AISpawnPacket {
+            type = PacketType.AI_SPAWN, nickname = nickname,
+            posX = pos.x, posY = pos.y, posZ = pos.z,
+            rotX = euler.x, rotY = euler.y, rotZ = euler.z,
+            aiType = aiType });
+
+    public void SendAIDespawn(string nickname)
+        => SendTCP(new DespawnPacket { type = PacketType.AI_DESPAWN, nickname = nickname });
+
+    public void SendAIMove(string nickname, Vector3 pos, Vector3 euler, float speed)
+    {
+        byte[] data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(new AIMovePacket
+        {
+            type = PacketType.AI_MOVE, nickname = nickname,
+            posX = pos.x, posY = pos.y, posZ = pos.z,
+            rotX = euler.x, rotY = euler.y, rotZ = euler.z,
+            speed = speed, isMove = speed > 0.5f
+        }));
+        try { udp?.Send(data, data.Length); }
+        catch { }
+    }
 
     public void SendCockpitStateTCP(bool boarded, Vector3 pos, Vector3 rot)
         => SendTCP(new CockpitStatePacket {

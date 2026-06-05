@@ -110,10 +110,11 @@ public class FlightHUD : MonoBehaviour
     [SerializeField] Text            offScreenDist;
     float           tdbFlash;
 
-    // ── 비락온 적기 마커 (비행 중인 모든 적기에 표시) ──────────────────────────
+    // ── 적기·아군 마커 (비행 중인 모든 비로컬 플레이어에 표시) ─────────────────
     const int MAX_ENEMY_MARKERS = 8;
-    RectTransform[] _emRoots = new RectTransform[MAX_ENEMY_MARKERS];
-    Text[]          _emNicks = new Text[MAX_ENEMY_MARKERS];
+    RectTransform[] _emRoots  = new RectTransform[MAX_ENEMY_MARKERS];
+    Text[]          _emNicks  = new Text[MAX_ENEMY_MARKERS];
+    Text[]          _emIcons  = new Text[MAX_ENEMY_MARKERS];  // 심볼 (AI vs 인간 구분)
 
     // ── 위협 경고 UI refs ─────────────────────────────────────────────────────
     [Header("Refs — Threat / RWR")]
@@ -1193,7 +1194,7 @@ public class FlightHUD : MonoBehaviour
             var root = Rect($"EM_{i}", hudCanvas.transform, Vector2.zero, new Vector2(60f, 60f));
             root.gameObject.SetActive(false);
             _emNicks[i] = AddTxt(root, "", new Vector2(0f, 40f), new Vector2(180f, 18f), 10, HGD, TextAnchor.MiddleCenter);
-            AddTxt(root, "◇", Vector2.zero, new Vector2(40f, 30f), 15, HGD, TextAnchor.MiddleCenter);
+            _emIcons[i] = AddTxt(root, "◇", Vector2.zero, new Vector2(40f, 30f), 15, HGD, TextAnchor.MiddleCenter);
             _emRoots[i] = root;
         }
     }
@@ -1221,7 +1222,14 @@ public class FlightHUD : MonoBehaviour
 
     void BuildTargetBox()
     {
-        if (tdbRoot != null) return;
+        if (tdbRoot != null)
+        {
+            // tdbRoot was pre-serialized (editor build); recover runtime refs from children
+            if (tdbArms[0] == null)
+                for (int i = 0; i < 8; i++)
+                    tdbArms[i] = tdbRoot.Find($"TDB_A{i}") as RectTransform;
+            return;
+        }
         tdbRoot = Rect("TDB_Root", hudCanvas.transform, Vector2.zero, Vector2.zero);
         tdbRoot.gameObject.SetActive(false);
 
@@ -1290,13 +1298,17 @@ public class FlightHUD : MonoBehaviour
             float  halfSize = Mathf.Lerp(65f, 42f, targeting.LockProgress);
             LayoutTDBArms(halfSize);
 
+            // 락온 타겟 종류에 따라 브래킷 색 구별
+            bool  targetIsEnemy = AIManager.IsEnemyBot(targeting.Target.nickname);
+            Color lockedCol     = targetIsEnemy ? MarkerEnemyColor : MarkerHumanColor;
+
             Color armCol;
             if (inFireZone)
                 armCol = blink ? WARN : new Color(WARN.r, WARN.g, WARN.b, 0.5f);
             else if (locked)
-                armCol = HG;
+                armCol = lockedCol;
             else
-                armCol = blink ? HGD : HGX;
+                armCol = blink ? new Color(lockedCol.r, lockedCol.g, lockedCol.b, 0.6f) : HGX;
 
             foreach (var arm in tdbArms)
             {
@@ -1385,6 +1397,10 @@ public class FlightHUD : MonoBehaviour
         UpdateThreatWarningUI();
     }
 
+    // AI 적기: 빨간 □  /  인간 플레이어 비행: 파란 △
+    static readonly Color MarkerEnemyColor = new Color(1.00f, 0.28f, 0.10f, 0.95f);
+    static readonly Color MarkerHumanColor = new Color(0.15f, 0.85f, 1.00f, 0.90f);
+
     void UpdateEnemyMarkers()
     {
         for (int i = 0; i < MAX_ENEMY_MARKERS; i++)
@@ -1392,17 +1408,29 @@ public class FlightHUD : MonoBehaviour
 
         if (targeting == null) return;
 
+        var lockedTarget = targeting.Target;
         int mi = 0;
+
         foreach (var pc in PlayerController.All)
         {
             if (mi >= MAX_ENEMY_MARKERS) break;
-            if (pc == null || pc.isLocalPlayer || !pc.IsFlying || pc == targeting.Target) continue;
+            if (pc == null || pc.isLocalPlayer || !pc.IsFlying) continue;
+            // 에스코트 봇(아군)은 마커 제외
+            if (AIManager.IsEscortBot(pc.nickname)) continue;
+            // 락온 타겟은 TDB 브래킷이 담당 — 소형 마커 중복 제외
+            if (pc == lockedTarget) continue;
 
             Vector2 cp = targeting.WorldToCanvasPos(pc.transform.position, out bool onScreen);
             if (!onScreen) continue;
 
+            bool  isEnemy = AIManager.IsEnemyBot(pc.nickname);
+            Color col     = isEnemy ? MarkerEnemyColor : MarkerHumanColor;
+
             _emRoots[mi].anchoredPosition = cp;
-            _emNicks[mi].text = pc.nickname;
+            _emNicks[mi].text  = pc.nickname;
+            _emNicks[mi].color = new Color(col.r, col.g, col.b, 0.75f);
+            _emIcons[mi].text  = isEnemy ? "□" : "△";
+            _emIcons[mi].color = col;
             _emRoots[mi].gameObject.SetActive(true);
             mi++;
         }

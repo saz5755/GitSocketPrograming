@@ -124,7 +124,13 @@ public class PreflightSystem : MonoBehaviour
 
     static void ResetSwitchStates()
     {
-        for (int i = 0; i < 3; i++) CockpitSwitch.Get(i)?.SetState(CockpitSwitch.State.Locked);
+        for (int i = 0; i < 3; i++)
+        {
+            var sw = CockpitSwitch.Get(i);
+            if (sw == null) continue;
+            sw.gameObject.SetActive(true);
+            sw.SetState(CockpitSwitch.State.Locked);
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -143,6 +149,7 @@ public class PreflightSystem : MonoBehaviour
         yield return WaitClick();
 
         CockpitSwitch.Get(0)?.SetState(CockpitSwitch.State.Done);
+        CockpitSwitch.Get(0)?.gameObject.SetActive(false);
         Stage = PreflightStage.ApuStarting;
         SetTitle("APU STARTING...", WARN);
         SetInstr("High-pressure turbine spinning up");
@@ -160,6 +167,7 @@ public class PreflightSystem : MonoBehaviour
 
         // ── STEP 2: ENGINE ───────────────────────────────────────────────────
         CockpitSwitch.Get(1)?.SetState(CockpitSwitch.State.Done);
+        CockpitSwitch.Get(1)?.gameObject.SetActive(false);
         Stage = PreflightStage.EngineStarting;
         SetTitle("ENGINE STARTING...", WARN);
         SetInstr("N1 RPM rising — ignition sequence");
@@ -178,6 +186,7 @@ public class PreflightSystem : MonoBehaviour
 
         // ── STEP 3: AVIONICS ─────────────────────────────────────────────────
         CockpitSwitch.Get(2)?.SetState(CockpitSwitch.State.Done);
+        CockpitSwitch.Get(2)?.gameObject.SetActive(false);
         Stage = PreflightStage.AvionicsOn;
         SetTitle("AVIONICS POWER ON...", WARN);
         SetInstr("MFD & HUD initializing");

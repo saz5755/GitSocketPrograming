@@ -48,7 +48,7 @@ public class TargetingSystem : MonoBehaviour
     void Update()
     {
         if (LocalPlayer == null) { FindLocal(); return; }
-        if (_cam == null) _cam = Camera.main;
+        _cam = Camera.main;
 
         _scanTimer += Time.deltaTime;
         if (_scanTimer >= 0.4f) { _scanTimer = 0f; RefreshEnemies(); }
@@ -63,7 +63,8 @@ public class TargetingSystem : MonoBehaviour
     {
         _enemies.Clear();
         foreach (var pc in PlayerController.All)
-            if (pc != null && !pc.isLocalPlayer && pc.IsFlying) _enemies.Add(pc);
+            if (pc != null && !pc.isLocalPlayer && pc.IsFlying && !AIManager.IsEscortBot(pc.nickname))
+                _enemies.Add(pc);
     }
 
     // FlightHUD에서 비락온 적기 마커 위치 계산에 사용

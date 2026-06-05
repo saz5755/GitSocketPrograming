@@ -45,6 +45,24 @@ public class PlayerController : MonoBehaviour
     public void BeginArrest() => _arrested = true;
     public void EndArrest()   => _arrested = false;
 
+    // ── 카타펄트 발진 ─────────────────────────────────────────────────────────
+    bool  _catapulting;
+    float _catapultTarget;
+    float _catapultAccel;
+    float _catapultHoldTimer;
+    // 최고속 도달 후 자동 추력 유지 시간 — W 없이도 항모에서 충분히 이탈
+    const float CatapultHoldSec = 4f;
+
+    // accelRate 180 m/s² → 0.4초 만에 72 m/s 도달 (실제 카타펄트 느낌)
+    public void StartCatapult(float targetSpeed, float accelRate = 180f)
+    {
+        currentSpeed       = 0f;
+        _catapultTarget    = targetSpeed;
+        _catapultAccel     = accelRate;
+        _catapulting       = true;
+        _catapultHoldTimer = 0f;
+    }
+
     const int MaxHistory = 64;
     readonly Queue<TickRecord>  _inputHistory = new();
     readonly RaycastHit[]       _groundHits   = new RaycastHit[8];
@@ -96,6 +114,34 @@ public class PlayerController : MonoBehaviour
             currentSpeed = Mathf.MoveTowards(currentSpeed, 0f, ArrestDecel * dt);
             transform.position += transform.forward * currentSpeed * dt;
             ConstrainToSurface();
+            return;
+        }
+
+        // 카타펄트 발진 — 속도·위치는 자동, 회전(pitch/yaw/roll)은 즉시 허용
+        if (_catapulting)
+        {
+            if (currentSpeed < _catapultTarget)
+            {
+                currentSpeed = Mathf.MoveTowards(currentSpeed, _catapultTarget, _catapultAccel * dt);
+            }
+            else
+            {
+                currentSpeed = _catapultTarget;
+                _catapultHoldTimer += dt;
+                if (_catapultHoldTimer >= CatapultHoldSec)
+                    _catapulting = false;
+            }
+
+            bool freeLookC = Input.GetMouseButton(1);
+            float pitchC   = freeLookC ? 0f : -Input.GetAxis("Mouse Y") * pitchSensitivity * dt;
+            float yawC     = freeLookC ? 0f :  Input.GetAxis("Mouse X") * yawSensitivity   * dt;
+            float rollC    = 0f;
+            if (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.Q)) rollC =  rollSpeed * dt;
+            if (Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.E)) rollC = -rollSpeed * dt;
+            transform.Rotate(pitchC, yawC, rollC, Space.Self);
+
+            transform.position += transform.forward * currentSpeed * dt;
+            if (anim != null) anim.SetBool("Move", true);
             return;
         }
 

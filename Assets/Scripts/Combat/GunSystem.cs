@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -29,17 +30,18 @@ public class GunSystem : MonoBehaviour
     AudioSource _gunSrc;
 
     // ── UI ────────────────────────────────────────────────────────────────────
-    [SerializeField] Canvas        _overlayCanvas;  // Inspector 할당 가능 — null이면 자동 생성
-    [SerializeField] Text          _ammoText;       // Inspector 할당 가능 — null이면 자동 생성
-    [SerializeField] RectTransform _leadRT;         // Inspector 할당 가능 — null이면 자동 생성
-    bool          _uiBuilt;
+    [SerializeField] Canvas _overlayCanvas;
+    [SerializeField] Text   _ammoText;
+    bool _uiBuilt;
 
-    // ── 조준 예측용 적 추적 ───────────────────────────────────────────────────
-    PlayerController _trackedEnemy;
-    Vector3          _enemyVel;
-    Vector3          _enemyPrevPos;
-    bool             _enemyPrevSet;
-    Image            _leadRingImg;
+    // ── Lead Indicator — 적기 당 1개, 최대 MAX_LEAD ───────────────────────────
+    const int MAX_LEAD = 8;
+    RectTransform[] _leadRTs  = new RectTransform[MAX_LEAD];
+    Image[]         _leadImgs = new Image[MAX_LEAD];
+
+    // 적기별 속도 추정 (지수 평활)
+    class EnemyTrack { public Vector3 vel; public Vector3 prevPos; public bool set; }
+    readonly Dictionary<PlayerController, EnemyTrack> _tracks = new();
 
     // ── 색상 팔레트 ───────────────────────────────────────────────────────────
     static readonly Color HG   = new Color(0.00f, 0.98f, 0.42f, 0.92f);
@@ -51,13 +53,13 @@ public class GunSystem : MonoBehaviour
     {
         _ammo = maxAmmo;
 
-        _gunSrc               = gameObject.AddComponent<AudioSource>();
-        _gunSrc.clip          = MakeGunLoop(22050);
-        _gunSrc.spatialBlend  = 0f;
-        _gunSrc.loop          = true;
-        _gunSrc.volume        = 0.38f;
-        _gunSrc.playOnAwake   = false;
-        _gunSrc.priority      = 32;
+        _gunSrc              = gameObject.AddComponent<AudioSource>();
+        _gunSrc.clip         = MakeGunLoop(22050);
+        _gunSrc.spatialBlend = 0f;
+        _gunSrc.loop         = true;
+        _gunSrc.volume       = 0.38f;
+        _gunSrc.playOnAwake  = false;
+        _gunSrc.priority     = 32;
     }
 
     void Start()
@@ -92,10 +94,22 @@ public class GunSystem : MonoBehaviour
 
         if (!_uiBuilt) { BuildUI(); _uiBuilt = true; }
 
-        UpdateLeadIndicator();
+        bool flying = GameModeManager.Instance?.IsFlying == true;
 
-        bool firing = Input.GetMouseButton(0) && _ammo > 0
-                   && GameModeManager.Instance?.IsFlying == true;
+        // 탄수 텍스트 — 비행 중에만 표시
+        if (_ammoText != null)
+        {
+            _ammoText.gameObject.SetActive(flying);
+            if (flying)
+            {
+                _ammoText.text  = _ammo > 0 ? $"GUN  {_ammo:D3}" : "GUN  EMPTY";
+                _ammoText.color = _ammo <= 50 ? WARN : HGD;
+            }
+        }
+
+        UpdateLeadIndicators();
+
+        bool firing = Input.GetMouseButton(0) && _ammo > 0 && flying;
 
         if (firing && !_gunSrc.isPlaying) _gunSrc.Play();
         else if (!firing && _gunSrc.isPlaying) _gunSrc.Stop();
@@ -108,12 +122,6 @@ public class GunSystem : MonoBehaviour
         {
             _fireTimer -= interval;
             Fire();
-        }
-
-        if (_ammoText != null)
-        {
-            _ammoText.text  = _ammo > 0 ? $"GUN  {_ammo:D3}" : "GUN  EMPTY";
-            _ammoText.color = _ammo <= 50 ? WARN : HGD;
         }
     }
 
@@ -149,61 +157,91 @@ public class GunSystem : MonoBehaviour
         HitEffectSystem.Instance?.TriggerBulletHit(pos, hitMe);
     }
 
-    // ── 예측 조준 (Lead Indicator) ────────────────────────────────────────────
-    void UpdateLeadIndicator()
+    // ── 예측 조준 (Lead Indicator) — 모든 적기 표시 ───────────────────────────
+    void UpdateLeadIndicators()
     {
-        if (_leadRT == null) return;
-
-        _trackedEnemy = FindClosestEnemy();
-        if (_trackedEnemy == null)
+        // 비행 중이 아니면 전부 숨김
+        if (GameModeManager.Instance?.IsFlying != true)
         {
-            _leadRT.gameObject.SetActive(false);
-            _enemyPrevSet = false;
+            for (int i = 0; i < MAX_LEAD; i++)
+                if (_leadRTs[i] != null) _leadRTs[i].gameObject.SetActive(false);
+            _tracks.Clear();
             return;
         }
 
-        // 속도 추정 (지수 평활)
-        if (_enemyPrevSet)
-        {
-            Vector3 raw = (_trackedEnemy.transform.position - _enemyPrevPos) / Mathf.Max(Time.deltaTime, 0.001f);
-            _enemyVel = Vector3.Lerp(_enemyVel, raw, Time.deltaTime * 6f);
-        }
-        _enemyPrevPos = _trackedEnemy.transform.position;
-        _enemyPrevSet = true;
-
-        // 탄 비행 시간 기준 예측 위치
-        float dist = Vector3.Distance(_local.transform.position, _trackedEnemy.transform.position);
-        float tof  = dist / bulletSpeed;
-        Vector3 leadPos = _trackedEnemy.transform.position + _enemyVel * tof;
-
         Camera cam = Camera.main;
-        if (cam == null) { _leadRT.gameObject.SetActive(false); return; }
 
-        Vector3 vp = cam.WorldToViewportPoint(leadPos);
-        if (vp.z < 0f) { _leadRT.gameObject.SetActive(false); return; }
-
-        _leadRT.gameObject.SetActive(true);
-        var canvasRT = _overlayCanvas.GetComponent<RectTransform>();
-        float w = canvasRT.sizeDelta.x, h = canvasRT.sizeDelta.y;
-        _leadRT.anchoredPosition = new Vector2((vp.x - 0.5f) * w, (vp.y - 0.5f) * h);
-
-        // 사거리에 따른 색상
-        bool inRange = dist < 1500f;
-        if (_leadRingImg != null) _leadRingImg.color = inRange ? new Color(0f, 1f, 0f, 0.90f) : new Color(1f, 0.82f, 0f, 0.75f);
-    }
-
-    PlayerController FindClosestEnemy()
-    {
-        float minDistSq = 4000f * 4000f;
-        PlayerController best = null;
-        Vector3 myPos = _local.transform.position;
+        // 현재 프레임에 표시할 적기 목록 수집 (에스코트 봇 제외)
+        var enemies = new List<PlayerController>(MAX_LEAD);
         foreach (var pc in PlayerController.All)
         {
+            if (enemies.Count >= MAX_LEAD) break;
             if (pc == null || pc == _local || pc.isLocalPlayer) continue;
-            float dSq = (myPos - pc.transform.position).sqrMagnitude;
-            if (dSq < minDistSq) { minDistSq = dSq; best = pc; }
+            if (!pc.IsFlying) continue;
+            if (AIManager.IsEscortBot(pc.nickname)) continue;
+            enemies.Add(pc);
         }
-        return best;
+
+        // 슬롯별 업데이트
+        for (int i = 0; i < MAX_LEAD; i++)
+        {
+            if (_leadRTs[i] == null) continue;
+
+            if (i >= enemies.Count || cam == null)
+            {
+                _leadRTs[i].gameObject.SetActive(false);
+                continue;
+            }
+
+            PlayerController enemy = enemies[i];
+
+            // 속도 추정 (지수 평활)
+            if (!_tracks.TryGetValue(enemy, out var track))
+            {
+                track = new EnemyTrack();
+                _tracks[enemy] = track;
+            }
+
+            if (track.set)
+            {
+                Vector3 raw = (enemy.transform.position - track.prevPos) / Mathf.Max(Time.deltaTime, 0.001f);
+                track.vel = Vector3.Lerp(track.vel, raw, Time.deltaTime * 6f);
+            }
+            track.prevPos = enemy.transform.position;
+            track.set     = true;
+
+            // 예측 위치 계산
+            float   dist    = Vector3.Distance(_local.transform.position, enemy.transform.position);
+            float   tof     = dist / bulletSpeed;
+            Vector3 leadPos = enemy.transform.position + track.vel * tof;
+
+            Vector3 vp = cam.WorldToViewportPoint(leadPos);
+            if (vp.z < 0f)
+            {
+                _leadRTs[i].gameObject.SetActive(false);
+                continue;
+            }
+
+            _leadRTs[i].gameObject.SetActive(true);
+
+            var canvasRT = _overlayCanvas.GetComponent<RectTransform>();
+            float w = canvasRT.sizeDelta.x, h = canvasRT.sizeDelta.y;
+            _leadRTs[i].anchoredPosition = new Vector2((vp.x - 0.5f) * w, (vp.y - 0.5f) * h);
+
+            // 사거리 색상: 1500m 이내 = 녹색, 이상 = 황색
+            bool inRange = dist < 1500f;
+            if (_leadImgs[i] != null)
+                _leadImgs[i].color = inRange
+                    ? new Color(0f, 1f, 0f, 0.90f)
+                    : new Color(1f, 0.82f, 0f, 0.75f);
+        }
+
+        // 이미 사라진 적 추적 정보 정리
+        var toRemove = new List<PlayerController>();
+        foreach (var kv in _tracks)
+            if (kv.Key == null || !PlayerController.All.Contains(kv.Key))
+                toRemove.Add(kv.Key);
+        foreach (var k in toRemove) _tracks.Remove(k);
     }
 
     // ── UI 생성 ───────────────────────────────────────────────────────────────
@@ -219,7 +257,7 @@ public class GunSystem : MonoBehaviour
                 go.transform.SetParent(hud.HudRoot, false);
             _overlayCanvas = go.AddComponent<Canvas>();
             _overlayCanvas.renderMode   = RenderMode.ScreenSpaceOverlay;
-            _overlayCanvas.sortingOrder = 22;   // HUD_Canvas(20) 위, Warning_Canvas(30) 아래
+            _overlayCanvas.sortingOrder = 22;
             var cs = go.AddComponent<CanvasScaler>();
             cs.uiScaleMode         = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             cs.referenceResolution = new Vector2(1920f, 1080f);
@@ -233,7 +271,7 @@ public class GunSystem : MonoBehaviour
                 _overlayCanvas.transform.SetParent(hud.HudRoot, false);
         }
 
-        // 탄수 표시 (우측 글레어실드 영역) — 씬에 없을 때만 생성
+        // 탄수 표시
         if (_ammoText == null)
         {
             var ammoGO = new GameObject("GunAmmoText");
@@ -251,34 +289,35 @@ public class GunSystem : MonoBehaviour
             _ammoText.raycastTarget = false;
         }
 
-        // Lead indicator: 링 + 십자선 — 씬에 없을 때만 생성
-        if (_leadRT == null)
+        // Lead Indicator — MAX_LEAD 개 사전 생성
+        for (int i = 0; i < MAX_LEAD; i++)
         {
-            var leadGO = new GameObject("LeadIndicator");
-            leadGO.transform.SetParent(_overlayCanvas.transform, false);
-            _leadRT = leadGO.AddComponent<RectTransform>();
-            _leadRT.anchorMin = _leadRT.anchorMax = new Vector2(0.5f, 0.5f);
-            _leadRT.sizeDelta = new Vector2(44f, 44f);
-            _leadRT.anchoredPosition = Vector2.zero;
-            _leadRT.gameObject.SetActive(false);
+            if (_leadRTs[i] != null) continue;
 
-            _leadRingImg               = leadGO.AddComponent<Image>();
-            _leadRingImg.sprite        = MakeRingSprite(64);
-            _leadRingImg.color         = new Color(0f, 1f, 0f, 0.90f);
-            _leadRingImg.raycastTarget = false;
+            var leadGO = new GameObject($"LeadIndicator_{i}");
+            leadGO.transform.SetParent(_overlayCanvas.transform, false);
+            _leadRTs[i] = leadGO.AddComponent<RectTransform>();
+            _leadRTs[i].anchorMin = _leadRTs[i].anchorMax = new Vector2(0.5f, 0.5f);
+            _leadRTs[i].sizeDelta = new Vector2(44f, 44f);
+            _leadRTs[i].anchoredPosition = Vector2.zero;
+            _leadRTs[i].gameObject.SetActive(false);
+
+            _leadImgs[i]               = leadGO.AddComponent<Image>();
+            _leadImgs[i].sprite        = MakeRingSprite(64);
+            _leadImgs[i].color         = new Color(0f, 1f, 0f, 0.90f);
+            _leadImgs[i].raycastTarget = false;
 
             // 중심 점
-            MkImg(_overlayCanvas.transform, leadGO.transform, Vector2.zero, new Vector2(5f, 5f), new Color(0f, 1f, 0f, 1f));
-
+            MkImg(leadGO.transform, Vector2.zero,         new Vector2(5f,  5f),  new Color(0f, 1f, 0f, 1.00f));
             // 십자 팔
-            MkImg(_overlayCanvas.transform, leadGO.transform, new Vector2(-27f, 0f), new Vector2(10f, 2f), new Color(0f, 1f, 0f, 0.70f));
-            MkImg(_overlayCanvas.transform, leadGO.transform, new Vector2( 27f, 0f), new Vector2(10f, 2f), new Color(0f, 1f, 0f, 0.70f));
-            MkImg(_overlayCanvas.transform, leadGO.transform, new Vector2(0f,  27f), new Vector2(2f, 10f), new Color(0f, 1f, 0f, 0.70f));
-            MkImg(_overlayCanvas.transform, leadGO.transform, new Vector2(0f, -27f), new Vector2(2f, 10f), new Color(0f, 1f, 0f, 0.70f));
+            MkImg(leadGO.transform, new Vector2(-27f, 0f), new Vector2(10f, 2f), new Color(0f, 1f, 0f, 0.70f));
+            MkImg(leadGO.transform, new Vector2( 27f, 0f), new Vector2(10f, 2f), new Color(0f, 1f, 0f, 0.70f));
+            MkImg(leadGO.transform, new Vector2(0f,  27f), new Vector2(2f, 10f), new Color(0f, 1f, 0f, 0.70f));
+            MkImg(leadGO.transform, new Vector2(0f, -27f), new Vector2(2f, 10f), new Color(0f, 1f, 0f, 0.70f));
         }
     }
 
-    static void MkImg(Transform canvasT, Transform parent, Vector2 pos, Vector2 size, Color col)
+    static void MkImg(Transform parent, Vector2 pos, Vector2 size, Color col)
     {
         var go = new GameObject("el");
         go.transform.SetParent(parent, false);
@@ -312,14 +351,14 @@ public class GunSystem : MonoBehaviour
     // ── PCM: 개틀링 기총음 루프 (20Hz 펄스 트레인) ────────────────────────────
     static AudioClip MakeGunLoop(int sr)
     {
-        int period = sr / 20;               // 20Hz 발사 간격 (1102 샘플 @ 22050)
-        int n      = period * 4;            // 4발 분량으로 루프 구성
+        int period = sr / 20;
+        int n      = period * 4;
         var buf    = new float[n];
         var rng    = new System.Random(77);
         for (int i = 0; i < n; i++)
         {
             float t   = (float)i / sr;
-            float ph  = (float)(i % period) / period;  // 0..1 (발사 주기 내 위상)
+            float ph  = (float)(i % period) / period;
             float env = Mathf.Clamp01(ph / 0.008f) * Mathf.Exp(-ph * 38f);
             float noise = (float)(rng.NextDouble() * 2 - 1);
             float body  = Mathf.Sin(2f * Mathf.PI * 220f * t) * 0.38f

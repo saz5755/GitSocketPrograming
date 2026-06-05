@@ -4,7 +4,7 @@ public class MissileLauncher : MonoBehaviour
 {
     [SerializeField] KeyCode fireKey     = KeyCode.Space;
     [SerializeField] float   cooldown    = 1.5f;
-    [SerializeField] int     maxMissiles = 4;
+    [SerializeField] int     maxMissiles = 6;
 
     TargetingSystem _targeting;
     float           _cooldownTimer;

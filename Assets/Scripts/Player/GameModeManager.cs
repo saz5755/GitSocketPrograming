@@ -226,11 +226,11 @@ public class GameModeManager : MonoBehaviour
         _pc.transform.SetPositionAndRotation(boardingPos, launchRot);
         _pc.enabled = true;
 
-        if (_boardingCarrier != null)
-        {
-            _pc.SetInitialSpeed(_boardingCarrier.CatapultSpeed);
-            _boardingCarrier = null;
-        }
+        // 캐리어 유무와 관계없이 프리플라이트 완료 후 발진이면 항상 카타펄트
+        float catapultSpd = _boardingCarrier != null ? _boardingCarrier.CatapultSpeed : 72f;
+        _boardingCarrier = null;
+        _pc.StartCatapult(catapultSpd);
+        AIManager.Instance?.EnableAICombat();
 
         // 카메라·HUD 전환
         _fc?.SetFlightTarget(_pc);

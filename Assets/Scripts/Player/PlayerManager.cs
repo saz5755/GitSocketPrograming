@@ -222,6 +222,9 @@ public class PlayerManager : MonoBehaviour
 
         players[p.nickname] = player;
         Debug.Log($"[Player] Spawned local: {p.nickname}");
+
+        // AI 시스템이 씬에 있으면 호스트 초기화 시도
+        AIManager.Instance?.TryInitializeAsHost(player);
     }
 
     // ── 원격 플레이어: 지상 캐릭터만 생성 (항공기 동적 생성 없음) ──────────

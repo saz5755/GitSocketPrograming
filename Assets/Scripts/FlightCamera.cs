@@ -136,9 +136,12 @@ public class FlightCamera : MonoBehaviour
         _cockpitRenderers  = interior.ToArray();
         _alwaysRenderers   = alwaysVis.ToArray();
 
-        // 초기 상태: 내부 오브젝트 숨김, 날개·동체는 항상 표시
-        foreach (var r in _cockpitRenderers) r.enabled = false;
-        foreach (var r in _alwaysRenderers)  r.enabled = true;
+        // KF21 메시 전체 활성 보장 — 외부·캐노피는 항상 켜두고, 코크핏 내부만 모드에 따라 토글
+        foreach (var r in _exteriorRenderers) r.enabled = true;
+        foreach (var r in _alwaysRenderers)   r.enabled = true;
+        if (_canopyRenderer != null)          _canopyRenderer.enabled = true;
+        // 코크핏 내부는 현재 isCockpit 상태에 맞춰 초기화
+        foreach (var r in _cockpitRenderers)  r.enabled = isCockpit;
     }
 
     // ── 외부 API ────────────────────────────────────────────────────────────
@@ -333,17 +336,16 @@ public class FlightCamera : MonoBehaviour
             cam.nearClipPlane = cockpit ? 0.02f : 0.3f;
         }
 
-        // 외부 동체: 추격 카메라에서만 표시
-        if (_exteriorRenderers != null)
-            foreach (var r in _exteriorRenderers) r.enabled = !cockpit;
-
-        // 조종석 내부 오브젝트: 코크핏 모드에서만 표시
+        // 코크핏 내부 오브젝트만 모드에 따라 토글 (외부 메시는 항상 활성 유지)
         if (_cockpitRenderers != null)
             foreach (var r in _cockpitRenderers) r.enabled = cockpit;
 
-        // 캐노피: 코크핏 모드에서 투명 유리 재질 적용
+        // 캐노피: 항상 표시, 코크핏 모드에서 투명 유리 재질 적용
         if (_canopyRenderer != null)
+        {
+            _canopyRenderer.enabled  = true;
             _canopyRenderer.material = cockpit ? _canopyGlassMat : _canopySolidMat;
+        }
 
         mfdController?.SetVisible(cockpit && withHUD);
 

@@ -58,6 +58,10 @@ class PacketHandler
 
         handlers[PacketType.COCKPIT_STATE]
             = CockpitStateHandler.Handle;
+
+        handlers[PacketType.AI_SPAWN]   = AISpawnHandler.Handle;
+        handlers[PacketType.AI_DESPAWN] = AISpawnHandler.HandleDespawn;
+        udpHandlers[PacketType.AI_MOVE] = AIMoveHandler.HandleUDP;
     }
 
     // 기본적으로 TCP Handle

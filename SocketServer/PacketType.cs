@@ -25,4 +25,7 @@ public enum PacketType
     ENTER_ROOM_RESULT  = 23,
     QUEST_UPDATE       = 24,
     COCKPIT_STATE      = 25,
+    AI_SPAWN           = 26,
+    AI_DESPAWN         = 27,
+    AI_MOVE            = 28,
 }

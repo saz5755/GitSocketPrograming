@@ -184,7 +184,7 @@ public class F35VFXController : MonoBehaviour
         var go = new GameObject("IdleExhaustVFX");
         go.transform.SetParent(engineNozzle);
         go.transform.localPosition = Vector3.zero;
-        go.transform.localRotation = Quaternion.Euler(180f, 0f, 0f);
+        go.transform.localRotation = Quaternion.identity;
 
         _idleExhaustPS = go.AddComponent<ParticleSystem>();
         _idleExhaustPS.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
