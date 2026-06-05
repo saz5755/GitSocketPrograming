@@ -55,31 +55,17 @@ class SessionManager
     
     public static ClientSession? FindByUDP(IPEndPoint ep)
     {
-        foreach(var session in sessions)
+        lock (locker)
         {
-            if(session.udpEndPoint == null)
-                continue;
-
-            if(session.udpEndPoint.Equals(ep))
-                return session;
-        }
-
-        return null;
-    }
-    
-    public static ClientSession? FindByNickname(string nickname)
-    {
-        foreach(var session in sessions)
-        {
-            if(session.player == null)
-                continue;
-
-            if(session.player.nickname == nickname)
+            foreach (var session in sessions)
             {
-                return session;
+                if (session.udpEndPoint?.Equals(ep) == true)
+                    return session;
             }
+            return null;
         }
-
-        return null;
     }
+
+    // Find()와 동일 기능 — 기존 호출부 호환 유지
+    public static ClientSession? FindByNickname(string nickname) => Find(nickname);
 }

@@ -62,6 +62,12 @@ public class GroundController : MonoBehaviour
         Cursor.visible   = false;
         _vy           = 0f;
         _currentSpeed = 0f;
+
+        if (_localPC == null)
+        {
+            foreach (var pc in PlayerController.All)
+                if (pc.isLocalPlayer) { _localPC = pc; break; }
+        }
     }
 
     public void InitYaw(float yaw)
@@ -136,11 +142,6 @@ public class GroundController : MonoBehaviour
 
     void SendNetworkUpdate()
     {
-        if (_localPC == null)
-        {
-            foreach (var pc in PlayerController.All)
-                if (pc.isLocalPlayer) { _localPC = pc; break; }
-        }
         if (_localPC == null) return;
 
         var sc = NetworkManager.Instance?.socketClient;

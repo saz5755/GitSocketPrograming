@@ -7,27 +7,20 @@ class ServerSender
     {
         try
         {
-            string json =
-                JsonConvert.SerializeObject(packet);
+            string json      = JsonConvert.SerializeObject(packet);
+            byte[] jsonBytes = Encoding.UTF8.GetBytes(json);
+            byte[] length    = BitConverter.GetBytes(jsonBytes.Length);
 
-            byte[] jsonBytes =
-                Encoding.UTF8.GetBytes(json);
-
-            byte[] length =
-                BitConverter.GetBytes(jsonBytes.Length);
-
-            session.stream.Write(length, 0, 4);
-            session.stream.Write(jsonBytes, 0, jsonBytes.Length);
-            
-            // Console.WriteLine($"SEND TO : {session.player?.nickname}");
+            lock (session.sendLock)
+            {
+                session.stream.Write(length,    0, 4);
+                session.stream.Write(jsonBytes, 0, jsonBytes.Length);
+            }
         }
-        catch(Exception e)
+        catch (Exception e)
         {
-            Console.WriteLine($"Send Error : {e}");
-            Console.WriteLine(
-                $"SEND ERROR : {session.player?.nickname}");
+            Console.WriteLine($"SEND ERROR [{session.player?.nickname}]: {e.Message}");
         }
-        
     }
 
     public static void Broadcast(object packet)

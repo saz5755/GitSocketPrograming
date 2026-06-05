@@ -11,4 +11,6 @@ public class ClientSession
     public bool isLogin;
 
     public Player? player;
+
+    public readonly object sendLock = new();
 }

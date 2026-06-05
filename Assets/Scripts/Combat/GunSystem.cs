@@ -13,6 +13,7 @@ public class GunSystem : MonoBehaviour
 
     // ── 상태 ──────────────────────────────────────────────────────────────────
     PlayerController _local;
+    string           _myNick;
     int              _ammo;
     float            _fireTimer;
 
@@ -38,6 +39,7 @@ public class GunSystem : MonoBehaviour
     Vector3          _enemyVel;
     Vector3          _enemyPrevPos;
     bool             _enemyPrevSet;
+    Image            _leadRingImg;
 
     // ── 색상 팔레트 ───────────────────────────────────────────────────────────
     static readonly Color HG   = new Color(0.00f, 0.98f, 0.42f, 0.92f);
@@ -85,6 +87,7 @@ public class GunSystem : MonoBehaviour
             foreach (var pc in PlayerController.All)
                 if (pc != null && pc.isLocalPlayer) { _local = pc; break; }
             if (_local == null) return;
+            _myNick = NetworkManager.Instance?.socketClient?.myNickname ?? "";
         }
 
         if (!_uiBuilt) { BuildUI(); _uiBuilt = true; }
@@ -130,8 +133,7 @@ public class GunSystem : MonoBehaviour
     // ── 원격 탄 시각 ─────────────────────────────────────────────────────────
     void HandleRemoteGunFire(GunFirePacket p)
     {
-        string myNick = NetworkManager.Instance?.socketClient.myNickname ?? "";
-        if (p.shooterNickname == myNick) return;
+        if (p.shooterNickname == _myNick) return;
 
         BulletController.Spawn(
             new Vector3(p.posX, p.posY, p.posZ),
@@ -142,9 +144,8 @@ public class GunSystem : MonoBehaviour
     // ── 피격 처리 ────────────────────────────────────────────────────────────
     void HandleGunHit(GunHitPacket p)
     {
-        string myNick = NetworkManager.Instance?.socketClient.myNickname ?? "";
         var pos = new Vector3(p.posX, p.posY, p.posZ);
-        bool hitMe = p.targetNickname == myNick;
+        bool hitMe = p.targetNickname == _myNick;
         HitEffectSystem.Instance?.TriggerBulletHit(pos, hitMe);
     }
 
@@ -188,8 +189,7 @@ public class GunSystem : MonoBehaviour
 
         // 사거리에 따른 색상
         bool inRange = dist < 1500f;
-        var ring = _leadRT.GetComponent<Image>();
-        if (ring != null) ring.color = inRange ? new Color(0f, 1f, 0f, 0.90f) : new Color(1f, 0.82f, 0f, 0.75f);
+        if (_leadRingImg != null) _leadRingImg.color = inRange ? new Color(0f, 1f, 0f, 0.90f) : new Color(1f, 0.82f, 0f, 0.75f);
     }
 
     PlayerController FindClosestEnemy()
@@ -262,10 +262,10 @@ public class GunSystem : MonoBehaviour
             _leadRT.anchoredPosition = Vector2.zero;
             _leadRT.gameObject.SetActive(false);
 
-            var ring = leadGO.AddComponent<Image>();
-            ring.sprite        = MakeRingSprite(64);
-            ring.color         = new Color(0f, 1f, 0f, 0.90f);
-            ring.raycastTarget = false;
+            _leadRingImg               = leadGO.AddComponent<Image>();
+            _leadRingImg.sprite        = MakeRingSprite(64);
+            _leadRingImg.color         = new Color(0f, 1f, 0f, 0.90f);
+            _leadRingImg.raycastTarget = false;
 
             // 중심 점
             MkImg(_overlayCanvas.transform, leadGO.transform, Vector2.zero, new Vector2(5f, 5f), new Color(0f, 1f, 0f, 1f));

@@ -9,6 +9,7 @@ public class BulletController : MonoBehaviour
     Vector3      _velocity;
     bool         _isLocal;
     float        _lifespan;
+    string       _myNick;
     LineRenderer _lr;
 
     public static void Spawn(Vector3 pos, Vector3 dir, float speed, bool isLocal)
@@ -23,6 +24,7 @@ public class BulletController : MonoBehaviour
 
     void Awake()
     {
+        _myNick = NetworkManager.Instance?.socketClient?.myNickname ?? "";
         _lr = gameObject.AddComponent<LineRenderer>();
         var mat = new Material(Shader.Find("Sprites/Default"));
         _lr.material             = mat;
@@ -55,7 +57,6 @@ public class BulletController : MonoBehaviour
 
     void CheckHit(Vector3 prevPos)
     {
-        string myNick = NetworkManager.Instance?.socketClient.myNickname ?? "";
         const float hitRadiusSq = HitRadius * HitRadius;
 
         foreach (var pc in PlayerController.All)
@@ -65,7 +66,7 @@ public class BulletController : MonoBehaviour
             Vector3 closest = ClosestPointOnSegment(prevPos, transform.position, pc.transform.position);
             if ((closest - pc.transform.position).sqrMagnitude < hitRadiusSq)
             {
-                NetworkManager.Instance?.socketClient.SendGunHit(myNick, pc.nickname, closest);
+                NetworkManager.Instance?.socketClient.SendGunHit(_myNick, pc.nickname, closest);
                 HitEffectSystem.Instance?.TriggerBulletHit(closest, hitLocalPlayer: false);
                 Destroy(gameObject);
                 return;

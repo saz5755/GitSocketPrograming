@@ -9,6 +9,8 @@ using UnityEngine.UI;
 [RequireComponent(typeof(PlayerController))]
 public class AircraftBoardingTrigger : MonoBehaviour
 {
+    public static readonly System.Collections.Generic.List<AircraftBoardingTrigger> All = new();
+
     [SerializeField] float boardingRadius = 8f;
 
     PlayerController _pc;
@@ -21,12 +23,15 @@ public class AircraftBoardingTrigger : MonoBehaviour
 
     void Awake()
     {
+        All.Add(this);
         _pc = GetComponent<PlayerController>();
         _pc.enabled = false;   // 비행 시작 전까지 비활성
 
         BuildBoardingUI();
         SetUIVisible(false);
     }
+
+    void OnDestroy() => All.Remove(this);
 
     void Update()
     {

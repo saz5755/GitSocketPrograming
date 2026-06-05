@@ -3,12 +3,13 @@ using UnityEngine;
 
 public class ThreatWarningSystem : MonoBehaviour
 {
+    public static ThreatWarningSystem Instance { get; private set; }
+
     public enum ThreatLevel { None, Detected, Tracked, Locked, MissileFired, MissileActive }
 
     public ThreatLevel Threat          { get; private set; }
     public float       ThreatBearing   { get; private set; }
     public bool        MissileIncoming { get; private set; }
-    // 가장 가까운 인입 미사일까지의 거리
     public float       NearestMissileDist { get; private set; } = float.MaxValue;
 
     PlayerController _local;
@@ -33,6 +34,9 @@ public class ThreatWarningSystem : MonoBehaviour
 
     void Awake()
     {
+        if (Instance != null && Instance != this) { Destroy(gameObject); return; }
+        Instance = this;
+
         _audio              = gameObject.AddComponent<AudioSource>();
         _audio.spatialBlend = 0f;
         _audio.volume       = 0.72f;
@@ -43,6 +47,8 @@ public class ThreatWarningSystem : MonoBehaviour
         _missileBeep = MakeDualBeep(1320f, 680f, 0.055f, 0.04f); // 미사일: 고저 교번 긴급음
         _arhBeep     = MakeDualBeep(1760f, 1320f, 0.04f, 0.03f); // ARH 시커 활성: 고주파 연속음
     }
+
+    void OnDestroy() { if (Instance == this) Instance = null; }
 
     void Start() => FindLocal();
 

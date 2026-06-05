@@ -176,7 +176,7 @@ public class PlayerManager : MonoBehaviour
         string myName = GetMyName();
         if (p.targetNickname != myName) return;
 
-        var threatWarn = FindObjectOfType<ThreatWarningSystem>();
+        var threatWarn = ThreatWarningSystem.Instance;
         if (threatWarn == null) return;
 
         var level = (ThreatWarningSystem.ThreatLevel)Mathf.Clamp(p.lockLevel, 0, 5);
@@ -431,7 +431,7 @@ public class PlayerManager : MonoBehaviour
     {
         AircraftBoardingTrigger nearest = null;
         float bestSqr = maxDist * maxDist;
-        foreach (var t in Object.FindObjectsByType<AircraftBoardingTrigger>(FindObjectsSortMode.None))
+        foreach (var t in AircraftBoardingTrigger.All)
         {
             float sqr = (t.transform.position - pos).sqrMagnitude;
             if (sqr < bestSqr) { bestSqr = sqr; nearest = t; }
