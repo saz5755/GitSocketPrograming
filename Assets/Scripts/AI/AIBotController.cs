@@ -15,20 +15,49 @@ public class AIBotController : MonoBehaviour
     // true 이면 position 이동을 외부(EscortAI 등)에서 직접 제어
     public bool   PositionOverride { get; set; } = false;
 
-    [SerializeField] float maxSpeed = 56f;   // 플레이어 최대 속도(80)의 70 %
-    [SerializeField] float accel    = 22f;
-    [SerializeField] float decel    = 30f;
-    [SerializeField] float turnRate = 72f;  // deg/s — EnemyAI는 Initialize에서 낮게 설정
+    [Header("동작 튜닝 데이터")]
+    [Tooltip("AIBotConfigSO 에셋. Project 우클릭 → Create → KF21 → AI → Bot Config")]
+    [SerializeField] AIBotConfigSO _config;
 
-    public void SetTurnRate(float deg) => turnRate = deg;
+    // SO 미할당 시 한 번만 만들어지는 폴백 인스턴스 — 모든 봇이 공유
+    static AIBotConfigSO s_fallbackConfig;
+    AIBotConfigSO Cfg
+    {
+        get
+        {
+            if (_config != null) return _config;
+            if (s_fallbackConfig == null)
+            {
+                s_fallbackConfig = ScriptableObject.CreateInstance<AIBotConfigSO>();
+                Debug.LogWarning(
+                    $"[AIBotController] '{name}' has no AIBotConfigSO assigned — using built-in defaults. " +
+                    "Create one via Project window → Right Click → Create → KF21 → AI → Bot Config."
+                );
+            }
+            return s_fallbackConfig;
+        }
+    }
+
+    // 런타임 인스턴스 값 (Initialize 시 SO에서 복사 — SetMaxSpeed/SetTurnRate로 덮어쓸 수 있음)
+    float _maxSpeed;
+    float _accel;
+    float _decel;
+    float _turnRate;
+    float _netUpdateInterval;
+    bool  _skipBroadcastWhenStationary;
+    float _stationarySpeedThreshold;
+
+    public void SetTurnRate(float deg) => _turnRate = deg;
 
     Vector3    _targetPos;
     Quaternion _targetRot;
     float      _targetSpeed;
     bool       _hasTarget;
 
-    float       _netTimer;
-    const float NetInterval = 0.05f;
+    float _netTimer;
+    Vector3    _lastBroadcastPos;
+    Quaternion _lastBroadcastRot;
+    bool       _hasLastBroadcast;
 
     PlayerController _pc;
     Animator         _anim;
@@ -36,6 +65,15 @@ public class AIBotController : MonoBehaviour
     void Awake()
     {
         All.Add(this);
+
+        // SO 값을 인스턴스로 복사 — 런타임에 SetMaxSpeed 등으로 덮어쓸 수 있도록
+        _maxSpeed                    = Cfg.maxSpeed;
+        _accel                       = Cfg.accel;
+        _decel                       = Cfg.decel;
+        _turnRate                    = Cfg.turnRate;
+        _netUpdateInterval           = Cfg.netUpdateInterval;
+        _skipBroadcastWhenStationary = Cfg.skipBroadcastWhenStationary;
+        _stationarySpeedThreshold    = Cfg.stationarySpeedThreshold;
 
         _pc = GetComponent<PlayerController>();
         _pc.isLocalPlayer = false;
@@ -61,7 +99,7 @@ public class AIBotController : MonoBehaviour
         if (c != null) c.enabled = false;
     }
 
-    public void SetMaxSpeed(float v) => maxSpeed = Mathf.Max(0f, v);
+    public void SetMaxSpeed(float v) => _maxSpeed = Mathf.Max(0f, v);
 
     public void SetNickname(string nick)
     {
@@ -74,7 +112,7 @@ public class AIBotController : MonoBehaviour
     {
         _targetPos   = pos;
         _targetRot   = rot;
-        _targetSpeed = Mathf.Clamp(speed, 0f, maxSpeed);
+        _targetSpeed = Mathf.Clamp(speed, 0f, _maxSpeed);
         _hasTarget   = true;
     }
 
@@ -83,26 +121,39 @@ public class AIBotController : MonoBehaviour
         if (!_hasTarget) return;
         float dt = Time.deltaTime;
 
-        float rate = Speed < _targetSpeed ? accel : decel;
+        float rate = Speed < _targetSpeed ? _accel : _decel;
         Speed = Mathf.MoveTowards(Speed, _targetSpeed, rate * dt);
 
-        transform.rotation = Quaternion.RotateTowards(transform.rotation, _targetRot, turnRate * dt);
+        transform.rotation = Quaternion.RotateTowards(transform.rotation, _targetRot, _turnRate * dt);
         if (!PositionOverride)
             transform.position += transform.forward * Speed * dt;
 
         _anim?.SetBool("Move", Speed > 0.5f);
 
         _netTimer += dt;
-        if (_netTimer >= NetInterval)
+        if (_netTimer >= _netUpdateInterval)
         {
-            _netTimer -= NetInterval;
-            BroadcastMove();
+            _netTimer -= _netUpdateInterval;
+            BroadcastMoveIfChanged();
         }
     }
 
-    void BroadcastMove()
+    // 정지 상태에서 직전과 동일한 pose면 전송 생략 — 대역폭/CPU 절약.
+    // 위치/회전이 미세하게라도 바뀌면 다시 전송 시작.
+    void BroadcastMoveIfChanged()
     {
+        if (_skipBroadcastWhenStationary && Speed < _stationarySpeedThreshold && _hasLastBroadcast)
+        {
+            if ((transform.position - _lastBroadcastPos).sqrMagnitude < 0.001f &&
+                Quaternion.Angle(transform.rotation, _lastBroadcastRot) < 0.1f)
+                return;
+        }
+
         NetworkManager.Instance?.socketClient?.SendAIMove(
             Nickname, transform.position, transform.eulerAngles, Speed);
+
+        _lastBroadcastPos = transform.position;
+        _lastBroadcastRot = transform.rotation;
+        _hasLastBroadcast = true;
     }
 }

@@ -17,31 +17,33 @@ public class EscortAI : MonoBehaviour
         Landed
     }
 
-    static readonly Vector3 LeftOffset  = new Vector3(-32f, -5f, -40f);
-    static readonly Vector3 RightOffset = new Vector3( 32f, -5f, -40f);
-
     // 어레스팅 와이어 시스템이 접근 중인 에스코트를 탐색할 수 있도록 전역 목록 노출
     public static readonly List<EscortAI> AllEscorts = new();
 
     [SerializeField] EscortSide _side = EscortSide.Left;
 
-    [Header("편대비행 보간")]
-    [SerializeField] float _lerpNear = 4f;
-    [SerializeField] float _lerpFar  = 18f;
-    [SerializeField] float _snapDist = 40f;
-    [SerializeField] float _rotLerp  = 5f;
+    [Header("동작 튜닝 데이터")]
+    [Tooltip("EscortBehaviorSO 에셋. Project 우클릭 → Create → KF21 → AI → Escort Behavior")]
+    [SerializeField] EscortBehaviorSO _behavior;
 
-    [Header("발진 (캐터펄트 직진 후 편대 전환)")]
-    [SerializeField] float _launchDuration = 6f;
-    [SerializeField] float _launchSpeed    = 55f;
-
-    [Header("착함")]
-    [Tooltip("Escorting 상태에서 BeginLanding 호출 시 자유비행 시간 (폴백용)")]
-    [SerializeField] float _freeFlightDuration = 5f;
-    [SerializeField] float _approachSpeed  = 60f;
-    [SerializeField] float _approachDist   = 1500f;
-    [SerializeField] float _approachAlt    = 300f;
-    [SerializeField] float _finalSpeed     = 25f;
+    // SO 미할당 시 한 번만 만들어지는 폴백 인스턴스 — 모든 EscortAI가 공유
+    static EscortBehaviorSO s_fallbackBehavior;
+    EscortBehaviorSO Cfg
+    {
+        get
+        {
+            if (_behavior != null) return _behavior;
+            if (s_fallbackBehavior == null)
+            {
+                s_fallbackBehavior = ScriptableObject.CreateInstance<EscortBehaviorSO>();
+                Debug.LogWarning(
+                    $"[EscortAI] '{name}' has no EscortBehaviorSO assigned — using built-in defaults. " +
+                    "Create one via Project window → Right Click → Create → KF21 → AI → Escort Behavior."
+                );
+            }
+            return s_fallbackBehavior;
+        }
+    }
 
     Transform         _leader;
     AIBotController   _bot;
@@ -103,9 +105,9 @@ public class EscortAI : MonoBehaviour
         _side   = side;
         _bot    = GetComponent<AIBotController>();
         _bot.PositionOverride = true;
-        _bot.SetMaxSpeed(200f);   // 추격 시 2배속을 허용하기 위해 상한 개방
-        _bot.SetTurnRate(150f);   // 기본 72°/s → 더 빠른 선회로 편대 슬롯 이탈 방지
-        _speedJitter   = Random.Range(-3f, 3f);
+        _bot.SetMaxSpeed(Cfg.maxSpeedOverride);
+        _bot.SetTurnRate(Cfg.turnRateOverride);
+        _speedJitter   = Random.Range(-Cfg.speedJitterRange, Cfg.speedJitterRange);
         _phase         = spawnedOnDeck ? Phase.OnDeck : Phase.Escorting;
         _cachedCarrier = Object.FindObjectOfType<CarrierController>();
     }
@@ -228,9 +230,9 @@ public class EscortAI : MonoBehaviour
             : transform.rotation;
 
         Vector3 farAhead = transform.position + launchRot * Vector3.forward * 3000f;
-        _bot.SetTarget(farAhead, launchRot, _launchSpeed);
+        _bot.SetTarget(farAhead, launchRot, Cfg.launchSpeed);
 
-        if (_launchTimer >= _launchDuration)
+        if (_launchTimer >= Cfg.launchDuration)
         {
             // PositionOverride는 발진 시작 시 이미 false — 유지
             _phase = Phase.Escorting;
@@ -243,7 +245,8 @@ public class EscortAI : MonoBehaviour
     {
         if (_leader == null || _bot == null) return;
 
-        Vector3 localOffset = _side == EscortSide.Left ? LeftOffset : RightOffset;
+        bool    isLeft      = _side == EscortSide.Left;
+        Vector3 localOffset = Cfg.GetSlotOffset(isLeft);
         Vector3 targetPos   = _leader.TransformPoint(localOffset);
         Vector3 toTarget    = targetPos - transform.position;
         float   dist        = toTarget.magnitude;
@@ -259,7 +262,7 @@ public class EscortAI : MonoBehaviour
         float   zError    = selfLocal.z - localOffset.z;   // +: 슬롯보다 앞, -: 뒤
 
         float targetSpeed;
-        if (zError > 5f)
+        if (zError > Cfg.slotAheadThreshold)
         {
             // 에스코트가 슬롯보다 앞서 나간 경우 → 감속해서 플레이어가 통과하게 함
             float t = Mathf.Clamp01(zError / 60f);
@@ -276,8 +279,7 @@ public class EscortAI : MonoBehaviour
             targetSpeed = baseSpeed + _speedJitter * (dist / 6f);
 
         // ── 기수 방향: 슬롯이 등 뒤일 때 U턴 금지 ────────────────────────────
-        float      bankOffset = _side == EscortSide.Left ? 12f : -12f;
-        Quaternion leaderRot  = _leader.rotation * Quaternion.Euler(0f, 0f, bankOffset);
+        Quaternion leaderRot = _leader.rotation * Quaternion.Euler(0f, 0f, Cfg.GetBankOffset(isLeft));
 
         Quaternion rot;
         if (toTarget.sqrMagnitude < 0.01f)
@@ -297,7 +299,7 @@ public class EscortAI : MonoBehaviour
             else
             {
                 Quaternion lookRot = Quaternion.LookRotation(toTarget.normalized, _leader.up);
-                float blend = Mathf.Clamp01(1f - dist / _snapDist);
+                float blend = Mathf.Clamp01(1f - dist / Cfg.snapDistance);
                 rot = Quaternion.Slerp(lookRot, leaderRot, blend);
             }
         }
@@ -317,10 +319,10 @@ public class EscortAI : MonoBehaviour
 
         float outerR = EscortZoneTrigger.Instance != null
             ? EscortZoneTrigger.Instance.Radius
-            : (_cachedCarrier != null ? _cachedCarrier.EscortZoneRadius : 800f);
+            : (_cachedCarrier != null ? _cachedCarrier.EscortZoneRadius : Cfg.outerRadiusFallback);
         float innerR = EscortInnerZoneTrigger.Instance != null
             ? EscortInnerZoneTrigger.Instance.Radius
-            : (_cachedCarrier != null ? _cachedCarrier.InnerAvoidanceRadius : 350f);
+            : (_cachedCarrier != null ? _cachedCarrier.InnerAvoidanceRadius : Cfg.innerRadiusFallback);
 
         // XZ 거리만 사용 (고도 무관)
         Vector3 toCenter = zoneCenter - transform.position;
@@ -328,8 +330,8 @@ public class EscortAI : MonoBehaviour
         float distXZ = toCenter.magnitude;
 
         // ── 경계 회피 조향 ────────────────────────────────────────────────────
-        const float outerBuffer = 160f;   // 외부 경계 도달 전부터 조향 시작
-        const float innerBuffer = 110f;   // 내부 경계 접근 시 조향 시작
+        float outerBuffer = Cfg.outerBuffer;
+        float innerBuffer = Cfg.innerBuffer;
 
         Vector3 steerDir = transform.forward;
         steerDir.y = 0f;
@@ -340,7 +342,7 @@ public class EscortAI : MonoBehaviour
         {
             // 외부 경계 접근: 존 중심 방향으로 회전
             float t = Mathf.Clamp01((distXZ - (outerR - outerBuffer)) / outerBuffer);
-            steerDir = Vector3.Slerp(steerDir, toCenter.normalized, t * 1.8f).normalized;
+            steerDir = Vector3.Slerp(steerDir, toCenter.normalized, t * Cfg.outerSteerGain).normalized;
         }
         else if (distXZ < innerR + innerBuffer)
         {
@@ -348,19 +350,19 @@ public class EscortAI : MonoBehaviour
             float t        = Mathf.Clamp01(((innerR + innerBuffer) - distXZ) / innerBuffer);
             Vector3 outward = distXZ > 0.01f ? -toCenter.normalized : transform.right;
             // 현재 기수에서 이탈 방향 성분 블렌드 → 자연스러운 선회
-            steerDir = Vector3.Slerp(steerDir, outward, t * 1.6f).normalized;
+            steerDir = Vector3.Slerp(steerDir, outward, t * Cfg.innerSteerGain).normalized;
         }
 
         Quaternion targetRot = Quaternion.LookRotation(steerDir, Vector3.up);
         Vector3    targetPos = transform.position + steerDir * 1000f;
 
-        _bot.SetTarget(targetPos, targetRot, _approachSpeed);
+        _bot.SetTarget(targetPos, targetRot, Cfg.approachSpeed);
 
         // ── 리더 상태 감지 ────────────────────────────────────────────────────
         if (_leader == null)
         {
             _leaderStopTimer += Time.deltaTime;
-            if (_leaderStopTimer >= 2f)
+            if (_leaderStopTimer >= Cfg.leaderStopTimeout)
                 AIManager.Instance?.BeginEscortLanding(_cachedCarrier?.transform);
             return;
         }
@@ -373,7 +375,7 @@ public class EscortAI : MonoBehaviour
         if (!leaderFlying)
         {
             _leaderStopTimer += Time.deltaTime;
-            if (_leaderStopTimer >= 2f)
+            if (_leaderStopTimer >= Cfg.leaderStopTimeout)
                 AIManager.Instance?.BeginEscortLanding(_cachedCarrier?.transform);
         }
         else
@@ -387,9 +389,9 @@ public class EscortAI : MonoBehaviour
     void UpdateFreeFlight()
     {
         _freeFlightTimer += Time.deltaTime;
-        _bot.SetTarget(transform.position + transform.forward * 3000f, transform.rotation, _approachSpeed);
+        _bot.SetTarget(transform.position + transform.forward * 3000f, transform.rotation, Cfg.approachSpeed);
 
-        if (_freeFlightTimer >= _freeFlightDuration)
+        if (_freeFlightTimer >= Cfg.freeFlightDuration)
         {
             SetupApproach();
             _bot.PositionOverride = true;
@@ -406,21 +408,21 @@ public class EscortAI : MonoBehaviour
         if (!_waypointReached)
         {
             float dist = Vector3.Distance(transform.position, _approachWaypoint);
-            if (dist < 80f) { _waypointReached = true; return; }
+            if (dist < Cfg.waypointArriveDistance) { _waypointReached = true; return; }
 
             Vector3 dir = (_approachWaypoint - transform.position).normalized;
             transform.rotation = Quaternion.Slerp(transform.rotation,
                 Quaternion.LookRotation(dir), 2f * Time.deltaTime);
             transform.position = Vector3.MoveTowards(
-                transform.position, _approachWaypoint, _approachSpeed * Time.deltaTime);
-            _bot.SetTarget(_approachWaypoint, transform.rotation, _approachSpeed);
+                transform.position, _approachWaypoint, Cfg.approachSpeed * Time.deltaTime);
+            _bot.SetTarget(_approachWaypoint, transform.rotation, Cfg.approachSpeed);
         }
         else
         {
             Vector3 toLanding = _landingSpot - transform.position;
             float   dist      = toLanding.magnitude;
 
-            if (dist < 5f)
+            if (dist < Cfg.directLandDistance)
             {
                 // 와이어에 안 잡힌 경우 — 직접 착함
                 transform.SetPositionAndRotation(_landingSpot, _carrier.rotation);
@@ -430,7 +432,7 @@ public class EscortAI : MonoBehaviour
                 return;
             }
 
-            float targetSpeed = Mathf.Lerp(_finalSpeed, _approachSpeed,
+            float targetSpeed = Mathf.Lerp(Cfg.finalSpeed, Cfg.approachSpeed,
                                             Mathf.Clamp01(dist / 500f));
             _currentSpeed = Mathf.MoveTowards(_currentSpeed, targetSpeed, 10f * Time.deltaTime);
 
@@ -446,14 +448,14 @@ public class EscortAI : MonoBehaviour
 
     void UpdateBeingArrested()
     {
-        _arrestSpeed = Mathf.MoveTowards(_arrestSpeed, 0f, 80f * Time.deltaTime);
+        _arrestSpeed = Mathf.MoveTowards(_arrestSpeed, 0f, Cfg.arrestDecelRate * Time.deltaTime);
 
         // 앞으로 미끄러지면서 감속
         transform.position += transform.forward * _arrestSpeed * Time.deltaTime;
 
         // 갑판 Y에 스냅
         var pos = transform.position;
-        pos.y = Mathf.MoveTowards(pos.y, _arrestDeckY, 20f * Time.deltaTime);
+        pos.y = Mathf.MoveTowards(pos.y, _arrestDeckY, Cfg.arrestYSnapRate * Time.deltaTime);
         transform.position = pos;
 
         // 피치/롤 수평 복귀
@@ -463,7 +465,7 @@ public class EscortAI : MonoBehaviour
 
         _bot.SetTarget(transform.position, transform.rotation, _arrestSpeed);
 
-        if (_arrestSpeed < 0.2f)
+        if (_arrestSpeed < Cfg.arrestStopSpeed)
         {
             pos = transform.position;
             pos.y = _arrestDeckY;
@@ -478,33 +480,34 @@ public class EscortAI : MonoBehaviour
 
     void SetupApproach()
     {
+        bool isLeft = _side == EscortSide.Left;
+
         if (_hasApproachInfo && _playerApproachDir.sqrMagnitude > 0.01f)
         {
             // 플레이어가 접근한 방향을 역산해 어프로치 웨이포인트 설정
             Vector3 backDir   = -_playerApproachDir.normalized;
-            Vector3 wpBase    = _playerWirePos + backDir * _approachDist;
-            _approachWaypoint = new Vector3(wpBase.x, _playerWirePos.y + _approachAlt, wpBase.z);
+            Vector3 wpBase    = _playerWirePos + backDir * Cfg.approachDistance;
+            _approachWaypoint = new Vector3(wpBase.x, _playerWirePos.y + Cfg.approachAltitude, wpBase.z);
 
             // 좌/우 에스코트가 겹치지 않도록 진행 방향 기준 측면 오프셋
             Vector3 sideDir = Vector3.Cross(_playerApproachDir.normalized, Vector3.up).normalized;
-            float   sideOff = _side == EscortSide.Left ? -4f : 4f;
-            _landingSpot    = _playerWirePos + sideDir * sideOff;
+            _landingSpot    = _playerWirePos + sideDir * Cfg.GetSideOffset(isLeft);
             _landingSpot.y  = _playerWirePos.y + 1f;
         }
         else
         {
             // 캐리어 기준 기본 어프로치 (폴백)
             if (_carrier == null) return;
-            Vector3 approachBase = _carrier.position - _carrier.forward * _approachDist;
-            _approachWaypoint    = new Vector3(approachBase.x, _carrier.position.y + _approachAlt, approachBase.z);
+            Vector3 approachBase = _carrier.position - _carrier.forward * Cfg.approachDistance;
+            _approachWaypoint    = new Vector3(approachBase.x, _carrier.position.y + Cfg.approachAltitude, approachBase.z);
 
-            Vector3 landLocal = _side == EscortSide.Left
+            Vector3 landLocal = isLeft
                 ? new Vector3(-22f, 5.5f, -55f)
                 : new Vector3(-12f, 5.5f, -68f);
             _landingSpot = _carrier.TransformPoint(landLocal);
         }
 
         _waypointReached = false;
-        _currentSpeed    = _approachSpeed;
+        _currentSpeed    = Cfg.approachSpeed;
     }
 }
