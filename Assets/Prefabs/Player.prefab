@@ -288,15 +288,7 @@ MonoBehaviour:
   nickname: 
   isLocalPlayer: 0
   lastReceivedTick: 0
-  maxSpeed: 80
-  acceleration: 12
-  drag: 6
-  pitchSensitivity: 90
-  yawSensitivity: 90
-  rollSpeed: 90
-  sendInterval: 0.05
-  interpolationDelay: 0.1
-  reconcileThreshold: 3
+  _stats: {fileID: 11400000, guid: 11e11209456ba3148a9653297adb13e4, type: 2}
 --- !u!95 &7247021537001746904
 Animator:
   serializedVersion: 7

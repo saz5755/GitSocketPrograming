@@ -8312,16 +8312,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4ebb5e45b35c53e428b79a43f3c2d8eb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ArrestingWireSystem
-  wire1LocalPos: {x: 0, y: 0, z: 50}
-  wire2LocalPos: {x: 0, y: 0, z: 45}
-  wire3LocalPos: {x: 0, y: 0, z: 40}
-  deckAngleDeg: -7
-  wireWidth: 22
-  triggerDepth: 3
-  triggerHeight: 5
-  minCatchSpeed: 15
-  stopThreshold: 0.5
-  resetDelay: 4
+  _config: {fileID: 0}
 --- !u!1 &944216540
 GameObject:
   m_ObjectHideFlags: 0
@@ -9644,6 +9635,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: e571f9c1e7b42ed41b4bbd82274eb7ed, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1059067957}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: e571f9c1e7b42ed41b4bbd82274eb7ed, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1059067958}
   m_SourcePrefab: {fileID: 100100000, guid: e571f9c1e7b42ed41b4bbd82274eb7ed, type: 3}
 --- !u!4 &1059067955 stripped
 Transform:
@@ -9676,6 +9670,19 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 1, y: 1, z: 1}
   m_Center: {x: 0, y: 0, z: 0}
+--- !u!114 &1059067958
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1059067956}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4ebb5e45b35c53e428b79a43f3c2d8eb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ArrestingWireSystem
+  _config: {fileID: 11400000, guid: 02dfd827919c30045acfb2f977102811, type: 2}
 --- !u!1 &1112773484
 GameObject:
   m_ObjectHideFlags: 0

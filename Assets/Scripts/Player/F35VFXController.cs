@@ -10,14 +10,24 @@ public class F35VFXController : MonoBehaviour
     [SerializeField] Transform rightWingtip;
     [SerializeField] float contrailThreshold = 15f;
 
+    [Header("VFX Prefabs (선택 — 미할당 시 절차적 폴백)")]
+    [Tooltip("EngineExhaustAssembly 컴포넌트가 부착된 애프터버너 VFX 프리팹")]
+    [SerializeField] GameObject _afterburnerVFXPrefab;
+    [Tooltip("엔진 노즐 로컬 좌표 — 프리팹/절차 빌드 양쪽 사용")]
+    [SerializeField] Transform engineNozzle;
+
+    [Header("Materials (Resources.Load 대체)")]
+    [Tooltip("애프터버너 외부 글로우용 가산 머티리얼")]
+    [SerializeField] Material _additiveMaterial;
+    [Tooltip("애프터버너 내부 쇼크 다이아몬드용 머티리얼")]
+    [SerializeField] Material _shockDiamondMaterial;
+    [Tooltip("Contrail용 알파 머티리얼")]
+    [SerializeField] Material _alphaMaterial;
+
     TrailRenderer leftContrail;
     TrailRenderer rightContrail;
 
-    [Header("Afterburner")]
-    [SerializeField] Transform engineNozzle;
-    ParticleSystem afterburnerPS;
-    ParticleSystem corePS;
-    Light afterburnerLight;
+    EngineExhaustAssembly _afterburnerAssembly;
 
     [Header("Engine Idle Exhaust")]
     ParticleSystem _idleExhaustPS;
@@ -32,9 +42,23 @@ public class F35VFXController : MonoBehaviour
         playerController = GetComponent<PlayerController>();
         lastForward = transform.forward;
 
+        EnsureEngineNozzle();
         SetupContrails();
         SetupAfterburner();
         SetupIdleExhaust();
+    }
+
+    void EnsureEngineNozzle()
+    {
+        if (engineNozzle == null)
+        {
+            GameObject nozzle = new GameObject("EngineNozzle");
+            nozzle.transform.SetParent(transform);
+            nozzle.transform.localPosition = new Vector3(0f, 0f, -4.0f);
+            engineNozzle = nozzle.transform;
+        }
+        // 에스코트 VFX가 동일 위치를 사용할 수 있도록 기록
+        SharedNozzleLocalPos = engineNozzle.localPosition;
     }
 
     void SetupContrails()
@@ -66,8 +90,8 @@ public class F35VFXController : MonoBehaviour
         tr.endWidth = 2.0f;
         tr.minVertexDistance = 0.2f;
         tr.emitting = false;
-        
-        Material alphaMat = Resources.Load<Material>("VFX/Mat_Alpha");
+
+        Material alphaMat = _alphaMaterial != null ? _alphaMaterial : Resources.Load<Material>("VFX/Mat_Alpha");
         if (alphaMat != null) tr.material = alphaMat;
 
         Gradient grad = new Gradient();
@@ -80,20 +104,24 @@ public class F35VFXController : MonoBehaviour
         return tr;
     }
 
+    // 프리팹이 있으면 그것 인스턴스화 후 EngineExhaustAssembly 사용,
+    // 없으면 절차 빌드 후 동적으로 어셈블리 부착.
     void SetupAfterburner()
     {
-        if (engineNozzle == null)
+        if (_afterburnerVFXPrefab != null)
         {
-            GameObject nozzle = new GameObject("EngineNozzle");
-            nozzle.transform.SetParent(transform);
-            nozzle.transform.localPosition = new Vector3(0f, 0f, -4.0f);
-            engineNozzle = nozzle.transform;
+            var inst = Instantiate(_afterburnerVFXPrefab, engineNozzle);
+            inst.transform.localPosition = Vector3.zero;
+            inst.transform.localRotation = Quaternion.identity;
+            _afterburnerAssembly = inst.GetComponent<EngineExhaustAssembly>();
+            if (_afterburnerAssembly == null)
+                Debug.LogWarning($"[F35VFXController] _afterburnerVFXPrefab '{_afterburnerVFXPrefab.name}' has no EngineExhaustAssembly component on its root.");
+            return;
         }
-        // 에스코트 VFX가 동일 위치를 사용할 수 있도록 기록
-        SharedNozzleLocalPos = engineNozzle.localPosition;
 
-        Material addMat = Resources.Load<Material>("VFX/Mat_Additive");
-        Material diamondMat = Resources.Load<Material>("VFX/Mat_ShockDiamond");
+        // ── 절차적 폴백 ────────────────────────────────────────────────────────
+        Material addMat     = _additiveMaterial     != null ? _additiveMaterial     : Resources.Load<Material>("VFX/Mat_Additive");
+        Material diamondMat = _shockDiamondMaterial != null ? _shockDiamondMaterial : Resources.Load<Material>("VFX/Mat_ShockDiamond");
 
         GameObject abObj = new GameObject("AfterburnerVFX");
         abObj.transform.SetParent(engineNozzle);
@@ -101,7 +129,7 @@ public class F35VFXController : MonoBehaviour
         abObj.transform.localRotation = Quaternion.identity;
 
         // Outer Glow (Orange/Red)
-        afterburnerPS = abObj.AddComponent<ParticleSystem>();
+        var afterburnerPS = abObj.AddComponent<ParticleSystem>();
         afterburnerPS.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
         var main = afterburnerPS.main;
         main.duration = 1f;
@@ -137,7 +165,7 @@ public class F35VFXController : MonoBehaviour
         coreObj.transform.localPosition = Vector3.zero;
         coreObj.transform.localRotation = Quaternion.identity;
 
-        corePS = coreObj.AddComponent<ParticleSystem>();
+        var corePS = coreObj.AddComponent<ParticleSystem>();
         corePS.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
         var cMain = corePS.main;
         cMain.duration = 1f;
@@ -175,11 +203,15 @@ public class F35VFXController : MonoBehaviour
         cRend.renderMode = ParticleSystemRenderMode.Stretch;
         cRend.velocityScale = 0.05f;
 
-        afterburnerLight = abObj.AddComponent<Light>();
+        var afterburnerLight = abObj.AddComponent<Light>();
         afterburnerLight.type = LightType.Point;
         afterburnerLight.color = new Color(1f, 0.6f, 0.2f);
         afterburnerLight.intensity = 0f;
         afterburnerLight.range = 20f;
+
+        // 동적으로 어셈블리 부착해서 통일된 API로 제어
+        _afterburnerAssembly = abObj.AddComponent<EngineExhaustAssembly>();
+        _afterburnerAssembly.Configure(afterburnerPS, corePS, afterburnerLight);
     }
 
     void SetupIdleExhaust()
@@ -232,7 +264,7 @@ public class F35VFXController : MonoBehaviour
             new AnimationCurve(new Keyframe(0f, 0.4f), new Keyframe(1f, 1.8f)));
 
         var rend = _idleExhaustPS.GetComponent<ParticleSystemRenderer>();
-        var addMat = Resources.Load<Material>("VFX/Mat_Additive");
+        var addMat = _additiveMaterial != null ? _additiveMaterial : Resources.Load<Material>("VFX/Mat_Additive");
         if (addMat == null)
         {
             var fallbackSh = Shader.Find("Particles/Additive")
@@ -283,18 +315,6 @@ public class F35VFXController : MonoBehaviour
         rightContrail.emitting = shouldEmitContrails;
 
         bool isAfterburnerActive = playerController.CurrentSpeed > 60f && Input.GetKey(KeyCode.W);
-        
-        if (isAfterburnerActive)
-        {
-            if (!afterburnerPS.isPlaying) afterburnerPS.Play();
-            if (corePS != null && !corePS.isPlaying) corePS.Play();
-            afterburnerLight.intensity = Mathf.Lerp(afterburnerLight.intensity, 5f, dt * 10f);
-        }
-        else
-        {
-            if (afterburnerPS.isPlaying) afterburnerPS.Stop();
-            if (corePS != null && corePS.isPlaying) corePS.Stop();
-            afterburnerLight.intensity = Mathf.Lerp(afterburnerLight.intensity, 0f, dt * 10f);
-        }
+        _afterburnerAssembly?.SetActive(isAfterburnerActive, dt);
     }
 }
