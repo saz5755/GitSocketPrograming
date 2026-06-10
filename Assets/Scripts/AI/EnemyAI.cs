@@ -22,6 +22,10 @@ public class EnemyAI : MonoBehaviour
     [SerializeField] float patrolSpeed  = 36f;   // 순찰 고정 속도
     const float            CombatSpeed  = 56f;   // 플레이어 최대(80) × 0.7 고정
 
+    [Header("프리팹")]
+    [Tooltip("미사일 프리팹. 미할당 시 Resources/MissilePrefab 폴백 → 그것도 없으면 fallback 캡슐")]
+    [SerializeField] GameObject _missilePrefab;
+
     float DynSpeed => CombatSpeed;
 
     // 항모 탑승·프리플라이트 중에는 전투 비활성
@@ -173,7 +177,7 @@ public class EnemyAI : MonoBehaviour
         Quaternion launchRot = transform.rotation;
 
         // 미사일 오브젝트 생성 (호스트 로컬)
-        GameObject prefab = Resources.Load<GameObject>("MissilePrefab");
+        GameObject prefab = _missilePrefab != null ? _missilePrefab : Resources.Load<GameObject>("MissilePrefab");
         GameObject go = prefab != null
             ? Instantiate(prefab, launchPos, launchRot)
             : CreateFallbackMissile(launchPos, launchRot);

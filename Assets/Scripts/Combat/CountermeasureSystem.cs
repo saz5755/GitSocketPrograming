@@ -16,6 +16,10 @@ public class CountermeasureSystem : MonoBehaviour
     [SerializeField] float flareLifetime   = 4.0f;
     [SerializeField] float chaffLifetime   = 6.0f;
 
+    [Header("VFX Materials (미할당 시 Resources 폴백)")]
+    [SerializeField] Material _vfxAdditive;
+    [SerializeField] Material _vfxAlpha;
+
     // ── 전역 액티브 디코이 목록 ────────────────────────────────────────────
     static readonly List<CountermeasureDecoy> _active = new List<CountermeasureDecoy>(64);
     public static IReadOnlyList<CountermeasureDecoy> Active => _active;
@@ -76,7 +80,7 @@ public class CountermeasureSystem : MonoBehaviour
         go.AddComponent<CountermeasureDecoy>().Initialize(type, lifetime, velocity);
 
         if (isFlare)
-            FlareDecoyVFX.Attach(go, lifetime);
+            FlareDecoyVFX.Attach(go, lifetime, _vfxAdditive, _vfxAlpha);
         else
             SpawnChaffVFX(go.transform, lifetime);
 

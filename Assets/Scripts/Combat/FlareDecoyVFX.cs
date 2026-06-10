@@ -2,9 +2,15 @@ using UnityEngine;
 
 public class FlareDecoyVFX : MonoBehaviour
 {
-    public static void Attach(GameObject host, float lifetime)
+    Material _injectedAddMat;
+    Material _injectedAlphaMat;
+
+    public static void Attach(GameObject host, float lifetime,
+                              Material additiveMatOverride = null, Material alphaMatOverride = null)
     {
         var vfx = host.AddComponent<FlareDecoyVFX>();
+        vfx._injectedAddMat   = additiveMatOverride;
+        vfx._injectedAlphaMat = alphaMatOverride;
         vfx.InitVFX(lifetime);
     }
 
@@ -20,8 +26,8 @@ public class FlareDecoyVFX : MonoBehaviour
 
     void InitVFX(float lifetime)
     {
-        Material addMat   = Resources.Load<Material>("VFX/Mat_Additive");
-        Material alphaMat = Resources.Load<Material>("VFX/Mat_Alpha");
+        Material addMat   = _injectedAddMat   != null ? _injectedAddMat   : Resources.Load<Material>("VFX/Mat_Additive");
+        Material alphaMat = _injectedAlphaMat != null ? _injectedAlphaMat : Resources.Load<Material>("VFX/Mat_Alpha");
 
         // 1. Intense Core Glow (Magnesium Burn)
         var corePS = MakePS(gameObject, "FlareCore");

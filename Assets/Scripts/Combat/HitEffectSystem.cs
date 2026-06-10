@@ -6,6 +6,14 @@ public class HitEffectSystem : MonoBehaviour
 
     [SerializeField] AudioClip explosionClip;
 
+    [Header("VFX 프리팹/머티리얼 (미할당 시 Resources 폴백)")]
+    [Tooltip("미사일 피격 폭발 프리팹")]
+    [SerializeField] GameObject _explosionPrefab;
+    [Tooltip("Bullet impact의 가산 머티리얼 (Mat_Additive)")]
+    [SerializeField] Material _vfxAdditive;
+    [Tooltip("Bullet impact의 알파 머티리얼 (Mat_Alpha — 연기)")]
+    [SerializeField] Material _vfxAlpha;
+
     FlightCamera _cam;
     AudioSource  _audio;
 
@@ -20,7 +28,7 @@ public class HitEffectSystem : MonoBehaviour
     // 미사일 피격 (강한 폭발 이펙트)
     public void TriggerHit(Vector3 worldPos, bool hitLocalPlayer)
     {
-        ExplosionEffect.Spawn(worldPos);
+        ExplosionEffect.Spawn(worldPos, _explosionPrefab);
 
         if (_audio != null && explosionClip != null)
             _audio.PlayOneShot(explosionClip, hitLocalPlayer ? 1.0f : 0.6f);
@@ -33,7 +41,7 @@ public class HitEffectSystem : MonoBehaviour
     // 기총 피격 (작은 스파크 이펙트)
     public void TriggerBulletHit(Vector3 worldPos, bool hitLocalPlayer)
     {
-        BulletImpactEffect.Spawn(worldPos);
+        BulletImpactEffect.Spawn(worldPos, _vfxAdditive, _vfxAlpha);
 
         if (_audio != null)
             _audio.PlayOneShot(MakeBulletImpactClip(), hitLocalPlayer ? 0.55f : 0.3f);

@@ -6,6 +6,9 @@ public class MissileLauncher : MonoBehaviour
     [SerializeField] float   cooldown    = 1.5f;
     [SerializeField] int     maxMissiles = 6;
 
+    [Tooltip("미사일 프리팹. 미할당 시 Resources/MissilePrefab 폴백 → 그것도 없으면 빈 GameObject + MissileController")]
+    [SerializeField] GameObject _missilePrefab;
+
     TargetingSystem _targeting;
     float           _cooldownTimer;
 
@@ -44,7 +47,7 @@ public class MissileLauncher : MonoBehaviour
 
     void CreateMissile(Transform origin, Transform target)
     {
-        GameObject prefab = Resources.Load<GameObject>("MissilePrefab");
+        GameObject prefab = _missilePrefab != null ? _missilePrefab : Resources.Load<GameObject>("MissilePrefab");
         GameObject go;
         if (prefab != null)
         {

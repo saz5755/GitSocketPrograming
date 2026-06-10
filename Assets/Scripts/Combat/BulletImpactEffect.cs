@@ -2,18 +2,24 @@ using UnityEngine;
 
 public class BulletImpactEffect : MonoBehaviour
 {
-    public static void Spawn(Vector3 worldPos)
+    Material _injectedAddMat;
+    Material _injectedAlphaMat;
+
+    public static void Spawn(Vector3 worldPos, Material additiveMatOverride = null, Material alphaMatOverride = null)
     {
         var go = new GameObject("BulletImpact");
         go.transform.position = worldPos;
-        go.AddComponent<BulletImpactEffect>().Init();
+        var c = go.AddComponent<BulletImpactEffect>();
+        c._injectedAddMat   = additiveMatOverride;
+        c._injectedAlphaMat = alphaMatOverride;
+        c.Init();
         Destroy(go, 2.0f);
     }
 
     void Init()
     {
-        Material addMat = Resources.Load<Material>("VFX/Mat_Additive");
-        Material alphaMat = Resources.Load<Material>("VFX/Mat_Alpha");
+        Material addMat   = _injectedAddMat   != null ? _injectedAddMat   : Resources.Load<Material>("VFX/Mat_Additive");
+        Material alphaMat = _injectedAlphaMat != null ? _injectedAlphaMat : Resources.Load<Material>("VFX/Mat_Alpha");
 
         // 1. Sharp Core Flash (Very quick, intense)
         var flash = MakeParticles("Flash", 1);
