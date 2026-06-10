@@ -6,12 +6,6 @@ using UnityEngine;
 [CreateAssetMenu(menuName = "KF21/AI/Escort Behavior", fileName = "EscortBehavior_")]
 public class EscortBehaviorSO : ScriptableObject
 {
-    [Header("편대 슬롯 (리더 로컬 좌표 오프셋)")]
-    [Tooltip("왼쪽 윙맨의 리더 기준 상대 위치")]
-    public Vector3 leftSlotOffset  = new Vector3(-32f, -5f, -40f);
-    [Tooltip("오른쪽 윙맨의 리더 기준 상대 위치")]
-    public Vector3 rightSlotOffset = new Vector3( 32f, -5f, -40f);
-
     [Header("편대비행 보간")]
     [Tooltip("슬롯 6m 이내일 때 미세 속도 떨림 폭(±)")]
     [Range(0f, 10f)] public float speedJitterRange = 3f;
@@ -76,7 +70,6 @@ public class EscortBehaviorSO : ScriptableObject
     [Tooltip("정지 판정 속도 (이 값 미만이면 Landed 전환)")]
     public float arrestStopSpeed = 0.2f;
 
-    public Vector3 GetSlotOffset(bool isLeft) => isLeft ? leftSlotOffset : rightSlotOffset;
-    public float   GetBankOffset(bool isLeft) => isLeft ? bankOffsetDeg : -bankOffsetDeg;
-    public float   GetSideOffset(bool isLeft) => isLeft ? -landingSideOffset : landingSideOffset;
+    public float GetBankOffset(bool isLeft) => isLeft ? bankOffsetDeg : -bankOffsetDeg;
+    public float GetSideOffset(bool isLeft) => isLeft ? -landingSideOffset : landingSideOffset;
 }

@@ -5,8 +5,6 @@ using UnityEngine;
 // OnDeck → Launching → Escorting ↔ FreeFlightZone → LandingApproach → BeingArrested / Landed
 public class EscortAI : MonoBehaviour
 {
-    public enum EscortSide { Left, Right }
-
     enum Phase
     {
         OnDeck, Launching, Escorting,
@@ -20,7 +18,8 @@ public class EscortAI : MonoBehaviour
     // 어레스팅 와이어 시스템이 접근 중인 에스코트를 탐색할 수 있도록 전역 목록 노출
     public static readonly List<EscortAI> AllEscorts = new();
 
-    [SerializeField] EscortSide _side = EscortSide.Left;
+    [Header("편대 슬롯 (리더 기준 로컬 오프셋, X 부호로 좌/우 자동)")]
+    [SerializeField] Vector3 _formationOffset = new Vector3(-32f, -5f, -40f);
 
     [Header("동작 튜닝 데이터")]
     [Tooltip("EscortBehaviorSO 에셋. Project 우클릭 → Create → KF21 → AI → Escort Behavior")]
@@ -75,10 +74,11 @@ public class EscortAI : MonoBehaviour
     float _arrestDeckY;
     float _arrestSpeed;
 
-    public EscortSide Side           => _side;
-    public bool       IsLanded       => _phase == Phase.Landed || _phase == Phase.BeingArrested;
+    public Vector3 FormationOffset => _formationOffset;
+    public bool    IsLeftSide      => _formationOffset.x < 0f;
+    public bool    IsLanded        => _phase == Phase.Landed || _phase == Phase.BeingArrested;
     // ArrestingWireSystem이 체결 시도 여부를 판단하는 프로퍼티
-    public bool       IsInApproachRun => _phase == Phase.LandingApproach;
+    public bool    IsInApproachRun => _phase == Phase.LandingApproach;
 
     // ── 생명주기 ──────────────────────────────────────────────────────────────
 
@@ -106,17 +106,17 @@ public class EscortAI : MonoBehaviour
         if (behavior != null) _behavior = behavior;
     }
 
-    public void Initialize(Transform leader, EscortSide side, bool spawnedOnDeck)
+    public void Initialize(Transform leader, Vector3 formationOffset, bool spawnedOnDeck)
     {
-        _leader = leader;
-        _side   = side;
-        _bot    = GetComponent<AIBotController>();
+        _leader           = leader;
+        _formationOffset  = formationOffset;
+        _bot              = GetComponent<AIBotController>();
         _bot.PositionOverride = true;
         _bot.SetMaxSpeed(Cfg.maxSpeedOverride);
         _bot.SetTurnRate(Cfg.turnRateOverride);
-        _speedJitter   = Random.Range(-Cfg.speedJitterRange, Cfg.speedJitterRange);
-        _phase         = spawnedOnDeck ? Phase.OnDeck : Phase.Escorting;
-        _cachedCarrier = Object.FindObjectOfType<CarrierController>();
+        _speedJitter      = Random.Range(-Cfg.speedJitterRange, Cfg.speedJitterRange);
+        _phase            = spawnedOnDeck ? Phase.OnDeck : Phase.Escorting;
+        _cachedCarrier    = Object.FindObjectOfType<CarrierController>();
     }
 
     public void UpdateLeader(Transform newLeader) => _leader = newLeader;
@@ -260,8 +260,8 @@ public class EscortAI : MonoBehaviour
     {
         if (_leader == null || _bot == null) return;
 
-        bool    isLeft      = _side == EscortSide.Left;
-        Vector3 localOffset = Cfg.GetSlotOffset(isLeft);
+        bool    isLeft      = IsLeftSide;
+        Vector3 localOffset = _formationOffset;
         Vector3 targetPos   = _leader.TransformPoint(localOffset);
         Vector3 toTarget    = targetPos - transform.position;
         float   dist        = toTarget.magnitude;
@@ -496,7 +496,7 @@ public class EscortAI : MonoBehaviour
 
     void SetupApproach()
     {
-        bool isLeft = _side == EscortSide.Left;
+        bool isLeft = IsLeftSide;
 
         if (_hasApproachInfo && _playerApproachDir.sqrMagnitude > 0.01f)
         {
@@ -517,9 +517,9 @@ public class EscortAI : MonoBehaviour
             Vector3 approachBase = _carrier.position - _carrier.forward * Cfg.approachDistance;
             _approachWaypoint    = new Vector3(approachBase.x, _carrier.position.y + Cfg.approachAltitude, approachBase.z);
 
-            Vector3 landLocal = isLeft
-                ? new Vector3(-22f, 5.5f, -55f)
-                : new Vector3(-12f, 5.5f, -68f);
+            // 슬롯 X 부호 기반 갑판 측면 오프셋 — V자 편대 N기 확장에도 대응
+            float deckX = Mathf.Clamp(_formationOffset.x * 0.4f, -22f, 22f);
+            Vector3 landLocal = new Vector3(deckX, 5.5f, -55f);
             _landingSpot = _carrier.TransformPoint(landLocal);
         }
 

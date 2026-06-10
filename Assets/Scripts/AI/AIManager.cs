@@ -14,15 +14,10 @@ public class AIManager : MonoBehaviour
     [Header("AI 기체 프리팹 (없으면 기본 모델)")]
     [SerializeField] GameObject _aiPrefab;
 
-    [Header("에스코트 AI — 학익진 편대")]
+    [Header("에스코트 AI — V자 편대 (슬롯 기반)")]
     [SerializeField] bool _spawnEscorts = false;
-    [SerializeField] [Range(1, 2)] int _escortCount = 2;
-
-    [Header("에스코트 갑판 대기 위치 (씬 오브젝트로 지정)")]
-    [Tooltip("하이어라키의 Escort01_Position 오브젝트를 드래그")]
-    [SerializeField] Transform _escortPos0;
-    [Tooltip("하이어라키의 Escort02_Position 오브젝트를 드래그")]
-    [SerializeField] Transform _escortPos1;
+    [Tooltip("이 GameObject 아래의 EscortSlot 자식들을 모두 수집해 슬롯 수만큼 봇을 spawn한다.")]
+    [SerializeField] Transform _escortSlotsRoot;
 
     [Header("AI 공통 설정 (모든 봇에 자동 주입)")]
     [Tooltip("EscortBehaviorSO — 미할당 시 런타임 폴백 인스턴스 생성")]
@@ -97,45 +92,26 @@ public class AIManager : MonoBehaviour
 
         var carrier = FindObjectOfType<CarrierController>();
         _cachedCarrier = carrier;
-        var sides   = new[] { EscortAI.EscortSide.Left, EscortAI.EscortSide.Right };
-        int count   = Mathf.Clamp(_escortCount, 1, 2);
 
-        // Inspector 미연결 시 씬 전체에서 이름으로 자동 탐색
-        if (_escortPos0 == null) _escortPos0 = GameObject.Find("Escort01_Position")?.transform;
-        if (_escortPos1 == null) _escortPos1 = GameObject.Find("Escort02_Position")?.transform;
-
-        var posTrs = new[] { _escortPos0, _escortPos1 };
-
-        for (int i = 0; i < count; i++)
+        var slots = CollectEscortSlots();
+        if (slots.Count == 0)
         {
-            string nick = $"BOT_E{i + 1}";
+            Debug.LogWarning("[AIManager] No EscortSlot found. Assign Escort Slots Root in Inspector or create child GameObjects with EscortSlot component.");
+            return;
+        }
 
-            Vector3    spawnPos;
-            Quaternion spawnRot;
+        for (int i = 0; i < slots.Count; i++)
+        {
+            var slot = slots[i];
+            string nick = string.IsNullOrEmpty(slot.nickname) ? $"BOT_E{i + 1}" : slot.nickname;
 
-            if (posTrs[i] != null)
-            {
-                spawnPos = posTrs[i].position;
-                spawnRot = carrier != null ? carrier.transform.rotation : leader.transform.rotation;
-            }
-            else if (carrier != null)
-            {
-                Vector3 localOff = i == 0 ? new Vector3(-15f, 5.5f, 60f) : new Vector3(-18.5f, 5.5f, 40f);
-                spawnPos = carrier.transform.TransformPoint(localOff);
-                spawnRot = carrier.transform.rotation;
-            }
-            else
-            {
-                Vector3 off = i == 0 ? new Vector3(-32f, -5f, -40f) : new Vector3(32f, -5f, -40f);
-                spawnPos = leader.transform.TransformPoint(off);
-                spawnRot = leader.transform.rotation;
-            }
+            Vector3    spawnPos = slot.transform.position;
+            Quaternion spawnRot = carrier != null ? carrier.transform.rotation : slot.transform.rotation;
 
-            bool onDeck = posTrs[i] != null || carrier != null;
             var go     = BuildAIObject(nick, spawnPos, spawnRot);
             var escort = go.AddComponent<EscortAI>();
-            escort.SetBehavior(_escortBehavior);   // 슬롯 비어있으면 EscortAI가 폴백 사용
-            escort.Initialize(leader.transform, sides[i], spawnedOnDeck: onDeck);
+            escort.SetBehavior(_escortBehavior);
+            escort.Initialize(leader.transform, slot.formationOffset, spawnedOnDeck: true);
 
             // AIBotController.Awake() 이후에 추가해야 DisableIfPresent<> 영향을 받지 않음
             go.AddComponent<AircraftBoardingTrigger>();
@@ -145,8 +121,27 @@ public class AIManager : MonoBehaviour
             NetworkManager.Instance?.socketClient?.SendAISpawn(
                 nick, spawnPos, spawnRot.eulerAngles, aiType: 0);
 
-            Debug.Log($"[AIManager] Escort spawned: {nick}");
+            Debug.Log($"[AIManager] Escort spawned: {nick}  formation={slot.formationOffset}");
         }
+    }
+
+    // EscortSlot 자동 수집 — 우선순위:
+    //  1. _escortSlotsRoot 자식 (활성 상태만)
+    //  2. 씬 전체 EscortSlot 탐색 (폴백)
+    System.Collections.Generic.List<EscortSlot> CollectEscortSlots()
+    {
+        var list = new System.Collections.Generic.List<EscortSlot>();
+        if (_escortSlotsRoot != null)
+        {
+            _escortSlotsRoot.GetComponentsInChildren(false, list);
+        }
+        if (list.Count == 0)
+        {
+            list.AddRange(FindObjectsOfType<EscortSlot>());
+        }
+        // 하이어라키 순서 유지 (sibling index 오름차순)
+        list.Sort((a, b) => a.transform.GetSiblingIndex().CompareTo(b.transform.GetSiblingIndex()));
+        return list;
     }
 
     void SpawnEnemies(PlayerController leader)
@@ -232,7 +227,8 @@ public class AIManager : MonoBehaviour
             var escort = bot.GetComponent<EscortAI>();
             if (escort != null) escorts.Add(escort);
         }
-        escorts.Sort((a, b) => a.Side == EscortAI.EscortSide.Left ? -1 : 1);
+        // Left(음수 X)를 먼저, Right(양수 X)를 나중에 — V자 편대 좌측부터 순차 처리
+        escorts.Sort((a, b) => a.FormationOffset.x.CompareTo(b.FormationOffset.x));
 
         for (int i = 0; i < escorts.Count; i++)
         {
@@ -288,7 +284,8 @@ public class AIManager : MonoBehaviour
             var escort = bot.GetComponent<EscortAI>();
             if (escort != null) escorts.Add(escort);
         }
-        escorts.Sort((a, b) => a.Side == EscortAI.EscortSide.Left ? -1 : 1);
+        // Left(음수 X)를 먼저, Right(양수 X)를 나중에 — V자 편대 좌측부터 순차 처리
+        escorts.Sort((a, b) => a.FormationOffset.x.CompareTo(b.FormationOffset.x));
         Debug.Log($"[AIManager] EscortLandingCoroutine started  escorts={escorts.Count}  hasPath={hasPath}");
 
         foreach (var escort in escorts)
@@ -321,8 +318,8 @@ public class AIManager : MonoBehaviour
         // 1. 선택된 에스코트의 AI 컴포넌트 정보 저장 후 제거
         var escortAI  = newPlayerPC.GetComponent<EscortAI>();
         var escortBot = newPlayerPC.GetComponent<AIBotController>();
-        string         botNick = escortBot?.Nickname ?? "BOT_E1";
-        EscortAI.EscortSide botSide = escortAI?.Side ?? EscortAI.EscortSide.Left;
+        string  botNick           = escortBot?.Nickname ?? "BOT_E1";
+        Vector3 botFormationOffset = escortAI != null ? escortAI.FormationOffset : new Vector3(-32f, -5f, -40f);
 
         if (escortAI  != null) { escortAI.StopAllCoroutines();  Destroy(escortAI);  }
         if (escortBot != null) { _bots.Remove(escortBot); Destroy(escortBot); }
@@ -342,7 +339,8 @@ public class AIManager : MonoBehaviour
         newBot.PositionOverride = true;
 
         var newEscort = oldPlayerPC.gameObject.AddComponent<EscortAI>();
-        newEscort.Initialize(newPlayerPC.transform, botSide, spawnedOnDeck: true);
+        newEscort.SetBehavior(_escortBehavior);
+        newEscort.Initialize(newPlayerPC.transform, botFormationOffset, spawnedOnDeck: true);
         _bots.Add(newBot);
 
         // 4. 남은 에스코트 봇의 리더를 새 플레이어 기체로 업데이트
