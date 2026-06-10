@@ -17,7 +17,8 @@ public class EscortVFXController : MonoBehaviour
 
     EngineExhaustAssembly _afterburnerAssembly;
 
-    AIBotController _bot;
+    AIBotController  _bot;
+    PlayerController _playerFallback;  // TakeOver 이후 _bot이 destroy되면 폴백
 
     void Start()
     {
@@ -136,8 +137,21 @@ public class EscortVFXController : MonoBehaviour
 
     void Update()
     {
-        if (_bot == null) return;
-        bool active = _bot.Speed > afterburnerThreshold;
+        bool active;
+        if (_bot != null)
+        {
+            // AI 봇 모드 — 단순히 봇 속도 기반
+            active = _bot.Speed > afterburnerThreshold;
+        }
+        else
+        {
+            // TakeOverEscortBot 이후 — PlayerController로 폴백, F35와 동일 조건 (속도 + W키)
+            if (_playerFallback == null) _playerFallback = GetComponent<PlayerController>();
+            active = _playerFallback != null
+                  && _playerFallback.isLocalPlayer
+                  && _playerFallback.CurrentSpeed > 60f
+                  && Input.GetKey(KeyCode.W);
+        }
         _afterburnerAssembly?.SetActive(active, Time.deltaTime);
     }
 }

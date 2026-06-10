@@ -171,9 +171,13 @@ public class ArrestingWireSystem : MonoBehaviour
     // Aircraft_carrier_Mesh_334 의 재질을 기반으로 강철 케이블 외관 구성
     void BuildWireCable(WireState ws)
     {
-        // 재질 준비 — 갑판 재질 복사 후 강철 케이블로 조정
+        // 재질 준비 — SO 슬롯 우선, 미할당 시 갑판 재질 복사 또는 새 머티리얼 합성
         Material mat;
-        if (_deckMat != null)
+        if (Cfg.wireSteelMaterial != null)
+        {
+            mat = new Material(Cfg.wireSteelMaterial);   // 인스턴스 복사 (와이어별 emission 독립 제어)
+        }
+        else if (_deckMat != null)
         {
             mat = new Material(_deckMat);
             mat.SetFloat("_Metallic",    0.88f);
@@ -266,10 +270,18 @@ public class ArrestingWireSystem : MonoBehaviour
         lr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         lr.receiveShadows    = false;
 
-        Shader sh = Shader.Find("Universal Render Pipeline/Unlit")
-                 ?? Shader.Find("Unlit/Color")
-                 ?? Shader.Find("Standard");
-        var mat = new Material(sh);
+        Material mat;
+        if (Cfg.wireRopeMaterial != null)
+        {
+            mat = new Material(Cfg.wireRopeMaterial);   // 와이어별 색 독립 제어
+        }
+        else
+        {
+            Shader sh = Shader.Find("Universal Render Pipeline/Unlit")
+                     ?? Shader.Find("Unlit/Color")
+                     ?? Shader.Find("Standard");
+            mat = new Material(sh);
+        }
         mat.color = ColLineAvail;
         lr.material = mat;
 
@@ -293,7 +305,10 @@ public class ArrestingWireSystem : MonoBehaviour
         var rend = disc.GetComponent<Renderer>();
         rend.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         rend.receiveShadows    = false;
-        var mat = MakeTransparentMaterial(ColZoneAvail);
+        Material mat = Cfg.zoneDiscMaterial != null
+            ? new Material(Cfg.zoneDiscMaterial)   // 와이어별 색 독립 제어
+            : MakeTransparentMaterial(ColZoneAvail);
+        mat.color = ColZoneAvail;
         rend.material = mat;
 
         var light = disc.AddComponent<Light>();

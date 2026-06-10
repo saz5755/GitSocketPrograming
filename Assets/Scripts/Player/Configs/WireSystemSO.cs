@@ -31,4 +31,12 @@ public class WireSystemSO : ScriptableObject
     public float stopThreshold = 0.5f;
     [Tooltip("정지 후 와이어가 다시 활성화될 때까지 대기 시간 (초)")]
     public float resetDelay = 4f;
+
+    [Header("머티리얼 (미할당 시 런타임 합성 폴백)")]
+    [Tooltip("케이블 본체/볼라드 강철 머티리얼. 비워두면 갑판 머티리얼을 복사해 강철 조정")]
+    public Material wireSteelMaterial;
+    [Tooltip("V자 LineRenderer 머티리얼. 비워두면 Unlit 셰이더로 합성")]
+    public Material wireRopeMaterial;
+    [Tooltip("존 디스크 투명 머티리얼. 비워두면 Transparent 셰이더로 합성")]
+    public Material zoneDiscMaterial;
 }
