@@ -266,7 +266,20 @@ public class AIManager : MonoBehaviour
     public void BeginEscortLandingFromWire(Vector3 approachDir, Vector3 wirePos)
     {
         Debug.Log($"[AIManager] BeginEscortLandingFromWire called  isHost={_isHost}  landingStarted={_escortLandingStarted}  dir={approachDir}  wirePos={wirePos}");
-        if (!_isHost || _escortLandingStarted) return;
+        if (!_isHost) return;
+
+        // 이미 zone 진입 시점에 시퀀스가 시작됐다면 — 진행 중인 모든 에스코트의 path를 와이어 위치로 갱신
+        if (_escortLandingStarted)
+        {
+            foreach (var bot in _bots)
+            {
+                if (bot == null) continue;
+                bot.GetComponent<EscortAI>()?.UpdateApproachPath(approachDir, wirePos);
+            }
+            return;
+        }
+
+        // 시퀀스가 아직 시작되지 않은 경우 — 새로 시작
         _escortLandingStarted = true;
         var carrierTr = _cachedCarrier?.transform ?? FindObjectOfType<CarrierController>()?.transform;
         StartCoroutine(EscortLandingCoroutine(carrierTr, approachDir, wirePos, true));

@@ -139,9 +139,10 @@ public class EscortAI : MonoBehaviour
             if (bt != null) bt.enabled = false;
         }
 
-        _launchTimer          = 0f;
-        _bot.PositionOverride = false;
-        _phase                = Phase.Launching;
+        _launchTimer              = 0f;
+        _bot.PositionOverride     = false;
+        _phase                    = Phase.Launching;
+        _zoneAutoLandingTriggered = false;   // 재발진마다 zone 진입 폴백 호출 다시 활성화
     }
 
     // AIManager.BeginEscortLanding() → 플레이어 착함 직후 순차 호출
@@ -225,10 +226,51 @@ public class EscortAI : MonoBehaviour
         Debug.Log($"[EscortAI] {name} 어레스팅 와이어 체결! 속도={_arrestSpeed:F1}");
     }
 
+    // ArrestingWireSystem이 플레이어 와이어 잡힌 후 호출 — 진행 중인 에스코트의 경로 갱신.
+    // 자유비행 중이면 다음 SetupApproach에서 사용,
+    // LandingApproach 중이면 landingSpot만 갱신해 자연스럽게 와이어 위치로 향하도록 한다.
+    public void UpdateApproachPath(Vector3 approachDir, Vector3 wirePos)
+    {
+        _playerApproachDir = approachDir;
+        _playerWirePos     = wirePos;
+        _hasApproachInfo   = true;
+
+        if (_phase == Phase.LandingApproach)
+        {
+            // wp는 유지(이미 거쳤거나 향해 비행 중) — landingSpot만 와이어 위치 + 슬롯 측면 오프셋으로 갱신
+            Vector3 sideDir = Vector3.Cross(approachDir.normalized, Vector3.up).normalized;
+            _landingSpot    = wirePos + sideDir * Cfg.GetSideOffset(IsLeftSide);
+            _landingSpot.y  = wirePos.y + 1f;
+        }
+    }
+
     // ── Unity Update ─────────────────────────────────────────────────────────
+
+    bool _zoneAutoLandingTriggered;   // zone 진입 한 번 감지하면 BeginEscortLanding 자동 호출 (한 라운드에 1회)
 
     void Update()
     {
+        // ── 매 프레임 leader zone 위치 기반 페이즈 보정 ──────────────────────
+        // EscortZoneTrigger의 이벤트가 발화되지 못한 케이스(이륙 첫 프레임 등) 폴백 +
+        // Escorting/Launching에서 leader가 zone 안에 들어왔으면 즉시 FreeFlightZone으로 전환해
+        // V-formation 추종(빙글빙글) 동작을 차단한다.
+        if (_leader != null && EscortZoneTrigger.Instance != null
+            && (_phase == Phase.Escorting || _phase == Phase.Launching))
+        {
+            if (EscortZoneTrigger.Instance.IsInsideXZ(_leader.position))
+            {
+                _bot.PositionOverride = false;
+                _leaderStopTimer      = 0f;
+                _phase                = Phase.FreeFlightZone;
+
+                if (!_zoneAutoLandingTriggered)
+                {
+                    _zoneAutoLandingTriggered = true;
+                    AIManager.Instance?.BeginEscortLanding(_cachedCarrier?.transform);
+                }
+            }
+        }
+
         switch (_phase)
         {
             case Phase.Launching:       UpdateLaunching();       break;
