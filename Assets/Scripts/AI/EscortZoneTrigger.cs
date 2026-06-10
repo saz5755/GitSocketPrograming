@@ -84,5 +84,15 @@ public class EscortZoneTrigger : MonoBehaviour
             if (inside) escort.OnLeaderEnteredZone();
             else        escort.OnLeaderExitedZone();
         }
+
+        // 플레이어가 zone 안으로 진입한 순간 — 에스코트 자유비행 → 순차 착함 시퀀스 시작.
+        // 플레이어 정지 시점이 아닌 진입 시점에 시작하므로 와이어 정지 동기화 불필요.
+        if (inside)
+        {
+            var carrier = transform.parent != null
+                ? transform.parent.GetComponent<CarrierController>()
+                : Object.FindObjectOfType<CarrierController>();
+            AIManager.Instance?.BeginEscortLanding(carrier != null ? carrier.transform : null);
+        }
     }
 }

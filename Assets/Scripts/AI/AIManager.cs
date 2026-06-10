@@ -219,7 +219,7 @@ public class AIManager : MonoBehaviour
         foreach (var bot in _bots)
             bot?.GetComponent<EnemyAI>()?.EnableCombat();
 
-        // 에스코트 순차 발진: Left → Right 순, 4초 간격으로 캐터펄트 발진
+        // 에스코트 순차 발진 (Slot_01 → Slot_02 → ... spawn 순서대로, 4초 간격)
         var escorts = new System.Collections.Generic.List<EscortAI>();
         foreach (var bot in _bots)
         {
@@ -227,8 +227,6 @@ public class AIManager : MonoBehaviour
             var escort = bot.GetComponent<EscortAI>();
             if (escort != null) escorts.Add(escort);
         }
-        // Left(음수 X)를 먼저, Right(양수 X)를 나중에 — V자 편대 좌측부터 순차 처리
-        escorts.Sort((a, b) => a.FormationOffset.x.CompareTo(b.FormationOffset.x));
 
         for (int i = 0; i < escorts.Count; i++)
         {
@@ -284,25 +282,22 @@ public class AIManager : MonoBehaviour
             var escort = bot.GetComponent<EscortAI>();
             if (escort != null) escorts.Add(escort);
         }
-        // Left(음수 X)를 먼저, Right(양수 X)를 나중에 — V자 편대 좌측부터 순차 처리
-        escorts.Sort((a, b) => a.FormationOffset.x.CompareTo(b.FormationOffset.x));
+        // spawn 순서 = 슬롯 인덱스 순서 (Slot_01, Slot_02, ...). 정렬하지 않음.
         Debug.Log($"[AIManager] EscortLandingCoroutine started  escorts={escorts.Count}  hasPath={hasPath}");
 
-        foreach (var escort in escorts)
+        // 1.5초 간격으로 1번 에스코트부터 BeginLanding 호출.
+        // 각 에스코트는 자율적으로 자유비행(4초) → 어프로치 → 착함 진행.
+        // 시차 덕에 1번이 먼저 LandingApproach 진입 → 2번 → ... 자연스러운 순차 착함.
+        const float StaggerInterval = 1.5f;
+        for (int i = 0; i < escorts.Count; i++)
         {
-            Debug.Log($"[AIManager] → Calling BeginLanding on '{escort.name}'");
+            var escort = escorts[i];
+            Debug.Log($"[AIManager] → Calling BeginLanding on '{escort.name}' (slot {i + 1})");
             if (hasPath) escort.BeginLandingWithPath(carrier, approachDir, wirePos);
             else         escort.BeginLanding(carrier);
 
-            // 착함 완료까지 대기 (최대 90초)
-            float timeout = 90f;
-            while (!escort.IsLanded && timeout > 0f)
-            {
-                timeout -= Time.deltaTime;
-                yield return null;
-            }
-
-            yield return new WaitForSeconds(3f);
+            if (i < escorts.Count - 1)
+                yield return new WaitForSeconds(StaggerInterval);
         }
     }
 

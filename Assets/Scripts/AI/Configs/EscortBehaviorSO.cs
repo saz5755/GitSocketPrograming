@@ -45,8 +45,8 @@ public class EscortBehaviorSO : ScriptableObject
     public float leaderStopTimeout   = 2f;
 
     [Header("착함 어프로치")]
-    [Tooltip("BeginLanding 호출 시 어프로치 진입 전 자유비행 시간")]
-    public float freeFlightDuration = 5f;
+    [Tooltip("BeginLanding 호출 시 어프로치 진입 전 자유비행 시간 (플레이어 zone 진입 직후)")]
+    public float freeFlightDuration = 4f;
     [Tooltip("플레이어 와이어 위치에서 얼마나 뒤에 어프로치 웨이포인트를 설정할지")]
     public float approachDistance = 1500f;
     [Tooltip("어프로치 웨이포인트 고도(와이어 기준 위)")]
