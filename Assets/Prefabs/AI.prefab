@@ -217,9 +217,12 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 4160635106912926266}
+  - component: {fileID: 1228828314624171796}
+  - component: {fileID: -7942190390661286254}
+  - component: {fileID: -517297725358655814}
+  - component: {fileID: 6406557038143727355}
   - component: {fileID: 2000666198628466318}
   - component: {fileID: 7247021537001746904}
-  - component: {fileID: 6406557038143727355}
   - component: {fileID: 5196087537230184306}
   - component: {fileID: 8448826043390730952}
   m_Layer: 0
@@ -248,6 +251,69 @@ Transform:
   - {fileID: 5556629096807354128}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1228828314624171796
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6036812862657962760}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2bd43ed2991c7d04ebbca7a5bbf982c0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerController
+  nickname: 
+  isLocalPlayer: 0
+  lastReceivedTick: 0
+  _stats: {fileID: 11400000, guid: 11e11209456ba3148a9653297adb13e4, type: 2}
+--- !u!114 &-7942190390661286254
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6036812862657962760}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1990fa7d71b522e4c9a86ee8d4988ee9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::AIBotController
+  _config: {fileID: 11400000, guid: 14e4ea523f2055a4484033e34f87772b, type: 2}
+--- !u!114 &-517297725358655814
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6036812862657962760}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3b483ea764fd5e240abe86bb19617e3f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::EscortAI
+  _side: 0
+  _behavior: {fileID: 11400000, guid: d78024d2c5ba2c0428b912a2da8b6d25, type: 2}
+--- !u!114 &6406557038143727355
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6036812862657962760}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 52d6a8dd1ecc3914a9ba643c439fa590, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::F35VFXController
+  leftWingtip: {fileID: 0}
+  rightWingtip: {fileID: 0}
+  contrailThreshold: 15
+  _afterburnerVFXPrefab: {fileID: 0}
+  engineNozzle: {fileID: 0}
+  _additiveMaterial: {fileID: 0}
+  _shockDiamondMaterial: {fileID: 0}
+  _alphaMaterial: {fileID: 0}
 --- !u!136 &2000666198628466318
 CapsuleCollider:
   m_ObjectHideFlags: 0
@@ -293,22 +359,6 @@ Animator:
   m_AllowConstantClipSamplingOptimization: 1
   m_KeepAnimatorStateOnDisable: 0
   m_WriteDefaultValuesOnDisable: 0
---- !u!114 &6406557038143727355
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 6036812862657962760}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 52d6a8dd1ecc3914a9ba643c439fa590, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::F35VFXController
-  leftWingtip: {fileID: 0}
-  rightWingtip: {fileID: 0}
-  contrailThreshold: 15
-  engineNozzle: {fileID: 0}
 --- !u!65 &5196087537230184306
 BoxCollider:
   m_ObjectHideFlags: 0

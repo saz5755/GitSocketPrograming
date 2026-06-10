@@ -30,10 +30,11 @@ public class PlayerController : MonoBehaviour
             if (s_fallbackStats == null)
             {
                 s_fallbackStats = ScriptableObject.CreateInstance<AircraftStatsSO>();
-                Debug.LogWarning(
-                    $"[PlayerController] '{name}' has no AircraftStatsSO assigned — using built-in defaults. " +
-                    "Create one via Project window → Right Click → Create → KF21 → Aircraft → Aircraft Stats."
-                );
+                if (Application.isPlaying)
+                    Debug.LogWarning(
+                        $"[PlayerController] '{name}' has no AircraftStatsSO assigned — using built-in defaults. " +
+                        "Create one via Project window → Right Click → Create → KF21 → Aircraft → Aircraft Stats."
+                    );
             }
             return s_fallbackStats;
         }

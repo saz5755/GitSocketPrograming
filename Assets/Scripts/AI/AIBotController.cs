@@ -29,10 +29,11 @@ public class AIBotController : MonoBehaviour
             if (s_fallbackConfig == null)
             {
                 s_fallbackConfig = ScriptableObject.CreateInstance<AIBotConfigSO>();
-                Debug.LogWarning(
-                    $"[AIBotController] '{name}' has no AIBotConfigSO assigned — using built-in defaults. " +
-                    "Create one via Project window → Right Click → Create → KF21 → AI → Bot Config."
-                );
+                if (Application.isPlaying)
+                    Debug.LogWarning(
+                        $"[AIBotController] '{name}' has no AIBotConfigSO assigned — using built-in defaults. " +
+                        "Create one via Project window → Right Click → Create → KF21 → AI → Bot Config."
+                    );
             }
             return s_fallbackConfig;
         }
@@ -100,6 +101,20 @@ public class AIBotController : MonoBehaviour
     }
 
     public void SetMaxSpeed(float v) => _maxSpeed = Mathf.Max(0f, v);
+
+    // AIManager.BuildAIObject가 호출 — Awake 직후 SO 재할당 + 인스턴스 변수 재동기화
+    public void SetConfig(AIBotConfigSO config)
+    {
+        if (config == null) return;
+        _config                      = config;
+        _maxSpeed                    = config.maxSpeed;
+        _accel                       = config.accel;
+        _decel                       = config.decel;
+        _turnRate                    = config.turnRate;
+        _netUpdateInterval           = config.netUpdateInterval;
+        _skipBroadcastWhenStationary = config.skipBroadcastWhenStationary;
+        _stationarySpeedThreshold    = config.stationarySpeedThreshold;
+    }
 
     public void SetNickname(string nick)
     {

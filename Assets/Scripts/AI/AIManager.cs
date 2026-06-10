@@ -24,6 +24,12 @@ public class AIManager : MonoBehaviour
     [Tooltip("하이어라키의 Escort02_Position 오브젝트를 드래그")]
     [SerializeField] Transform _escortPos1;
 
+    [Header("AI 공통 설정 (모든 봇에 자동 주입)")]
+    [Tooltip("EscortBehaviorSO — 미할당 시 런타임 폴백 인스턴스 생성")]
+    [SerializeField] EscortBehaviorSO _escortBehavior;
+    [Tooltip("AIBotConfigSO — 미할당 시 런타임 폴백 인스턴스 생성")]
+    [SerializeField] AIBotConfigSO _botConfig;
+
     [Header("적 AI — 미사일 공격 + 위협 기동")]
     [SerializeField] bool _spawnEnemies = false;
     [SerializeField] [Range(1, 4)] int _enemyCount = 1;
@@ -128,6 +134,7 @@ public class AIManager : MonoBehaviour
             bool onDeck = posTrs[i] != null || carrier != null;
             var go     = BuildAIObject(nick, spawnPos, spawnRot);
             var escort = go.AddComponent<EscortAI>();
+            escort.SetBehavior(_escortBehavior);   // 슬롯 비어있으면 EscortAI가 폴백 사용
             escort.Initialize(leader.transform, sides[i], spawnedOnDeck: onDeck);
 
             // AIBotController.Awake() 이후에 추가해야 DisableIfPresent<> 영향을 받지 않음
@@ -255,6 +262,7 @@ public class AIManager : MonoBehaviour
     // 플레이어 항모 착함 후 호출 (GameModeManager 경로) — 에스코트 순차 착함
     public void BeginEscortLanding(Transform carrier)
     {
+        Debug.Log($"[AIManager] BeginEscortLanding called  isHost={_isHost}  landingStarted={_escortLandingStarted}  carrier={(carrier != null ? carrier.name : "null")}");
         if (!_isHost || _escortLandingStarted) return;
         _escortLandingStarted = true;
         StartCoroutine(EscortLandingCoroutine(carrier, Vector3.zero, Vector3.zero, false));
@@ -263,6 +271,7 @@ public class AIManager : MonoBehaviour
     // 어레스팅 와이어 정지 후 호출 (ArrestingWireSystem 경로) — 플레이어 경로로 순차 착함
     public void BeginEscortLandingFromWire(Vector3 approachDir, Vector3 wirePos)
     {
+        Debug.Log($"[AIManager] BeginEscortLandingFromWire called  isHost={_isHost}  landingStarted={_escortLandingStarted}  dir={approachDir}  wirePos={wirePos}");
         if (!_isHost || _escortLandingStarted) return;
         _escortLandingStarted = true;
         var carrierTr = _cachedCarrier?.transform ?? FindObjectOfType<CarrierController>()?.transform;
@@ -280,9 +289,11 @@ public class AIManager : MonoBehaviour
             if (escort != null) escorts.Add(escort);
         }
         escorts.Sort((a, b) => a.Side == EscortAI.EscortSide.Left ? -1 : 1);
+        Debug.Log($"[AIManager] EscortLandingCoroutine started  escorts={escorts.Count}  hasPath={hasPath}");
 
         foreach (var escort in escorts)
         {
+            Debug.Log($"[AIManager] → Calling BeginLanding on '{escort.name}'");
             if (hasPath) escort.BeginLandingWithPath(carrier, approachDir, wirePos);
             else         escort.BeginLanding(carrier);
 
@@ -375,6 +386,7 @@ public class AIManager : MonoBehaviour
             go.AddComponent<PlayerController>();
 
         var bot = go.AddComponent<AIBotController>();
+        bot.SetConfig(_botConfig);   // 슬롯 비어있으면 AIBotController가 폴백 사용
         bot.SetNickname(nick);
         return go;
     }

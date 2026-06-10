@@ -36,10 +36,11 @@ public class EscortAI : MonoBehaviour
             if (s_fallbackBehavior == null)
             {
                 s_fallbackBehavior = ScriptableObject.CreateInstance<EscortBehaviorSO>();
-                Debug.LogWarning(
-                    $"[EscortAI] '{name}' has no EscortBehaviorSO assigned — using built-in defaults. " +
-                    "Create one via Project window → Right Click → Create → KF21 → AI → Escort Behavior."
-                );
+                if (Application.isPlaying)
+                    Debug.LogWarning(
+                        $"[EscortAI] '{name}' has no EscortBehaviorSO assigned — using built-in defaults. " +
+                        "Create one via Project window → Right Click → Create → KF21 → AI → Escort Behavior."
+                    );
             }
             return s_fallbackBehavior;
         }
@@ -99,6 +100,12 @@ public class EscortAI : MonoBehaviour
 
     // ── 외부 API ──────────────────────────────────────────────────────────────
 
+    // AIManager가 SpawnEscorts에서 호출 — Initialize 전에 SO 주입
+    public void SetBehavior(EscortBehaviorSO behavior)
+    {
+        if (behavior != null) _behavior = behavior;
+    }
+
     public void Initialize(Transform leader, EscortSide side, bool spawnedOnDeck)
     {
         _leader = leader;
@@ -152,13 +159,21 @@ public class EscortAI : MonoBehaviour
 
     void BeginLandingShared()
     {
-        if (_phase == Phase.FreeFlightZone || _phase == Phase.Escorting)
+        // 이미 착함 진행 중이거나 갑판/완료 상태면 무시
+        if (_phase == Phase.OnDeck || _phase == Phase.Landed ||
+            _phase == Phase.BeingArrested || _phase == Phase.LandingApproach ||
+            _phase == Phase.FreeFlight)
         {
-            _freeFlightTimer      = 0f;
-            _bot.PositionOverride = false;
-            _phase                = Phase.FreeFlight;
+            Debug.Log($"[EscortAI] {name}: BeginLanding IGNORED, phase={_phase}");
+            return;
         }
-        // 이미 어프로치 이후면 무시
+
+        // Launching / Escorting / FreeFlightZone → FreeFlight (5초 자유비행 후 어프로치)
+        Phase prev = _phase;
+        _freeFlightTimer      = 0f;
+        _bot.PositionOverride = false;
+        _phase                = Phase.FreeFlight;
+        Debug.Log($"[EscortAI] {name}: BeginLanding {prev} → FreeFlight (hasPath={_hasApproachInfo})");
     }
 
     // AIManager.BeginEscortFreeFlightNow() 에서 호출 — 즉시 자유비행 전환 (Escorting/Launching 시)
@@ -396,6 +411,7 @@ public class EscortAI : MonoBehaviour
             SetupApproach();
             _bot.PositionOverride = true;
             _phase = Phase.LandingApproach;
+            Debug.Log($"[EscortAI] {name}: FreeFlight → LandingApproach, wp={_approachWaypoint}, landingSpot={_landingSpot}, hasPath={_hasApproachInfo}");
         }
     }
 

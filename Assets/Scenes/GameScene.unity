@@ -8312,7 +8312,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4ebb5e45b35c53e428b79a43f3c2d8eb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ArrestingWireSystem
-  _config: {fileID: 0}
+  _config: {fileID: 11400000, guid: 02dfd827919c30045acfb2f977102811, type: 2}
 --- !u!1 &944216540
 GameObject:
   m_ObjectHideFlags: 0
@@ -10245,6 +10245,8 @@ MonoBehaviour:
   _escortCount: 2
   _escortPos0: {fileID: 1832628551}
   _escortPos1: {fileID: 1817487213}
+  _escortBehavior: {fileID: 11400000, guid: d78024d2c5ba2c0428b912a2da8b6d25, type: 2}
+  _botConfig: {fileID: 11400000, guid: 14e4ea523f2055a4484033e34f87772b, type: 2}
   _spawnEnemies: 0
   _enemyCount: 2
 --- !u!1 &1271288922
