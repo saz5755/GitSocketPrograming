@@ -305,6 +305,12 @@ public class AIManager : MonoBehaviour
         for (int i = 0; i < escorts.Count; i++)
         {
             var escort = escorts[i];
+
+            // 발진 중(Launching)이면 종료까지 대기 — 4초 지연 발진된 후속 에스코트가
+            // BeginLanding 호출 받아 발진이 중간에 끊기는 것을 방지
+            while (escort != null && escort.IsLaunching) yield return null;
+            if (escort == null) continue;
+
             Debug.Log($"[AIManager] → Calling BeginLanding on '{escort.name}' (slot {i + 1})");
             if (hasPath) escort.BeginLandingWithPath(carrier, approachDir, wirePos);
             else         escort.BeginLanding(carrier);

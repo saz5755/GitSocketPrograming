@@ -77,6 +77,7 @@ public class EscortAI : MonoBehaviour
 
     public Vector3 FormationOffset => _formationOffset;
     public bool    IsLeftSide      => _formationOffset.x < 0f;
+    public bool    IsLaunching     => _phase == Phase.Launching;
     public bool    IsLanded        => _phase == Phase.Landed || _phase == Phase.BeingArrested;
     // ArrestingWireSystem이 체결 시도 여부를 판단하는 프로퍼티
     public bool    IsInApproachRun => _phase == Phase.LandingApproach;
@@ -166,8 +167,10 @@ public class EscortAI : MonoBehaviour
 
     void BeginLandingShared()
     {
-        // 이미 착함 진행 중이거나 갑판/완료 상태면 무시
-        if (_phase == Phase.OnDeck || _phase == Phase.Landed ||
+        // 발진 중(Launching) + 이미 착함 진행 중/갑판/완료 상태면 무시.
+        // Launching은 6초 직진이 의도이므로 끊지 않음 (AIManager.EscortLandingCoroutine이
+        // IsLaunching=false 될 때까지 대기 후 다시 호출).
+        if (_phase == Phase.OnDeck || _phase == Phase.Landed || _phase == Phase.Launching ||
             _phase == Phase.BeingArrested || _phase == Phase.LandingApproach ||
             _phase == Phase.FreeFlight)
         {
@@ -175,7 +178,7 @@ public class EscortAI : MonoBehaviour
             return;
         }
 
-        // Launching / Escorting / FreeFlightZone → FreeFlight (5초 자유비행 후 어프로치)
+        // Escorting / FreeFlightZone → FreeFlight (자유비행 후 어프로치)
         Phase prev = _phase;
         _freeFlightTimer      = 0f;
         _bot.PositionOverride = false;
@@ -251,11 +254,10 @@ public class EscortAI : MonoBehaviour
     void Update()
     {
         // ── 매 프레임 leader zone 위치 기반 페이즈 보정 ──────────────────────
-        // EscortZoneTrigger의 이벤트가 발화되지 못한 케이스(이륙 첫 프레임 등) 폴백 +
-        // Escorting/Launching에서 leader가 zone 안에 들어왔으면 즉시 FreeFlightZone으로 전환해
-        // V-formation 추종(빙글빙글) 동작을 차단한다.
-        if (_leader != null && EscortZoneTrigger.Instance != null
-            && (_phase == Phase.Escorting || _phase == Phase.Launching))
+        // EscortZoneTrigger의 이벤트가 발화되지 못한 케이스(이륙 첫 프레임 등) 폴백.
+        // Launching은 6초 직진 유지가 의도라 제외 — Escorting에서만 leader가 zone 안에 있으면
+        // 즉시 FreeFlightZone으로 전환해 V-formation 추종(빙글빙글) 동작을 차단한다.
+        if (_leader != null && EscortZoneTrigger.Instance != null && _phase == Phase.Escorting)
         {
             if (EscortZoneTrigger.Instance.IsInsideXZ(_leader.position))
             {
