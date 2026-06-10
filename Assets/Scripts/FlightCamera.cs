@@ -47,9 +47,7 @@ public class FlightCamera : MonoBehaviour
     Renderer[] _exteriorRenderers; // 추격 카메라에서만 표시 (코크핏 시 숨김)
     Renderer[] _cockpitRenderers;  // 코크핏 모드에서만 표시
     Renderer[] _alwaysRenderers;   // 항상 표시 — 날개가 양쪽에서 보여야 하므로
-    Renderer   _canopyRenderer;    // 항상 표시, 코크핏 시 유리 재질
-    Material   _canopySolidMat;    // 원본 캐노피 재질
-    Material   _canopyGlassMat;    // 투명 유리 재질
+    Renderer _canopyRenderer;  // 항상 표시 유지용 참조
 
     float freeLookYaw   = 0f;
     float freeLookPitch = 0f;
@@ -114,8 +112,6 @@ public class FlightCamera : MonoBehaviour
             if (n == CanopyObjectName)
             {
                 _canopyRenderer = r;
-                _canopySolidMat = r.sharedMaterial;
-                _canopyGlassMat = MakeCanopyGlass();
             }
             else if (AlwaysVisibleNames.Contains(n))
             {
@@ -340,12 +336,8 @@ public class FlightCamera : MonoBehaviour
         if (_cockpitRenderers != null)
             foreach (var r in _cockpitRenderers) r.enabled = cockpit;
 
-        // 캐노피: 항상 표시, 코크핏 모드에서 투명 유리 재질 적용
         if (_canopyRenderer != null)
-        {
-            _canopyRenderer.enabled  = true;
-            _canopyRenderer.material = cockpit ? _canopyGlassMat : _canopySolidMat;
-        }
+            _canopyRenderer.enabled = true;
 
         mfdController?.SetVisible(cockpit && withHUD);
 
@@ -354,60 +346,4 @@ public class FlightCamera : MonoBehaviour
         _flightHUD?.SetCockpitGlass(cockpit && withHUD, GetComponent<Camera>());
     }
 
-    // ── 캐노피 유리 재질 생성 ────────────────────────────────────────────────
-    // 목표: 바깥이 훤히 보이되 코팅 유리 느낌(고광택 반사 + 극미세 청색 틴트)
-    // 소스에서 복사하지 않고 새 재질로 만들어야 URP 런타임 투명 처리가 확실히 됨
-    static Material MakeCanopyGlass()
-    {
-        var urpShader = Shader.Find("Universal Render Pipeline/Lit");
-        bool isUrp    = urpShader != null;
-        var mat       = new Material(isUrp ? urpShader : Shader.Find("Standard"));
-        mat.name      = "KF21_CanopyGlass_Runtime";
-
-        // 극투명 하늘색 틴트 (alpha 0.06 = 코팅 느낌만, 바깥은 훤히 보임)
-        mat.color = new Color(0.75f, 0.90f, 1.00f, 0.06f);
-
-        if (isUrp)
-        {
-            // URP Lit: Surface Type과 블렌드 레지스터를 모두 설정해야 실제 투명 처리됨
-            mat.SetFloat("_Surface",         1f);   // 0=Opaque, 1=Transparent
-            mat.SetFloat("_Blend",           0f);   // 0=Alpha
-            mat.SetFloat("_AlphaClip",       0f);
-            mat.SetFloat("_ZWrite",          0f);
-            mat.SetFloat("_ZWriteControl",   0f);
-
-            // 실제 GPU 블렌드 모드 레지스터 직접 지정
-            mat.SetInt("_SrcBlend",      (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-            mat.SetInt("_DstBlend",      (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-            mat.SetInt("_SrcBlendAlpha", (int)UnityEngine.Rendering.BlendMode.One);
-            mat.SetInt("_DstBlendAlpha", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-
-            mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
-            mat.DisableKeyword("_ALPHATEST_ON");
-            mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
-            mat.SetOverrideTag("RenderType", "Transparent");
-
-            // 고광택 → 유리 반사 코팅 느낌
-            mat.SetFloat("_Smoothness", 0.97f);
-            mat.SetFloat("_Metallic",   0.00f);
-            if (mat.HasProperty("_EnvironmentReflections"))
-                mat.SetFloat("_EnvironmentReflections", 1f);
-        }
-        else
-        {
-            // Standard shader fallback
-            mat.SetFloat("_Mode", 3f);
-            mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-            mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-            mat.SetInt("_ZWrite",   0);
-            mat.DisableKeyword("_ALPHATEST_ON");
-            mat.EnableKeyword("_ALPHABLEND_ON");
-            mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
-            mat.SetFloat("_Glossiness", 0.97f);
-            mat.SetFloat("_Metallic",   0.00f);
-        }
-
-        mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
-        return mat;
-    }
 }

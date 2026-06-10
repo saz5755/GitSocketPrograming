@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 
 /// <summary>
@@ -33,10 +34,13 @@ public class CockpitSwitch : MonoBehaviour
 
     Renderer _rend;
     Material _mat;
+    Vector3  _originalLocalEuler;
+    Coroutine _leverRoutine;
 
     // ─────────────────────────────────────────────────────────────────────────
     void Awake()
     {
+        _originalLocalEuler = transform.localEulerAngles;
         _rend = GetComponent<Renderer>();
         _mat  = new Material(_rend.sharedMaterial != null
             ? _rend.sharedMaterial
@@ -71,6 +75,33 @@ public class CockpitSwitch : MonoBehaviour
 
     public void SetState(State state) => Apply(state);
     public void SetVisible(bool visible) => _rend.enabled = visible;
+
+    public void RotateLever(float degrees = 90f, float duration = 0.4f)
+    {
+        if (_leverRoutine != null) StopCoroutine(_leverRoutine);
+        _leverRoutine = StartCoroutine(AnimateLever(degrees, duration));
+    }
+
+    public void ResetLever()
+    {
+        if (_leverRoutine != null) { StopCoroutine(_leverRoutine); _leverRoutine = null; }
+        transform.localEulerAngles = _originalLocalEuler;
+    }
+
+    System.Collections.IEnumerator AnimateLever(float degrees, float duration)
+    {
+        Quaternion from = Quaternion.Euler(_originalLocalEuler);
+        Quaternion to   = Quaternion.Euler(_originalLocalEuler + new Vector3(degrees, 0f, 0f));
+        float t = 0f;
+        while (t < duration)
+        {
+            t += Time.deltaTime;
+            transform.localRotation = Quaternion.Slerp(from, to, t / duration);
+            yield return null;
+        }
+        transform.localRotation = to;
+        _leverRoutine = null;
+    }
 
     // ─────────────────────────────────────────────────────────────────────────
     void Apply(State state)

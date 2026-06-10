@@ -35,6 +35,14 @@ public class CarrierController : MonoBehaviour
     [Header("카타펄트")]
     [SerializeField] float catapultSpeedMS = 72f;
 
+    [Header("에스코트 존")]
+    [SerializeField] float escortZoneRadius = 800f;
+    public float EscortZoneRadius => escortZoneRadius;
+
+    [Header("에스코트 내측 회피 존 (항모 주변 진입 금지 반경)")]
+    [SerializeField] float innerAvoidanceRadius = 350f;
+    public float InnerAvoidanceRadius => innerAvoidanceRadius;
+
     // ── 내부 참조 ─────────────────────────────────────────────────────────────
     Rigidbody    _rb;
     AircraftZone _landingZone;
@@ -212,6 +220,26 @@ public class CarrierController : MonoBehaviour
         tzGO.transform.localPosition = takeoffZoneLocal;
         _takeoffZone = tzGO.AddComponent<AircraftZone>();
         _takeoffZone.Configure(AircraftZone.Type.Takeoff, takeoffZoneRadius);
+
+        // 에스코트 외부 존 — 이 반경 내부에서 자유비행
+        var ezGO = new GameObject("EscortZone");
+        ezGO.transform.SetParent(transform, false);
+        var ezCol = ezGO.AddComponent<SphereCollider>();
+        ezCol.isTrigger = true;
+        ezCol.radius = escortZoneRadius;
+        if (Application.isPlaying)
+            ezGO.AddComponent<EscortZoneTrigger>();
+
+        // 에스코트 내측 회피 존 — 이 반경 내부로는 자유비행 중 진입하지 않음
+        if (Application.isPlaying)
+        {
+            var izGO = new GameObject("EscortInnerZone");
+            izGO.transform.SetParent(transform, false);
+            var izCol = izGO.AddComponent<SphereCollider>();
+            izCol.isTrigger = true;
+            izCol.radius = innerAvoidanceRadius;
+            izGO.AddComponent<EscortInnerZoneTrigger>();
+        }
     }
 
     // 카타펄트 오피서 NPC — 탑승 존 앞쪽, 항모 진행 방향을 바라보며 대기

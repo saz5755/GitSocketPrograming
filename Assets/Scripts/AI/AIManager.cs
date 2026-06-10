@@ -30,9 +30,15 @@ public class AIManager : MonoBehaviour
 
     bool _isHost;
     bool _initialized;
+    bool _escortLandingStarted;
 
     // 호스트가 관리하는 AI 봇 목록
     readonly List<AIBotController> _bots = new();
+
+    CarrierController _cachedCarrier;
+
+    // 로컬 플레이어의 원래 항공기 (에스코트 전환 기준)
+    PlayerController _localPlayerAircraft;
 
     // 원격 클라이언트에서 AI를 표시하는 PlayerController 뷰
     readonly Dictionary<string, PlayerController> _remoteBots = new();
@@ -80,7 +86,11 @@ public class AIManager : MonoBehaviour
 
     void SpawnEscorts(PlayerController leader)
     {
+        _localPlayerAircraft  = leader;
+        _escortLandingStarted = false;
+
         var carrier = FindObjectOfType<CarrierController>();
+        _cachedCarrier = carrier;
         var sides   = new[] { EscortAI.EscortSide.Left, EscortAI.EscortSide.Right };
         int count   = Mathf.Clamp(_escortCount, 1, 2);
 
@@ -99,20 +109,17 @@ public class AIManager : MonoBehaviour
 
             if (posTrs[i] != null)
             {
-                // 씬 오브젝트 위치 사용 (월드 좌표)
                 spawnPos = posTrs[i].position;
                 spawnRot = carrier != null ? carrier.transform.rotation : leader.transform.rotation;
             }
             else if (carrier != null)
             {
-                // 폴백: 항모 로컬 기본값
                 Vector3 localOff = i == 0 ? new Vector3(-15f, 5.5f, 60f) : new Vector3(-18.5f, 5.5f, 40f);
                 spawnPos = carrier.transform.TransformPoint(localOff);
                 spawnRot = carrier.transform.rotation;
             }
             else
             {
-                // 폴백: 리더 기준 오프셋
                 Vector3 off = i == 0 ? new Vector3(-32f, -5f, -40f) : new Vector3(32f, -5f, -40f);
                 spawnPos = leader.transform.TransformPoint(off);
                 spawnRot = leader.transform.rotation;
@@ -122,6 +129,10 @@ public class AIManager : MonoBehaviour
             var go     = BuildAIObject(nick, spawnPos, spawnRot);
             var escort = go.AddComponent<EscortAI>();
             escort.Initialize(leader.transform, sides[i], spawnedOnDeck: onDeck);
+
+            // AIBotController.Awake() 이후에 추가해야 DisableIfPresent<> 영향을 받지 않음
+            go.AddComponent<AircraftBoardingTrigger>();
+            go.AddComponent<EscortVFXController>();
 
             _bots.Add(go.GetComponent<AIBotController>());
             NetworkManager.Instance?.socketClient?.SendAISpawn(
@@ -201,35 +212,143 @@ public class AIManager : MonoBehaviour
     // 플레이어 발진 후 호출 — 적 AI 전투 시작 + 에스코트 순차 발진
     public void EnableAICombat()
     {
+        _escortLandingStarted = false;
         // 적 전투 활성
         foreach (var bot in _bots)
             bot?.GetComponent<EnemyAI>()?.EnableCombat();
 
-        // 로컬 플레이어 탐색
-        PlayerController localPlayer = null;
-        foreach (var pc in PlayerController.All)
-            if (pc != null && pc.isLocalPlayer) { localPlayer = pc; break; }
-        if (localPlayer == null) return;
-
-        // BOT_E1 먼저 찾아두기 (BOT_E2의 경로 기준)
-        Transform bot1Transform = null;
-        foreach (var bot in _bots)
-            if (bot != null && bot.Nickname == "BOT_E1") { bot1Transform = bot.transform; break; }
-
-        // 에스코트 순차 발진
-        // BOT_E1 → 플레이어 경로를 launchDelay 초 지연 재생
-        // BOT_E2 → BOT_E1 경로를 launchDelay 초 지연 재생 (= 플레이어로부터 2×launchDelay 지연)
+        // 에스코트 순차 발진: Left → Right 순, 4초 간격으로 캐터펄트 발진
+        var escorts = new System.Collections.Generic.List<EscortAI>();
         foreach (var bot in _bots)
         {
             if (bot == null) continue;
             var escort = bot.GetComponent<EscortAI>();
-            if (escort == null) continue;
-
-            if (bot.Nickname == "BOT_E1")
-                escort.BeginLaunchSequence(localPlayer.transform);
-            else if (bot.Nickname == "BOT_E2")
-                escort.BeginLaunchSequence(bot1Transform ?? localPlayer.transform);
+            if (escort != null) escorts.Add(escort);
         }
+        escorts.Sort((a, b) => a.Side == EscortAI.EscortSide.Left ? -1 : 1);
+
+        for (int i = 0; i < escorts.Count; i++)
+        {
+            var e = escorts[i];
+            if (i == 0) e.BeginLaunchSequence();
+            else        StartCoroutine(DelayedLaunch(e, i * 4f));
+        }
+    }
+
+    System.Collections.IEnumerator DelayedLaunch(EscortAI escort, float delay)
+    {
+        yield return new WaitForSeconds(delay);
+        escort.BeginLaunchSequence();
+    }
+
+    // 플레이어 어레스팅 와이어 체결 직후 호출 — 에스코트 즉시 자유비행 전환
+    public void BeginEscortFreeFlightNow()
+    {
+        if (!_isHost) return;
+        foreach (var bot in _bots)
+        {
+            if (bot == null) continue;
+            bot.GetComponent<EscortAI>()?.ForceFreeFlight();
+        }
+    }
+
+    // 플레이어 항모 착함 후 호출 (GameModeManager 경로) — 에스코트 순차 착함
+    public void BeginEscortLanding(Transform carrier)
+    {
+        if (!_isHost || _escortLandingStarted) return;
+        _escortLandingStarted = true;
+        StartCoroutine(EscortLandingCoroutine(carrier, Vector3.zero, Vector3.zero, false));
+    }
+
+    // 어레스팅 와이어 정지 후 호출 (ArrestingWireSystem 경로) — 플레이어 경로로 순차 착함
+    public void BeginEscortLandingFromWire(Vector3 approachDir, Vector3 wirePos)
+    {
+        if (!_isHost || _escortLandingStarted) return;
+        _escortLandingStarted = true;
+        var carrierTr = _cachedCarrier?.transform ?? FindObjectOfType<CarrierController>()?.transform;
+        StartCoroutine(EscortLandingCoroutine(carrierTr, approachDir, wirePos, true));
+    }
+
+    System.Collections.IEnumerator EscortLandingCoroutine(
+        Transform carrier, Vector3 approachDir, Vector3 wirePos, bool hasPath)
+    {
+        var escorts = new System.Collections.Generic.List<EscortAI>();
+        foreach (var bot in _bots)
+        {
+            if (bot == null) continue;
+            var escort = bot.GetComponent<EscortAI>();
+            if (escort != null) escorts.Add(escort);
+        }
+        escorts.Sort((a, b) => a.Side == EscortAI.EscortSide.Left ? -1 : 1);
+
+        foreach (var escort in escorts)
+        {
+            if (hasPath) escort.BeginLandingWithPath(carrier, approachDir, wirePos);
+            else         escort.BeginLanding(carrier);
+
+            // 착함 완료까지 대기 (최대 90초)
+            float timeout = 90f;
+            while (!escort.IsLanded && timeout > 0f)
+            {
+                timeout -= Time.deltaTime;
+                yield return null;
+            }
+
+            yield return new WaitForSeconds(3f);
+        }
+    }
+
+    // ── 에스코트 AI 기체 탑승 전환 ─────────────────────────────────────────
+    // newPlayerPC: 플레이어가 탑승할 에스코트 AI 기체
+    // oldPlayerPC: 기존 플레이어 기체 (에스코트 AI로 전환됨)
+    public void TakeOverEscortBot(PlayerController newPlayerPC, PlayerController oldPlayerPC)
+    {
+        if (!_isHost) return;
+
+        string playerNickname = oldPlayerPC.nickname;
+
+        // 1. 선택된 에스코트의 AI 컴포넌트 정보 저장 후 제거
+        var escortAI  = newPlayerPC.GetComponent<EscortAI>();
+        var escortBot = newPlayerPC.GetComponent<AIBotController>();
+        string         botNick = escortBot?.Nickname ?? "BOT_E1";
+        EscortAI.EscortSide botSide = escortAI?.Side ?? EscortAI.EscortSide.Left;
+
+        if (escortAI  != null) { escortAI.StopAllCoroutines();  Destroy(escortAI);  }
+        if (escortBot != null) { _bots.Remove(escortBot); Destroy(escortBot); }
+
+        // 탑승한 기체의 BoardingTrigger 제거 — 플레이어 기체에는 불필요
+        var bt = newPlayerPC.GetComponent<AircraftBoardingTrigger>();
+        if (bt != null) Destroy(bt);
+
+        // 2. 해당 기체를 로컬 플레이어 항공기로 전환
+        newPlayerPC.nickname      = playerNickname;
+        newPlayerPC.isLocalPlayer = true;
+
+        // 3. 기존 플레이어 기체를 에스코트 AI로 전환
+        // AddComponent<AIBotController>() Awake가 AircraftBoardingTrigger를 자동 비활성화함
+        var newBot = oldPlayerPC.gameObject.AddComponent<AIBotController>();
+        newBot.SetNickname(botNick);
+        newBot.PositionOverride = true;
+
+        var newEscort = oldPlayerPC.gameObject.AddComponent<EscortAI>();
+        newEscort.Initialize(newPlayerPC.transform, botSide, spawnedOnDeck: true);
+        _bots.Add(newBot);
+
+        // 4. 남은 에스코트 봇의 리더를 새 플레이어 기체로 업데이트
+        foreach (var bot in _bots)
+        {
+            if (bot == null || bot == newBot) continue;
+            bot.GetComponent<EscortAI>()?.UpdateLeader(newPlayerPC.transform);
+        }
+
+        // 5. 멀티플레이어 동기화: 기존 AI 제거 알림 + 새 AI(이전 플레이어 기체) 스폰 알림
+        var sc = NetworkManager.Instance?.socketClient;
+        sc?.SendAIDespawn(botNick);
+        sc?.SendAISpawn(botNick, oldPlayerPC.transform.position,
+                        oldPlayerPC.transform.eulerAngles, aiType: 0);
+
+        _localPlayerAircraft = newPlayerPC;
+        Debug.Log($"[AIManager] Escort takeover: '{botNick}' → player, player aircraft → '{botNick}' AI");
     }
 
     public static bool IsAIBot(string nickname)    => nickname.StartsWith("BOT_");

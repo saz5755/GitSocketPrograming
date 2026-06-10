@@ -61,6 +61,10 @@ public class ArrestingWireSystem : MonoBehaviour
     PlayerController     _local;
     Material             _deckMat; // Aircraft_carrier_Mesh_334 에서 가져온 갑판 재질
 
+    // 플레이어 착함 시 에스코트 경로 설정용
+    Vector3 _arrestApproachDir;
+    Vector3 _arrestWirePos;
+
     // 와이어 Emission 색상 (HDR — 블룸 효과)
     static readonly Color EmAvail   = new Color(0.12f, 0.09f, 0.00f);     // 미세 황금 글로우
     static readonly Color EmCaught  = new Color(2.50f, 0.50f, 0.00f);     // HDR 주황 (착함 충격)
@@ -395,8 +399,9 @@ public class ArrestingWireSystem : MonoBehaviour
     // ── Update ─────────────────────────────────────────────────────────────────
     void Update()
     {
-        if (_local == null)
+        if (_local == null || !_local.isLocalPlayer)
         {
+            _local = null;
             foreach (var pc in PlayerController.All)
                 if (pc != null && pc.isLocalPlayer) { _local = pc; break; }
             if (_local == null) return;
@@ -429,6 +434,8 @@ public class ArrestingWireSystem : MonoBehaviour
                     ws.stopped    = true;
                     ws.resetTimer = resetDelay;
                     SetColors(ws, EmStopped, ColLineStopped, ColZoneStopped);
+                    // 플레이어 완전 정지 후 에스코트 순차 착함 시작 (플레이어와 동일 경로)
+                    AIManager.Instance?.BeginEscortLandingFromWire(_arrestApproachDir, _arrestWirePos);
                     Debug.Log($"[ArrestWire] Wire {i + 1}: 정지 → EndArrest");
                 }
 
@@ -490,14 +497,23 @@ public class ArrestingWireSystem : MonoBehaviour
             ws.caught       = true;
             ws.stopped      = false;
             ws.wireWorldY   = ws.root.TransformPoint(Vector3.zero).y;
-            ws.deckTargetY  = DetectDeckY(_local.transform.position, ws.wireWorldY + 0.3f);
+            ws.deckTargetY  = DetectDeckY(_local.transform.position, ws.wireWorldY + 0.3f, _local.transform);
             ws.apexPos      = ws.root.TransformPoint(Vector3.zero);
             ws.apexVel      = _local.transform.forward * (speed * 0.25f);
             ws.oscDecay     = 1.0f;
             ws.prevPosValid = false; // 체결 직후 스윕 오감지 방지
             SetColors(ws, EmCaught, ColLineCaught, ColZoneCaught);
             _local.BeginArrest();
+            _arrestApproachDir = _local.transform.forward;
+            _arrestWirePos     = ws.root.TransformPoint(Vector3.zero);
             Debug.Log($"[ArrestWire] Wire {i + 1} 체결! 속도={speed:F1} m/s  deckY={ws.deckTargetY:F2}");
+        }
+
+        for (int i = 0; i < _wires.Length; i++)
+        {
+            var ws = _wires[i];
+            // ── 어레스팅 와이어 에스코트 체결 감지 ──────────────────────────
+            if (!ws.caught) CheckEscortWire(ws, i);
         }
     }
 
@@ -512,20 +528,44 @@ public class ArrestingWireSystem : MonoBehaviour
 
     // ── 갑판 Y Raycast 탐색 (ConstrainToSurface 동일 로직) ────────────────────
     static readonly RaycastHit[] _deckHits = new RaycastHit[8];
-    float DetectDeckY(Vector3 fromPos, float fallbackY)
+    float DetectDeckY(Vector3 fromPos, float fallbackY, Transform ignoreSelf = null)
     {
         int count = Physics.RaycastNonAlloc(
             fromPos + Vector3.up * 3f, Vector3.down,
             _deckHits, 8f,
             Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
 
+        var skip = ignoreSelf ?? _local?.transform;
         float bestY = float.MinValue;
         for (int k = 0; k < count; k++)
         {
-            if (_deckHits[k].transform.IsChildOf(_local.transform)) continue;
+            if (skip != null && _deckHits[k].transform.IsChildOf(skip)) continue;
             if (_deckHits[k].point.y > bestY) bestY = _deckHits[k].point.y;
         }
         return bestY > float.MinValue ? bestY + 0.3f : fallbackY;
+    }
+
+    void CheckEscortWire(WireState ws, int wireIdx)
+    {
+        foreach (var escort in EscortAI.AllEscorts)
+        {
+            if (escort == null || !escort.IsInApproachRun) continue;
+
+            Vector3 lp = ws.root.InverseTransformPoint(escort.transform.position);
+
+            // 에스코트 어프로치 속도(25 m/s)는 낮아 매 프레임 감지로 충분.
+            // ws.prevLocal* 은 플레이어 위치이므로 에스코트 swept 감지에 사용하면 오감지 발생.
+            bool inZone = Mathf.Abs(lp.x) < wireWidth * 0.5f &&
+                          lp.y > -1f && lp.y < triggerHeight &&
+                          Mathf.Abs(lp.z) < triggerDepth * 0.5f;
+
+            if (!inZone) continue;
+
+            float deckY = DetectDeckY(escort.transform.position, ws.wireWorldY + 0.3f, escort.transform);
+            escort.OnWireCaught(deckY);
+            Debug.Log($"[ArrestWire] Wire {wireIdx + 1} 에스코트 체결: {escort.name}");
+            break;
+        }
     }
 
     // ── 스무스 착지 ──────────────────────────────────────────────────────────

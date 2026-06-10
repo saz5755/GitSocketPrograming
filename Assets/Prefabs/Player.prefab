@@ -570,6 +570,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: KF21_Model
       objectReference: {fileID: 0}
+    - target: {fileID: 1415832088092921694, guid: 2e28a1494a96aab46b5ef3c8a5880f33, type: 3}
+      propertyPath: 'm_Materials.Array.data[0]'
+      value: 
+      objectReference: {fileID: 2100000, guid: 1c8a2029f0045434f800792da8835d08, type: 2}
     - target: {fileID: 3015375989234949221, guid: 2e28a1494a96aab46b5ef3c8a5880f33, type: 3}
       propertyPath: m_IsActive
       value: 1

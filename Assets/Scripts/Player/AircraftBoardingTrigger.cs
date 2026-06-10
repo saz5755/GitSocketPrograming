@@ -33,6 +33,16 @@ public class AircraftBoardingTrigger : MonoBehaviour
 
     void OnDestroy() => All.Remove(this);
 
+    void OnDisable()
+    {
+        SetUIVisible(false);
+        if (_playerInRange)
+        {
+            _playerInRange = false;
+            GameModeManager.Instance?.ClearBoardingTarget(this);
+        }
+    }
+
     void Update()
     {
         if (!Application.isPlaying) return;

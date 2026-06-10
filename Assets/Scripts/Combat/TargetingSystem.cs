@@ -47,7 +47,7 @@ public class TargetingSystem : MonoBehaviour
 
     void Update()
     {
-        if (LocalPlayer == null) { FindLocal(); return; }
+        if (LocalPlayer == null || !LocalPlayer.isLocalPlayer) { FindLocal(); if (LocalPlayer == null) return; }
         _cam = Camera.main;
 
         _scanTimer += Time.deltaTime;

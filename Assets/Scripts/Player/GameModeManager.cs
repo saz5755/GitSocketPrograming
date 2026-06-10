@@ -200,7 +200,13 @@ public class GameModeManager : MonoBehaviour
         // (원형 E키 UI는 AircraftBoardingTrigger 월드 UI가 표시)
         if (_boardingTrigger != null && Input.GetKeyDown(KeyCode.F))
         {
-            _pc              = _boardingTrigger.Aircraft;
+            var boardedPC = _boardingTrigger.Aircraft;
+
+            // 에스코트 AI 기체 탑승 시: 해당 AI를 플레이어 기체로, 기존 기체를 에스코트 AI로 전환
+            if (boardedPC.GetComponent<AIBotController>() != null)
+                AIManager.Instance?.TakeOverEscortBot(boardedPC, _pc);
+
+            _pc              = boardedPC;
             _boardingCarrier = FindObjectOfType<CarrierController>();
             EnterCockpit(_pc.transform.position);
         }
@@ -328,6 +334,10 @@ public class GameModeManager : MonoBehaviour
         _fc?.SetGroundTarget(_gc.transform);
         _hud?.SetVisible(false);
 
+        // 항모 착함 시: 에스코트 AI 순차 착함 시작
+        if (platform != null)
+            AIManager.Instance?.BeginEscortLanding(platform);
+
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible   = false;
 
@@ -339,6 +349,8 @@ public class GameModeManager : MonoBehaviour
     {
         _trapping = true;
         _pc.BeginArrest();
+        // 와이어 체결 즉시 에스코트를 자유비행으로 전환 (플레이어 감속에 끌려다니지 않도록)
+        AIManager.Instance?.BeginEscortFreeFlightNow();
 
         // 착함 충격 카메라 쉐이크
         _fc?.TriggerShake(0.7f, 1.8f);

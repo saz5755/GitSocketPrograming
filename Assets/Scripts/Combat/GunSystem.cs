@@ -84,8 +84,9 @@ public class GunSystem : MonoBehaviour
 
     void Update()
     {
-        if (_local == null)
+        if (_local == null || !_local.isLocalPlayer)
         {
+            _local = null;
             foreach (var pc in PlayerController.All)
                 if (pc != null && pc.isLocalPlayer) { _local = pc; break; }
             if (_local == null) return;

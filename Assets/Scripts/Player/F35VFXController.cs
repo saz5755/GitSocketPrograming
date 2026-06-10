@@ -2,6 +2,9 @@ using UnityEngine;
 
 public class F35VFXController : MonoBehaviour
 {
+    // EscortVFXController가 동일 위치를 참조할 수 있도록 노즐 로컬 좌표를 공유
+    public static Vector3 SharedNozzleLocalPos = new Vector3(0f, 0f, -4.0f);
+
     [Header("Contrails")]
     [SerializeField] Transform leftWingtip;
     [SerializeField] Transform rightWingtip;
@@ -86,6 +89,8 @@ public class F35VFXController : MonoBehaviour
             nozzle.transform.localPosition = new Vector3(0f, 0f, -4.0f);
             engineNozzle = nozzle.transform;
         }
+        // 에스코트 VFX가 동일 위치를 사용할 수 있도록 기록
+        SharedNozzleLocalPos = engineNozzle.localPosition;
 
         Material addMat = Resources.Load<Material>("VFX/Mat_Additive");
         Material diamondMat = Resources.Load<Material>("VFX/Mat_ShockDiamond");
@@ -93,7 +98,7 @@ public class F35VFXController : MonoBehaviour
         GameObject abObj = new GameObject("AfterburnerVFX");
         abObj.transform.SetParent(engineNozzle);
         abObj.transform.localPosition = Vector3.zero;
-        abObj.transform.localRotation = Quaternion.Euler(180f, 0f, 0f);
+        abObj.transform.localRotation = Quaternion.identity;
 
         // Outer Glow (Orange/Red)
         afterburnerPS = abObj.AddComponent<ParticleSystem>();

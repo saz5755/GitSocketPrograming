@@ -79,7 +79,9 @@
       "Bash(Select-Object -Property FullName)",
       "Bash(Remove-Item *)",
       "mcp__coplay-mcp__rename_game_object",
-      "mcp__coplay-mcp__install_git_package"
+      "mcp__coplay-mcp__install_git_package",
+      "mcp__coplay-mcp__assign_material",
+      "PowerShell(Remove-Item *)"
     ]
   }
 }

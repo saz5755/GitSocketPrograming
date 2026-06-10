@@ -61,6 +61,8 @@ public class AIBotController : MonoBehaviour
         if (c != null) c.enabled = false;
     }
 
+    public void SetMaxSpeed(float v) => maxSpeed = Mathf.Max(0f, v);
+
     public void SetNickname(string nick)
     {
         Nickname     = nick;
