@@ -39,4 +39,27 @@ public class WireSystemSO : ScriptableObject
     public Material wireRopeMaterial;
     [Tooltip("존 디스크 투명 머티리얼. 비워두면 Transparent 셰이더로 합성")]
     public Material zoneDiscMaterial;
+
+    [Header("비주얼 표시 토글 (게임 외관 정리용)")]
+    [Tooltip("V자 LineRenderer를 표시할지. 와이어 케이블만 보이게 하려면 끔")]
+    public bool showLineRenderer = true;
+    [Tooltip("보라색 존 디스크를 표시할지. 게임 빌드에서는 보통 비활성")]
+    public bool showZoneDisc = false;
+    [Tooltip("와이어 위 텍스트 라벨을 표시할지. 디버깅용")]
+    public bool showZoneLabel = false;
+
+    [Header("케이블 Emission 색 (HDR)")]
+    [ColorUsage(true, true)] public Color emissionAvailable = new Color(0.12f, 0.09f, 0.00f);
+    [ColorUsage(true, true)] public Color emissionCaught    = new Color(2.50f, 0.50f, 0.00f);
+    [ColorUsage(true, true)] public Color emissionStopped   = Color.black;
+
+    [Header("LineRenderer 색")]
+    public Color lineColorAvailable = new Color(0.90f, 0.80f, 0.55f);
+    public Color lineColorCaught    = new Color(1.00f, 0.35f, 0.00f);
+    public Color lineColorStopped   = new Color(0.45f, 0.45f, 0.45f);
+
+    [Header("Zone Disc 색")]
+    public Color zoneColorAvailable = new Color(0.10f, 0.10f, 0.10f, 0.10f);
+    public Color zoneColorCaught    = new Color(1.00f, 0.40f, 1.00f, 1.00f);
+    public Color zoneColorStopped   = new Color(0.50f, 0.50f, 0.50f, 0.35f);
 }

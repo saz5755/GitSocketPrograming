@@ -74,20 +74,7 @@ public class ArrestingWireSystem : MonoBehaviour
     Vector3 _arrestApproachDir;
     Vector3 _arrestWirePos;
 
-    // 와이어 Emission 색상 (HDR — 블룸 효과)
-    static readonly Color EmAvail   = new Color(0.12f, 0.09f, 0.00f);     // 미세 황금 글로우
-    static readonly Color EmCaught  = new Color(2.50f, 0.50f, 0.00f);     // HDR 주황 (착함 충격)
-    static readonly Color EmStopped = Color.black;
-
-    // LineRenderer 색
-    static readonly Color ColLineAvail   = new Color(0.90f, 0.80f, 0.55f); // 따뜻한 아이보리
-    static readonly Color ColLineCaught  = new Color(1.00f, 0.35f, 0.00f); // 주황
-    static readonly Color ColLineStopped = new Color(0.45f, 0.45f, 0.45f); // 회색
-
-    // 존 디스크 색
-    static readonly Color ColZoneAvail   = new Color(0.80f, 0.20f, 1.00f, 0.60f);
-    static readonly Color ColZoneCaught  = new Color(1.00f, 0.40f, 1.00f, 1.00f);
-    static readonly Color ColZoneStopped = new Color(0.50f, 0.50f, 0.50f, 0.35f);
+    // 와이어 상태 색은 WireSystemSO에서 가져옴 — 에디터에서 직접 튜닝 가능
 
     // ── 생명주기 ───────────────────────────────────────────────────────────────
     void Start()
@@ -193,7 +180,7 @@ public class ArrestingWireSystem : MonoBehaviour
             mat.SetFloat("_Smoothness", 0.72f);
         }
         mat.EnableKeyword("_EMISSION");
-        mat.SetColor("_EmissionColor", EmAvail);
+        mat.SetColor("_EmissionColor", Cfg.emissionAvailable);
         ws.wireMat = mat;
 
         // ① 갑판 홈 (트러프) — 와이어가 박힌 채널, 갑판 재질 그대로 사용
@@ -257,6 +244,7 @@ public class ArrestingWireSystem : MonoBehaviour
     // ── V자 와이어 LineRenderer ────────────────────────────────────────────────
     void BuildWireRope(WireState ws)
     {
+        if (!Cfg.showLineRenderer) return;
         var ropeGO = new GameObject("WireRope");
         ropeGO.transform.SetParent(ws.root, false);
 
@@ -282,7 +270,7 @@ public class ArrestingWireSystem : MonoBehaviour
                      ?? Shader.Find("Standard");
             mat = new Material(sh);
         }
-        mat.color = ColLineAvail;
+        mat.color = Cfg.lineColorAvailable;
         lr.material = mat;
 
         ws.line    = lr;
@@ -294,6 +282,7 @@ public class ArrestingWireSystem : MonoBehaviour
     // ── 존 디스크 ──────────────────────────────────────────────────────────────
     void BuildZoneDisc(WireState ws)
     {
+        if (!Cfg.showZoneDisc) return;
         var disc = GameObject.CreatePrimitive(PrimitiveType.Quad);
         disc.name = "ZoneDisc";
         disc.transform.SetParent(ws.root, false);
@@ -307,13 +296,13 @@ public class ArrestingWireSystem : MonoBehaviour
         rend.receiveShadows    = false;
         Material mat = Cfg.zoneDiscMaterial != null
             ? new Material(Cfg.zoneDiscMaterial)   // 와이어별 색 독립 제어
-            : MakeTransparentMaterial(ColZoneAvail);
-        mat.color = ColZoneAvail;
+            : MakeTransparentMaterial(Cfg.zoneColorAvailable);
+        mat.color = Cfg.zoneColorAvailable;
         rend.material = mat;
 
         var light = disc.AddComponent<Light>();
         light.type      = LightType.Point;
-        light.color     = ColZoneAvail;
+        light.color     = Cfg.zoneColorAvailable;
         light.intensity = 3f;
         light.range     = Cfg.wireWidth * 0.8f;
 
@@ -325,6 +314,7 @@ public class ArrestingWireSystem : MonoBehaviour
     // ── 라벨 ───────────────────────────────────────────────────────────────────
     void BuildZoneLabel(WireState ws, int idx)
     {
+        if (!Cfg.showZoneLabel) return;
         var labelGO = new GameObject("ZoneLabel");
         labelGO.transform.SetParent(ws.root, false);
         labelGO.transform.localPosition = new Vector3(0f, Cfg.triggerHeight + 1.5f, 0f);
@@ -470,7 +460,7 @@ public class ArrestingWireSystem : MonoBehaviour
                     _local.EndArrest();
                     ws.stopped    = true;
                     ws.resetTimer = Cfg.resetDelay;
-                    SetColors(ws, EmStopped, ColLineStopped, ColZoneStopped);
+                    SetColors(ws, Cfg.emissionStopped, Cfg.lineColorStopped, Cfg.zoneColorStopped);
                     // 플레이어 완전 정지 후 에스코트 순차 착함 시작 (플레이어와 동일 경로)
                     AIManager.Instance?.BeginEscortLandingFromWire(_arrestApproachDir, _arrestWirePos);
                     Debug.Log($"[ArrestWire] Wire {i + 1}: 정지 → EndArrest");
@@ -483,7 +473,7 @@ public class ArrestingWireSystem : MonoBehaviour
                     {
                         ws.caught  = false;
                         ws.stopped = false;
-                        SetColors(ws, EmAvail, ColLineAvail, ColZoneAvail);
+                        SetColors(ws, Cfg.emissionAvailable, Cfg.lineColorAvailable, Cfg.zoneColorAvailable);
                         Debug.Log($"[ArrestWire] Wire {i + 1}: 리셋");
                     }
                 }
@@ -539,7 +529,7 @@ public class ArrestingWireSystem : MonoBehaviour
             ws.apexVel      = _local.transform.forward * (speed * 0.25f);
             ws.oscDecay     = 1.0f;
             ws.prevPosValid = false; // 체결 직후 스윕 오감지 방지
-            SetColors(ws, EmCaught, ColLineCaught, ColZoneCaught);
+            SetColors(ws, Cfg.emissionCaught, Cfg.lineColorCaught, Cfg.zoneColorCaught);
             _local.BeginArrest();
             _arrestApproachDir = _local.transform.forward;
             _arrestWirePos     = ws.root.TransformPoint(Vector3.zero);
@@ -635,6 +625,27 @@ public class ArrestingWireSystem : MonoBehaviour
         if (ws.discMat != null) ws.discMat.color = zoneColor;
         if (ws.light   != null) ws.light.color    = zoneColor;
         if (ws.lineMat != null) ws.lineMat.color  = lineColor;
+    }
+
+    // 런타임에 SO 색상을 바꾸고 인스펙터 우클릭 → "Refresh Visual State" 호출하면
+    // 현재 와이어 상태에 맞춰 색을 즉시 다시 적용.
+    [ContextMenu("Refresh Visual State")]
+    void RefreshVisualState()
+    {
+        if (!Application.isPlaying)
+        {
+            Debug.Log("[ArrestWire] Refresh Visual State는 Play 모드에서만 동작합니다.");
+            return;
+        }
+        foreach (var ws in _wires)
+        {
+            if (ws == null) continue;
+            Color emission, line, zone;
+            if (ws.stopped)      { emission = Cfg.emissionStopped;   line = Cfg.lineColorStopped;   zone = Cfg.zoneColorStopped; }
+            else if (ws.caught)  { emission = Cfg.emissionCaught;    line = Cfg.lineColorCaught;    zone = Cfg.zoneColorCaught; }
+            else                 { emission = Cfg.emissionAvailable; line = Cfg.lineColorAvailable; zone = Cfg.zoneColorAvailable; }
+            SetColors(ws, emission, line, zone);
+        }
     }
 
     void OnDestroy()
