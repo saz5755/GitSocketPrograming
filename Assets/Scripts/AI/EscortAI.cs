@@ -49,6 +49,7 @@ public class EscortAI : MonoBehaviour
     AIBotController   _bot;
     Phase             _phase = Phase.OnDeck;
     CarrierController _cachedCarrier;
+    PlayerController  _leaderPC;      // leader.GetComponent<PlayerController>() 캐시 — 매 프레임 호출 제거
     float             _launchTimer;
     float             _freeFlightTimer;
 
@@ -109,6 +110,7 @@ public class EscortAI : MonoBehaviour
     public void Initialize(Transform leader, Vector3 formationOffset, bool spawnedOnDeck)
     {
         _leader           = leader;
+        _leaderPC         = leader != null ? leader.GetComponent<PlayerController>() : null;
         _formationOffset  = formationOffset;
         _bot              = GetComponent<AIBotController>();
         _bot.PositionOverride = true;
@@ -119,7 +121,11 @@ public class EscortAI : MonoBehaviour
         _cachedCarrier    = Object.FindObjectOfType<CarrierController>();
     }
 
-    public void UpdateLeader(Transform newLeader) => _leader = newLeader;
+    public void UpdateLeader(Transform newLeader)
+    {
+        _leader   = newLeader;
+        _leaderPC = newLeader != null ? newLeader.GetComponent<PlayerController>() : null;
+    }
 
     // EnableAICombat() → 플레이어 발진 직후 순차 호출
     // OnDeck(최초) 또는 Landed(재발진) 상태에서 호출 가능
@@ -266,8 +272,7 @@ public class EscortAI : MonoBehaviour
         Vector3 toTarget    = targetPos - transform.position;
         float   dist        = toTarget.magnitude;
 
-        var   leaderPC    = _leader.GetComponent<PlayerController>();
-        float leaderSpeed = leaderPC != null ? leaderPC.CurrentSpeed : 62f;
+        float leaderSpeed = _leaderPC != null ? _leaderPC.CurrentSpeed : 62f;
         float baseSpeed   = Mathf.Max(leaderSpeed, 40f);
 
         // ── 속도: 종방향(Z) 오차 기반 제어 ──────────────────────────────────
@@ -321,6 +326,21 @@ public class EscortAI : MonoBehaviour
 
         _bot.PositionOverride = false;
         _bot.SetTarget(targetPos, rot, targetSpeed);
+
+        // ── 리더 정지 감지 → 자동 착함 시작 ────────────────────────────────────
+        // FreeFlightZone과 동일한 보호 로직 — Escorting 상태에서도 leader가 멈추면
+        // 일정 시간 후 BeginEscortLanding 호출 (zone 콜백이 IsFlying=false라 안 fire되는 경우 폴백)
+        bool leaderFlying = _leaderPC != null && _leaderPC.IsFlying && _leaderPC.CurrentSpeed > 1f;
+        if (!leaderFlying)
+        {
+            _leaderStopTimer += Time.deltaTime;
+            if (_leaderStopTimer >= Cfg.leaderStopTimeout)
+                AIManager.Instance?.BeginEscortLanding(_cachedCarrier?.transform);
+        }
+        else
+        {
+            _leaderStopTimer = 0f;
+        }
     }
 
     // ── 항모 존 내 자유비행 (외부 존 ~ 내측 회피 존 사이 순회) ─────────────────
@@ -384,9 +404,8 @@ public class EscortAI : MonoBehaviour
 
         // 존 진입/이탈은 EscortZoneTrigger.Update()의 콜백(OnLeaderEnteredZone/OnLeaderExitedZone)으로 처리
 
-        var leaderPC = _leader.GetComponent<PlayerController>();
         // 리더 속도 0 이거나 비행 중 아닌 경우(하차 포함) → 일정 시간 후 착함
-        bool leaderFlying = leaderPC != null && leaderPC.IsFlying && leaderPC.CurrentSpeed > 1f;
+        bool leaderFlying = _leaderPC != null && _leaderPC.IsFlying && _leaderPC.CurrentSpeed > 1f;
         if (!leaderFlying)
         {
             _leaderStopTimer += Time.deltaTime;
@@ -421,14 +440,17 @@ public class EscortAI : MonoBehaviour
     {
         if (_carrier == null) { _phase = Phase.Escorting; return; }
 
+        // 각속도 기반 회전 (90°/s) — 직선 비행 중 옆으로 미끄러지는 모습 방지
+        const float ApproachTurnRate = 90f;
+
         if (!_waypointReached)
         {
             float dist = Vector3.Distance(transform.position, _approachWaypoint);
             if (dist < Cfg.waypointArriveDistance) { _waypointReached = true; return; }
 
             Vector3 dir = (_approachWaypoint - transform.position).normalized;
-            transform.rotation = Quaternion.Slerp(transform.rotation,
-                Quaternion.LookRotation(dir), 2f * Time.deltaTime);
+            transform.rotation = Quaternion.RotateTowards(transform.rotation,
+                Quaternion.LookRotation(dir), ApproachTurnRate * Time.deltaTime);
             transform.position = Vector3.MoveTowards(
                 transform.position, _approachWaypoint, Cfg.approachSpeed * Time.deltaTime);
             _bot.SetTarget(_approachWaypoint, transform.rotation, Cfg.approachSpeed);
@@ -453,7 +475,8 @@ public class EscortAI : MonoBehaviour
             _currentSpeed = Mathf.MoveTowards(_currentSpeed, targetSpeed, 10f * Time.deltaTime);
 
             Quaternion rot = Quaternion.LookRotation(toLanding.normalized);
-            transform.rotation = Quaternion.Slerp(transform.rotation, rot, 2f * Time.deltaTime);
+            transform.rotation = Quaternion.RotateTowards(transform.rotation, rot,
+                ApproachTurnRate * Time.deltaTime);
             transform.position = Vector3.MoveTowards(
                 transform.position, _landingSpot, _currentSpeed * Time.deltaTime);
             _bot.SetTarget(_landingSpot, transform.rotation, _currentSpeed);
