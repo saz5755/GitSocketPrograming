@@ -16,31 +16,34 @@ public class PlayerController : MonoBehaviour
     float    moveSendTimer;
     int      localTick;
 
-    [Header("Throttle")]
-    [SerializeField] float maxSpeed     = 80f;
-    [SerializeField] float acceleration = 12f;
-    [SerializeField] float drag         =  6f;
+    [Header("동작 튜닝 데이터")]
+    [Tooltip("AircraftStatsSO 에셋. Project 우클릭 → Create → KF21 → Aircraft → Aircraft Stats")]
+    [SerializeField] AircraftStatsSO _stats;
 
-    [Header("Mouse Flight Control")]
-    [SerializeField] float pitchSensitivity = 60f;
-    [SerializeField] float yawSensitivity   = 60f;
-    [SerializeField] float rollSpeed        = 85f;
-
-    [Header("Network")]
-    [SerializeField] float sendInterval = 0.05f;
-
-    [Header("Interpolation")]
-    [SerializeField] float interpolationDelay = 0.1f;
-
-    [Header("Prediction & Reconciliation")]
-    [SerializeField] float reconcileThreshold = 3f;
+    // SO 미할당 시 폴백 인스턴스 — 한 번만 생성
+    static AircraftStatsSO s_fallbackStats;
+    AircraftStatsSO Cfg
+    {
+        get
+        {
+            if (_stats != null) return _stats;
+            if (s_fallbackStats == null)
+            {
+                s_fallbackStats = ScriptableObject.CreateInstance<AircraftStatsSO>();
+                Debug.LogWarning(
+                    $"[PlayerController] '{name}' has no AircraftStatsSO assigned — using built-in defaults. " +
+                    "Create one via Project window → Right Click → Create → KF21 → Aircraft → Aircraft Stats."
+                );
+            }
+            return s_fallbackStats;
+        }
+    }
 
     float currentSpeed;
     public float CurrentSpeed => currentSpeed;
 
     // ── 어레스팅 와이어 감속 ─────────────────────────────────────────────────
-    bool  _arrested;
-    const float ArrestDecel = 50f; // m/s² — 약 1.5s 만에 240 kph → 0
+    bool _arrested;
 
     public void BeginArrest() => _arrested = true;
     public void EndArrest()   => _arrested = false;
@@ -50,15 +53,12 @@ public class PlayerController : MonoBehaviour
     float _catapultTarget;
     float _catapultAccel;
     float _catapultHoldTimer;
-    // 최고속 도달 후 자동 추력 유지 시간 — W 없이도 항모에서 충분히 이탈
-    const float CatapultHoldSec = 4f;
 
-    // accelRate 180 m/s² → 0.4초 만에 72 m/s 도달 (실제 카타펄트 느낌)
-    public void StartCatapult(float targetSpeed, float accelRate = 180f)
+    public void StartCatapult(float targetSpeed)
     {
         currentSpeed       = 0f;
         _catapultTarget    = targetSpeed;
-        _catapultAccel     = accelRate;
+        _catapultAccel     = Cfg.catapultAccel;
         _catapulting       = true;
         _catapultHoldTimer = 0f;
     }
@@ -111,7 +111,7 @@ public class PlayerController : MonoBehaviour
         // 어레스팅 와이어 감속 중 — 입력 차단, 강제 감속
         if (_arrested)
         {
-            currentSpeed = Mathf.MoveTowards(currentSpeed, 0f, ArrestDecel * dt);
+            currentSpeed = Mathf.MoveTowards(currentSpeed, 0f, Cfg.arrestDecel * dt);
             transform.position += transform.forward * currentSpeed * dt;
             ConstrainToSurface();
             return;
@@ -128,16 +128,16 @@ public class PlayerController : MonoBehaviour
             {
                 currentSpeed = _catapultTarget;
                 _catapultHoldTimer += dt;
-                if (_catapultHoldTimer >= CatapultHoldSec)
+                if (_catapultHoldTimer >= Cfg.catapultHoldSec)
                     _catapulting = false;
             }
 
             bool freeLookC = Input.GetMouseButton(1);
-            float pitchC   = freeLookC ? 0f : -Input.GetAxis("Mouse Y") * pitchSensitivity * dt;
-            float yawC     = freeLookC ? 0f :  Input.GetAxis("Mouse X") * yawSensitivity   * dt;
+            float pitchC   = freeLookC ? 0f : -Input.GetAxis("Mouse Y") * Cfg.pitchSensitivity * dt;
+            float yawC     = freeLookC ? 0f :  Input.GetAxis("Mouse X") * Cfg.yawSensitivity   * dt;
             float rollC    = 0f;
-            if (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.Q)) rollC =  rollSpeed * dt;
-            if (Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.E)) rollC = -rollSpeed * dt;
+            if (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.Q)) rollC =  Cfg.rollSpeed * dt;
+            if (Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.E)) rollC = -Cfg.rollSpeed * dt;
             transform.Rotate(pitchC, yawC, rollC, Space.Self);
 
             transform.position += transform.forward * currentSpeed * dt;
@@ -150,19 +150,19 @@ public class PlayerController : MonoBehaviour
         else if (Input.GetKey(KeyCode.S)) throttle = -1f;
 
         if (throttle > 0f)
-            currentSpeed = Mathf.MoveTowards(currentSpeed, maxSpeed, acceleration * dt);
+            currentSpeed = Mathf.MoveTowards(currentSpeed, Cfg.maxSpeed, Cfg.acceleration * dt);
         else if (throttle < 0f)
-            currentSpeed = Mathf.MoveTowards(currentSpeed, 0f, acceleration * dt);
+            currentSpeed = Mathf.MoveTowards(currentSpeed, 0f, Cfg.acceleration * dt);
         else
-            currentSpeed = Mathf.MoveTowards(currentSpeed, 0f, drag * dt);
+            currentSpeed = Mathf.MoveTowards(currentSpeed, 0f, Cfg.drag * dt);
 
         bool freeLook = Input.GetMouseButton(1);
-        float pitch = freeLook ? 0f : -Input.GetAxis("Mouse Y") * pitchSensitivity * dt;
-        float yaw   = freeLook ? 0f :  Input.GetAxis("Mouse X") * yawSensitivity   * dt;
+        float pitch = freeLook ? 0f : -Input.GetAxis("Mouse Y") * Cfg.pitchSensitivity * dt;
+        float yaw   = freeLook ? 0f :  Input.GetAxis("Mouse X") * Cfg.yawSensitivity   * dt;
 
         float roll = 0f;
-        if (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.Q)) roll =  rollSpeed * dt;
-        if (Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.E)) roll = -rollSpeed * dt;
+        if (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.Q)) roll =  Cfg.rollSpeed * dt;
+        if (Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.E)) roll = -Cfg.rollSpeed * dt;
 
         transform.Rotate(pitch, yaw, roll, Space.Self);
         transform.position += transform.forward * currentSpeed * dt;
@@ -171,16 +171,16 @@ public class PlayerController : MonoBehaviour
         if (anim != null) anim.SetBool("Move", currentSpeed > 0.5f);
 
         moveSendTimer += dt;
-        if (moveSendTimer >= sendInterval)
+        if (moveSendTimer >= Cfg.sendInterval)
         {
-            moveSendTimer -= sendInterval;
+            moveSendTimer -= Cfg.sendInterval;
             localTick++;
 
             if (_inputHistory.Count >= MaxHistory) _inputHistory.Dequeue();
             _inputHistory.Enqueue(new TickRecord
             {
                 tick       = localTick,
-                dt         = sendInterval,
+                dt         = Cfg.sendInterval,
                 throttle   = throttle,
                 pitch      = pitch, yaw = yaw, roll = roll,
                 velAfter   = transform.forward * currentSpeed,
@@ -236,7 +236,7 @@ public class PlayerController : MonoBehaviour
             if (r.tick == ack.tick)
             {
                 float error = Vector3.Distance(r.posAfter, serverPos);
-                if (error > reconcileThreshold)
+                if (error > Cfg.reconcileThreshold)
                 {
                     reconSpeed = r.velAfter.magnitude;
                     found      = true;
@@ -261,11 +261,11 @@ public class PlayerController : MonoBehaviour
         foreach (var r in remaining)
         {
             if (r.throttle > 0.5f)
-                spd = Mathf.MoveTowards(spd, maxSpeed, acceleration * r.dt);
+                spd = Mathf.MoveTowards(spd, Cfg.maxSpeed, Cfg.acceleration * r.dt);
             else if (r.throttle < -0.5f)
-                spd = Mathf.MoveTowards(spd, 0f, acceleration * r.dt);
+                spd = Mathf.MoveTowards(spd, 0f, Cfg.acceleration * r.dt);
             else
-                spd = Mathf.MoveTowards(spd, 0f, drag * r.dt);
+                spd = Mathf.MoveTowards(spd, 0f, Cfg.drag * r.dt);
 
             rot = rot * Quaternion.Euler(r.pitch, r.yaw, r.roll);
             pos += rot * Vector3.forward * spd * r.dt;
@@ -289,7 +289,7 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
-        float renderTime = Time.time - interpolationDelay;
+        float renderTime = Time.time - Cfg.interpolationDelay;
 
         while (snapshots.Count > 2 && snapshots[1].time <= renderTime)
             snapshots.RemoveAt(0);

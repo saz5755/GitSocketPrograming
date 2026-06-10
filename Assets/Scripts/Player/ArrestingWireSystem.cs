@@ -8,21 +8,28 @@ using UnityEngine.UI;
 public class ArrestingWireSystem : MonoBehaviour
 {
     // ── Inspector ─────────────────────────────────────────────────────────────
-    [Header("와이어 위치 (모함 로컬 좌표)")]
-    [SerializeField] Vector3 wire1LocalPos = new Vector3(0, -2f, 50f);
-    [SerializeField] Vector3 wire2LocalPos = new Vector3(0, -2f, 45f);
-    [SerializeField] Vector3 wire3LocalPos = new Vector3(0, -2f, 40f);
-    [SerializeField] float   deckAngleDeg  = -7f;
+    [Header("동작 튜닝 데이터")]
+    [Tooltip("WireSystemSO 에셋. Project 우클릭 → Create → KF21 → Carrier → Wire System")]
+    [SerializeField] WireSystemSO _config;
 
-    [Header("트리거 볼륨")]
-    [SerializeField] float wireWidth     = 22f;
-    [SerializeField] float triggerDepth  = 3f;
-    [SerializeField] float triggerHeight = 5f;
-
-    [Header("동작")]
-    [SerializeField] float minCatchSpeed = 15f;
-    [SerializeField] float stopThreshold = 0.5f;
-    [SerializeField] float resetDelay    = 4f;
+    // SO 미할당 시 폴백 인스턴스 — 한 번만 생성
+    static WireSystemSO s_fallbackConfig;
+    WireSystemSO Cfg
+    {
+        get
+        {
+            if (_config != null) return _config;
+            if (s_fallbackConfig == null)
+            {
+                s_fallbackConfig = ScriptableObject.CreateInstance<WireSystemSO>();
+                Debug.LogWarning(
+                    $"[ArrestingWireSystem] '{name}' has no WireSystemSO assigned — using built-in defaults. " +
+                    "Create one via Project window → Right Click → Create → KF21 → Carrier → Wire System."
+                );
+            }
+            return s_fallbackConfig;
+        }
+    }
 
     // ── 상수 ───────────────────────────────────────────────────────────────────
     const int Segs = 20;
@@ -86,7 +93,7 @@ public class ArrestingWireSystem : MonoBehaviour
         FindDeckMaterial();
         InstallDeckCollider();
 
-        Vector3[] pos = { wire1LocalPos, wire2LocalPos, wire3LocalPos };
+        Vector3[] pos = { Cfg.wire1LocalPos, Cfg.wire2LocalPos, Cfg.wire3LocalPos };
         for (int i = 0; i < 3; i++)
             _wires[i] = BuildWire(i + 1, pos[i]);
     }
@@ -118,7 +125,7 @@ public class ArrestingWireSystem : MonoBehaviour
 
         var col  = deckGO.AddComponent<BoxCollider>();
         col.center = new Vector3(0f, localDeckY - 0.5f, 0f);
-        col.size   = new Vector3(wireWidth * 2.5f, 1.5f, 200f);
+        col.size   = new Vector3(Cfg.wireWidth * 2.5f, 1.5f, 200f);
 
         Debug.Log($"[ArrestWire] DeckCollider 설치 localDeckY={localDeckY:F2}");
     }
@@ -129,7 +136,7 @@ public class ArrestingWireSystem : MonoBehaviour
         var go = new GameObject($"ArrestWire_{idx}");
         go.transform.SetParent(transform, false);
         go.transform.localPosition = localPos;
-        go.transform.localRotation = Quaternion.Euler(0f, deckAngleDeg, 0f);
+        go.transform.localRotation = Quaternion.Euler(0f, Cfg.deckAngleDeg, 0f);
 
         var ws = new WireState { root = go.transform };
 
@@ -175,7 +182,7 @@ public class ArrestingWireSystem : MonoBehaviour
         trough.name = "WireTrough";
         trough.transform.SetParent(ws.root, false);
         trough.transform.localPosition = new Vector3(0f, -0.025f, 0f);
-        trough.transform.localScale    = new Vector3(wireWidth + 0.80f, 0.055f, 0.32f);
+        trough.transform.localScale    = new Vector3(Cfg.wireWidth + 0.80f, 0.055f, 0.32f);
         Destroy(trough.GetComponent<Collider>());
         var troughMr = trough.GetComponent<MeshRenderer>();
         troughMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
@@ -188,8 +195,8 @@ public class ArrestingWireSystem : MonoBehaviour
         cable.transform.SetParent(ws.root, false);
         cable.transform.localPosition = new Vector3(0f, 0.035f, 0f); // 갑판 홈 위로 올림
         cable.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
-        // scale.y = halfLength → 총 길이 = wireWidth, scale.x/z = 반지름 ≈ 4cm
-        cable.transform.localScale = new Vector3(0.042f, wireWidth * 0.5f, 0.042f);
+        // scale.y = halfLength → 총 길이 = Cfg.wireWidth, scale.x/z = 반지름 ≈ 4cm
+        cable.transform.localScale = new Vector3(0.042f, Cfg.wireWidth * 0.5f, 0.042f);
         Destroy(cable.GetComponent<Collider>());
         var cableMr = cable.GetComponent<MeshRenderer>();
         cableMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
@@ -199,7 +206,7 @@ public class ArrestingWireSystem : MonoBehaviour
         // ③ 양 끝단 볼라드 (와이어 고정 피팅) — 납작한 수직 실린더
         for (int side = -1; side <= 1; side += 2)
         {
-            float xPos = side * (wireWidth * 0.5f + 0.22f);
+            float xPos = side * (Cfg.wireWidth * 0.5f + 0.22f);
 
             var bollard = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             bollard.name = side < 0 ? "BollardL" : "BollardR";
@@ -263,9 +270,9 @@ public class ArrestingWireSystem : MonoBehaviour
         var disc = GameObject.CreatePrimitive(PrimitiveType.Quad);
         disc.name = "ZoneDisc";
         disc.transform.SetParent(ws.root, false);
-        disc.transform.localPosition = new Vector3(0f, triggerHeight * 0.5f, 0f);
+        disc.transform.localPosition = new Vector3(0f, Cfg.triggerHeight * 0.5f, 0f);
         disc.transform.localRotation = Quaternion.identity;
-        disc.transform.localScale    = new Vector3(wireWidth, triggerHeight, 1f);
+        disc.transform.localScale    = new Vector3(Cfg.wireWidth, Cfg.triggerHeight, 1f);
         Destroy(disc.GetComponent<Collider>());
 
         var rend = disc.GetComponent<Renderer>();
@@ -278,7 +285,7 @@ public class ArrestingWireSystem : MonoBehaviour
         light.type      = LightType.Point;
         light.color     = ColZoneAvail;
         light.intensity = 3f;
-        light.range     = wireWidth * 0.8f;
+        light.range     = Cfg.wireWidth * 0.8f;
 
         ws.disc    = rend;
         ws.discMat = mat;
@@ -290,7 +297,7 @@ public class ArrestingWireSystem : MonoBehaviour
     {
         var labelGO = new GameObject("ZoneLabel");
         labelGO.transform.SetParent(ws.root, false);
-        labelGO.transform.localPosition = new Vector3(0f, triggerHeight + 1.5f, 0f);
+        labelGO.transform.localPosition = new Vector3(0f, Cfg.triggerHeight + 1.5f, 0f);
         labelGO.transform.localScale    = Vector3.one * 0.025f;
 
         var canvas = labelGO.AddComponent<Canvas>();
@@ -318,8 +325,8 @@ public class ArrestingWireSystem : MonoBehaviour
     void ApplyRestingLine(WireState ws)
     {
         if (ws.line == null) return;
-        Vector3 L = ws.root.TransformPoint(new Vector3(-wireWidth * 0.5f, 0f, 0f));
-        Vector3 R = ws.root.TransformPoint(new Vector3( wireWidth * 0.5f, 0f, 0f));
+        Vector3 L = ws.root.TransformPoint(new Vector3(-Cfg.wireWidth * 0.5f, 0f, 0f));
+        Vector3 R = ws.root.TransformPoint(new Vector3( Cfg.wireWidth * 0.5f, 0f, 0f));
         for (int i = 0; i <= Segs; i++)
         {
             float t   = (float)i / Segs;
@@ -333,8 +340,8 @@ public class ArrestingWireSystem : MonoBehaviour
     {
         if (ws.line == null) return;
         int     half = Segs / 2;
-        Vector3 L    = ws.root.TransformPoint(new Vector3(-wireWidth * 0.5f, 0f, 0f));
-        Vector3 R    = ws.root.TransformPoint(new Vector3( wireWidth * 0.5f, 0f, 0f));
+        Vector3 L    = ws.root.TransformPoint(new Vector3(-Cfg.wireWidth * 0.5f, 0f, 0f));
+        Vector3 R    = ws.root.TransformPoint(new Vector3( Cfg.wireWidth * 0.5f, 0f, 0f));
 
         for (int i = 0; i <= half; i++)
         {
@@ -428,11 +435,11 @@ public class ArrestingWireSystem : MonoBehaviour
                 // 체결 중 스무스 착지 처리
                 if (!ws.stopped) SmoothLanding(ws);
 
-                if (!ws.stopped && speed < stopThreshold)
+                if (!ws.stopped && speed < Cfg.stopThreshold)
                 {
                     _local.EndArrest();
                     ws.stopped    = true;
-                    ws.resetTimer = resetDelay;
+                    ws.resetTimer = Cfg.resetDelay;
                     SetColors(ws, EmStopped, ColLineStopped, ColZoneStopped);
                     // 플레이어 완전 정지 후 에스코트 순차 착함 시작 (플레이어와 동일 경로)
                     AIManager.Instance?.BeginEscortLandingFromWire(_arrestApproachDir, _arrestWirePos);
@@ -453,7 +460,7 @@ public class ArrestingWireSystem : MonoBehaviour
                 continue;
             }
 
-            if (speed < minCatchSpeed)
+            if (speed < Cfg.minCatchSpeed)
             {
                 // 속도 미달이어도 이전 위치는 갱신 (swept 감지 오작동 방지)
                 UpdatePrevPos(ws, ws.root.InverseTransformPoint(_local.transform.position));
@@ -475,18 +482,18 @@ public class ArrestingWireSystem : MonoBehaviour
                     float t      = Mathf.Abs(pz) / (Mathf.Abs(pz) + Mathf.Abs(cz));
                     float crossX = Mathf.Lerp(ws.prevLocalX, lp.x, t);
                     float crossY = Mathf.Lerp(ws.prevLocalY, lp.y, t);
-                    inZone = Mathf.Abs(crossX) < wireWidth * 0.5f &&
-                             crossY > -1f && crossY < triggerHeight;
+                    inZone = Mathf.Abs(crossX) < Cfg.wireWidth * 0.5f &&
+                             crossY > -1f && crossY < Cfg.triggerHeight;
                 }
             }
 
             // 저속·정지 상태 대비 일반 볼륨 체크도 병행
             if (!inZone)
             {
-                inZone = Mathf.Abs(lp.x) < wireWidth    * 0.5f &&
+                inZone = Mathf.Abs(lp.x) < Cfg.wireWidth    * 0.5f &&
                          lp.y            > -1f &&
-                         lp.y            < triggerHeight &&
-                         Mathf.Abs(lp.z) < triggerDepth * 0.5f;
+                         lp.y            < Cfg.triggerHeight &&
+                         Mathf.Abs(lp.z) < Cfg.triggerDepth * 0.5f;
             }
 
             UpdatePrevPos(ws, lp); // 항상 이전 위치 갱신
@@ -555,9 +562,9 @@ public class ArrestingWireSystem : MonoBehaviour
 
             // 에스코트 어프로치 속도(25 m/s)는 낮아 매 프레임 감지로 충분.
             // ws.prevLocal* 은 플레이어 위치이므로 에스코트 swept 감지에 사용하면 오감지 발생.
-            bool inZone = Mathf.Abs(lp.x) < wireWidth * 0.5f &&
-                          lp.y > -1f && lp.y < triggerHeight &&
-                          Mathf.Abs(lp.z) < triggerDepth * 0.5f;
+            bool inZone = Mathf.Abs(lp.x) < Cfg.wireWidth * 0.5f &&
+                          lp.y > -1f && lp.y < Cfg.triggerHeight &&
+                          Mathf.Abs(lp.z) < Cfg.triggerDepth * 0.5f;
 
             if (!inZone) continue;
 
@@ -646,7 +653,7 @@ public class ArrestingWireSystem : MonoBehaviour
     // ── 에디터 기즈모 ──────────────────────────────────────────────────────────
     void OnDrawGizmos()
     {
-        Vector3[] positions = { wire1LocalPos, wire2LocalPos, wire3LocalPos };
+        Vector3[] positions = { Cfg.wire1LocalPos, Cfg.wire2LocalPos, Cfg.wire3LocalPos };
         Color[] colors = {
             new Color(0.8f, 0.2f, 1f, 0.4f),
             new Color(0.9f, 0.3f, 1f, 0.4f),
@@ -654,13 +661,13 @@ public class ArrestingWireSystem : MonoBehaviour
         };
         for (int i = 0; i < 3; i++)
         {
-            var q   = transform.rotation * Quaternion.Euler(0f, deckAngleDeg, 0f);
+            var q   = transform.rotation * Quaternion.Euler(0f, Cfg.deckAngleDeg, 0f);
             var pos = transform.TransformPoint(positions[i])
-                    + q * new Vector3(0f, triggerHeight * 0.5f, 0f);
+                    + q * new Vector3(0f, Cfg.triggerHeight * 0.5f, 0f);
             Gizmos.color  = colors[i];
             Gizmos.matrix = Matrix4x4.TRS(pos, q, Vector3.one);
-            Gizmos.DrawCube(Vector3.zero, new Vector3(wireWidth, triggerHeight, triggerDepth));
-            Gizmos.DrawWireCube(Vector3.zero, new Vector3(wireWidth, triggerHeight, triggerDepth));
+            Gizmos.DrawCube(Vector3.zero, new Vector3(Cfg.wireWidth, Cfg.triggerHeight, Cfg.triggerDepth));
+            Gizmos.DrawWireCube(Vector3.zero, new Vector3(Cfg.wireWidth, Cfg.triggerHeight, Cfg.triggerDepth));
         }
         Gizmos.matrix = Matrix4x4.identity;
     }
