@@ -80,7 +80,6 @@ public class ArrestingWireSystem : MonoBehaviour
     void Start()
     {
         FindDeckMaterial();
-        InstallDeckCollider();
 
         Vector3[] pos = { Cfg.wire1LocalPos, Cfg.wire2LocalPos, Cfg.wire3LocalPos };
         for (int i = 0; i < 3; i++)
@@ -94,42 +93,6 @@ public class ArrestingWireSystem : MonoBehaviour
         foreach (var mr in mrs)
             if (mr.gameObject.name == "Aircraft_carrier_Mesh_334")
             { _deckMat = mr.sharedMaterial; break; }
-    }
-
-    // ── 갑판 BoxCollider (ConstrainToSurface Raycast 감지용) ───────────────────
-    // 갑판 본체 메시(Aircraft_carrier_Mesh_334)만 사용 — 함교(island)나
-    // 와이어/존 디스크 등이 maxWorldY를 끌어올려 캐릭터가 공중에 뜨는 문제 방지.
-    void InstallDeckCollider()
-    {
-        if (transform.Find("DeckCollider") != null) return;
-
-        var mrs = GetComponentsInChildren<MeshRenderer>(false);
-        if (mrs.Length == 0) return;
-
-        float maxWorldY = float.MinValue;
-        foreach (var r in mrs)
-        {
-            if (r.gameObject.name != "Aircraft_carrier_Mesh_334") continue;
-            if (r.bounds.max.y > maxWorldY) maxWorldY = r.bounds.max.y;
-        }
-
-        // 갑판 메시를 못 찾으면 설치 보류 (Y=함교 높이로 떠버리는 것보다 안 만드는 게 안전)
-        if (maxWorldY == float.MinValue)
-        {
-            Debug.LogWarning("[ArrestWire] 'Aircraft_carrier_Mesh_334' MeshRenderer not found — DeckCollider 설치 건너뜀. 항모 모델 메시 이름 확인 필요.");
-            return;
-        }
-
-        float localDeckY = transform.InverseTransformPoint(new Vector3(0f, maxWorldY, 0f)).y;
-
-        var deckGO = new GameObject("DeckCollider");
-        deckGO.transform.SetParent(transform, false);
-
-        var col  = deckGO.AddComponent<BoxCollider>();
-        col.center = new Vector3(0f, localDeckY - 0.5f, 0f);
-        col.size   = new Vector3(Cfg.wireWidth * 2.5f, 1.5f, 200f);
-
-        Debug.Log($"[ArrestWire] DeckCollider 설치 localDeckY={localDeckY:F2} (maxWorldY={maxWorldY:F2})");
     }
 
     // ── 와이어 한 줄 생성 ──────────────────────────────────────────────────────
