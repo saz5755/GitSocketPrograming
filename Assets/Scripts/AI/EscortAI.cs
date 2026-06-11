@@ -144,6 +144,10 @@ public class EscortAI : MonoBehaviour
             if (bt != null) bt.enabled = false;
         }
 
+        // 착함 시 항모에 부착된 경우 분리 — 재발진 전 월드 좌표 독립
+        if (transform.parent != null)
+            transform.SetParent(null, worldPositionStays: true);
+
         _launchTimer              = 0f;
         _bot.PositionOverride     = false;
         _phase                    = Phase.Launching;
@@ -521,8 +525,10 @@ public class EscortAI : MonoBehaviour
     {
         _arrestSpeed = Mathf.MoveTowards(_arrestSpeed, 0f, Cfg.arrestDecelRate * Time.deltaTime);
 
-        // 앞으로 미끄러지면서 감속
-        transform.position += transform.forward * _arrestSpeed * Time.deltaTime;
+        // 수평 방향만 전진 — 하강 각도 성분 제거로 갑판 관통 및 과주 방지
+        Vector3 arrestDir = new Vector3(transform.forward.x, 0f, transform.forward.z);
+        if (arrestDir.sqrMagnitude > 0.001f) arrestDir.Normalize();
+        transform.position += arrestDir * _arrestSpeed * Time.deltaTime;
 
         // 갑판 Y에 스냅
         var pos = transform.position;
@@ -541,6 +547,9 @@ public class EscortAI : MonoBehaviour
             pos = transform.position;
             pos.y = _arrestDeckY;
             transform.position = pos;
+            // 항모 이동을 따라가도록 부착 — 착함 후 항모 위에서 슬라이드 방지
+            if (_carrier != null)
+                transform.SetParent(_carrier, worldPositionStays: true);
             _bot.SetTarget(pos, transform.rotation, 0f);
             _phase = Phase.Landed;
             Debug.Log($"[EscortAI] {name} 어레스팅 와이어 착함 완료");
