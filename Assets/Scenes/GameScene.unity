@@ -3648,6 +3648,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::HitEffectSystem
   explosionClip: {fileID: 0}
+  _explosionPrefab: {fileID: 7410638401797982315, guid: aca1aacaf0ff0f647857ef5728429fb6, type: 3}
+  _vfxAdditive: {fileID: 2100000, guid: c387eaee230ace24c88c560ed606d199, type: 2}
+  _vfxAlpha: {fileID: 2100000, guid: 61751cc2b4e625b469721cdb429668c4, type: 2}
 --- !u!114 &504464692
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3666,6 +3669,8 @@ MonoBehaviour:
   chaffCooldown: 0.35
   flareLifetime: 4
   chaffLifetime: 6
+  _vfxAdditive: {fileID: 2100000, guid: c387eaee230ace24c88c560ed606d199, type: 2}
+  _vfxAlpha: {fileID: 2100000, guid: 61751cc2b4e625b469721cdb429668c4, type: 2}
 --- !u!114 &504464693
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3693,6 +3698,7 @@ MonoBehaviour:
   fireKey: 32
   cooldown: 1.5
   maxMissiles: 6
+  _missilePrefab: {fileID: 7238939268033477245, guid: 823c03d62858d3d4aa3b79a4d79bbb16, type: 3}
 --- !u!114 &504464695
 MonoBehaviour:
   m_ObjectHideFlags: 0
