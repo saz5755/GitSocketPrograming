@@ -71,6 +71,10 @@ public class EscortAI : MonoBehaviour
     // 리더 정지/하차 감지용 타이머
     float _leaderStopTimer;
 
+    // FreeFlightZone 순찰 웨이포인트
+    Vector3 _patrolWaypoint;
+    bool    _hasPatrolWaypoint;
+
     // 어레스팅 와이어 체결 상태
     float _arrestDeckY;
     float _arrestSpeed;
@@ -143,7 +147,6 @@ public class EscortAI : MonoBehaviour
         _launchTimer              = 0f;
         _bot.PositionOverride     = false;
         _phase                    = Phase.Launching;
-        _zoneAutoLandingTriggered = false;   // 재발진마다 zone 진입 폴백 호출 다시 활성화
     }
 
     // AIManager.BeginEscortLanding() → 플레이어 착함 직후 순차 호출
@@ -191,9 +194,10 @@ public class EscortAI : MonoBehaviour
     {
         if (_phase == Phase.Escorting || _phase == Phase.Launching)
         {
-            _bot.PositionOverride = false;
-            _leaderStopTimer      = 0f;
-            _phase                = Phase.FreeFlightZone;
+            _bot.PositionOverride  = false;
+            _leaderStopTimer       = 0f;
+            _hasPatrolWaypoint     = false;
+            _phase                 = Phase.FreeFlightZone;
         }
     }
 
@@ -202,9 +206,10 @@ public class EscortAI : MonoBehaviour
     {
         if (_phase == Phase.Escorting || _phase == Phase.Launching)
         {
-            _bot.PositionOverride = false;
-            _leaderStopTimer      = 0f;
-            _phase                = Phase.FreeFlightZone;
+            _bot.PositionOverride  = false;
+            _leaderStopTimer       = 0f;
+            _hasPatrolWaypoint     = false;
+            _phase                 = Phase.FreeFlightZone;
         }
     }
 
@@ -249,27 +254,20 @@ public class EscortAI : MonoBehaviour
 
     // ── Unity Update ─────────────────────────────────────────────────────────
 
-    bool _zoneAutoLandingTriggered;   // zone 진입 한 번 감지하면 BeginEscortLanding 자동 호출 (한 라운드에 1회)
-
     void Update()
     {
         // ── 매 프레임 leader zone 위치 기반 페이즈 보정 ──────────────────────
-        // EscortZoneTrigger의 이벤트가 발화되지 못한 케이스(이륙 첫 프레임 등) 폴백.
-        // Launching은 6초 직진 유지가 의도라 제외 — Escorting에서만 leader가 zone 안에 있으면
-        // 즉시 FreeFlightZone으로 전환해 V-formation 추종(빙글빙글) 동작을 차단한다.
+        // EscortZoneTrigger 이벤트가 발화되지 못한 케이스(이륙 첫 프레임 등) 폴백.
+        // Launching은 6초 직진 유지가 의도라 제외 — Escorting 중 leader가 zone 안에 있으면
+        // 즉시 FreeFlightZone으로 전환해 V-formation 추종을 차단한다.
         if (_leader != null && EscortZoneTrigger.Instance != null && _phase == Phase.Escorting)
         {
             if (EscortZoneTrigger.Instance.IsInsideXZ(_leader.position))
             {
-                _bot.PositionOverride = false;
-                _leaderStopTimer      = 0f;
-                _phase                = Phase.FreeFlightZone;
-
-                if (!_zoneAutoLandingTriggered)
-                {
-                    _zoneAutoLandingTriggered = true;
-                    AIManager.Instance?.BeginEscortLanding(_cachedCarrier?.transform);
-                }
+                _bot.PositionOverride  = false;
+                _leaderStopTimer       = 0f;
+                _hasPatrolWaypoint     = false;
+                _phase                 = Phase.FreeFlightZone;
             }
         }
 
@@ -387,11 +385,13 @@ public class EscortAI : MonoBehaviour
         }
     }
 
-    // ── 항모 존 내 자유비행 (외부 존 ~ 내측 회피 존 사이 순회) ─────────────────
+    // ── 항모 존 내 자유비행 (웨이포인트 순찰) ────────────────────────────────
+    // 플레이어가 존 안에 있거나 착함한 동안 에스코트는 EscortZone 내에서 랜덤 웨이포인트를
+    // 순차적으로 비행한다. 착함 시도나 플레이어 추종 없음.
+    // 플레이어가 존을 벗어나면 OnLeaderExitedZone() → Escorting 으로 자동 복귀.
 
     void UpdateFreeFlightZone()
     {
-        // ── 존 중심·반경 취득 ─────────────────────────────────────────────────
         Vector3 zoneCenter = EscortZoneTrigger.Instance != null
             ? EscortZoneTrigger.Instance.transform.position
             : (_cachedCarrier != null ? _cachedCarrier.transform.position : transform.position);
@@ -403,63 +403,46 @@ public class EscortAI : MonoBehaviour
             ? EscortInnerZoneTrigger.Instance.Radius
             : (_cachedCarrier != null ? _cachedCarrier.InnerAvoidanceRadius : Cfg.innerRadiusFallback);
 
-        // XZ 거리만 사용 (고도 무관)
-        Vector3 toCenter = zoneCenter - transform.position;
-        toCenter.y = 0f;
-        float distXZ = toCenter.magnitude;
-
-        // ── 경계 회피 조향 ────────────────────────────────────────────────────
-        float outerBuffer = Cfg.outerBuffer;
-        float innerBuffer = Cfg.innerBuffer;
-
-        Vector3 steerDir = transform.forward;
-        steerDir.y = 0f;
-        if (steerDir.sqrMagnitude < 0.01f) steerDir = transform.forward;
-        steerDir.Normalize();
-
-        if (distXZ > outerR - outerBuffer)
+        // 웨이포인트 미설정 or 도착 시 새 순찰 지점 선택
+        if (!_hasPatrolWaypoint ||
+            Vector3.Distance(transform.position, _patrolWaypoint) < Cfg.waypointArriveDistance)
         {
-            // 외부 경계 접근: 존 중심 방향으로 회전
-            float t = Mathf.Clamp01((distXZ - (outerR - outerBuffer)) / outerBuffer);
-            steerDir = Vector3.Slerp(steerDir, toCenter.normalized, t * Cfg.outerSteerGain).normalized;
-        }
-        else if (distXZ < innerR + innerBuffer)
-        {
-            // 내부 회피 존 접근: 바깥 방향(접선 + 이탈)으로 회전
-            float t        = Mathf.Clamp01(((innerR + innerBuffer) - distXZ) / innerBuffer);
-            Vector3 outward = distXZ > 0.01f ? -toCenter.normalized : transform.right;
-            // 현재 기수에서 이탈 방향 성분 블렌드 → 자연스러운 선회
-            steerDir = Vector3.Slerp(steerDir, outward, t * Cfg.innerSteerGain).normalized;
+            _patrolWaypoint    = PickPatrolWaypoint(zoneCenter, innerR, outerR);
+            _hasPatrolWaypoint = true;
         }
 
-        Quaternion targetRot = Quaternion.LookRotation(steerDir, Vector3.up);
-        Vector3    targetPos = transform.position + steerDir * 1000f;
+        Vector3 dir = (_patrolWaypoint - transform.position).normalized;
+        if (dir.sqrMagnitude < 0.01f) dir = transform.forward;
 
-        _bot.SetTarget(targetPos, targetRot, Cfg.approachSpeed);
+        _bot.SetTarget(_patrolWaypoint, Quaternion.LookRotation(dir, Vector3.up), Cfg.approachSpeed);
+    }
 
-        // ── 리더 상태 감지 ────────────────────────────────────────────────────
-        if (_leader == null)
+    // 존 안에서 빙글빙글 돌지 않도록 내·외부 여유 반경 사이의 랜덤 지점을 반환.
+    // 현재 위치에서 최소 200m 이상 떨어진 지점을 골라 즉각 U턴을 방지한다.
+    Vector3 PickPatrolWaypoint(Vector3 zoneCenter, float innerR, float outerR)
+    {
+        float safeInner = innerR + 80f;
+        float safeOuter = Mathf.Max(safeInner + 100f, outerR - 80f);
+
+        for (int i = 0; i < 10; i++)
         {
-            _leaderStopTimer += Time.deltaTime;
-            if (_leaderStopTimer >= Cfg.leaderStopTimeout)
-                AIManager.Instance?.BeginEscortLanding(_cachedCarrier?.transform);
-            return;
+            float angle     = Random.Range(0f, Mathf.PI * 2f);
+            float radius    = Random.Range(safeInner, safeOuter);
+            float altOffset = Random.Range(80f, 280f);
+            Vector3 candidate = new Vector3(
+                zoneCenter.x + Mathf.Cos(angle) * radius,
+                zoneCenter.y + altOffset,
+                zoneCenter.z + Mathf.Sin(angle) * radius);
+            if (Vector3.Distance(transform.position, candidate) > 200f)
+                return candidate;
         }
-
-        // 존 진입/이탈은 EscortZoneTrigger.Update()의 콜백(OnLeaderEnteredZone/OnLeaderExitedZone)으로 처리
-
-        // 리더 속도 0 이거나 비행 중 아닌 경우(하차 포함) → 일정 시간 후 착함
-        bool leaderFlying = _leaderPC != null && _leaderPC.IsFlying && _leaderPC.CurrentSpeed > 1f;
-        if (!leaderFlying)
-        {
-            _leaderStopTimer += Time.deltaTime;
-            if (_leaderStopTimer >= Cfg.leaderStopTimeout)
-                AIManager.Instance?.BeginEscortLanding(_cachedCarrier?.transform);
-        }
-        else
-        {
-            _leaderStopTimer = 0f;
-        }
+        // 폴백: 반드시 반환
+        float fa = Random.Range(0f, Mathf.PI * 2f);
+        float fr = (safeInner + safeOuter) * 0.5f;
+        return new Vector3(
+            zoneCenter.x + Mathf.Cos(fa) * fr,
+            zoneCenter.y + 150f,
+            zoneCenter.z + Mathf.Sin(fa) * fr);
     }
 
     // ── 타이머 자유비행 (Escorting에서 BeginLanding 시 폴백) ─────────────────
