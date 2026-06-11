@@ -9,6 +9,7 @@ public class NetworkManager : MonoBehaviour
     {
         if (Instance != null) { Destroy(gameObject); return; }
         Instance = this;
+        transform.SetParent(null);
         DontDestroyOnLoad(gameObject);
 
         // SocketClient lives on the same persistent GameObject

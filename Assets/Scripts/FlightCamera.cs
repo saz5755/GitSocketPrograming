@@ -342,7 +342,7 @@ public class FlightCamera : MonoBehaviour
         mfdController?.SetVisible(cockpit && withHUD);
 
         // HUD를 캐노피 유리에 투영 (탑승 중에는 HUD 미활성)
-        if (_flightHUD == null) _flightHUD = FindObjectOfType<FlightHUD>();
+        if (_flightHUD == null) _flightHUD = FindFirstObjectByType<FlightHUD>();
         _flightHUD?.SetCockpitGlass(cockpit && withHUD, GetComponent<Camera>());
     }
 

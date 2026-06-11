@@ -292,7 +292,7 @@ public class FlightHUD : MonoBehaviour
     {
         foreach (var pc in PlayerController.All)
             if (pc != null && pc.isLocalPlayer) { localPlayer = pc; break; }
-        flightCamera = FindObjectOfType<FlightCamera>();
+        flightCamera = FindFirstObjectByType<FlightCamera>();
     }
 
     void Update()
@@ -604,7 +604,7 @@ public class FlightHUD : MonoBehaviour
 
     ILSBeacon FindNearestILS(Vector3 pos)
     {
-        var       beacons = FindObjectsOfType<ILSBeacon>();
+        var       beacons = FindObjectsByType<ILSBeacon>(FindObjectsSortMode.None);
         ILSBeacon nearest = null;
         float     minDist = float.MaxValue;
         foreach (var b in beacons)

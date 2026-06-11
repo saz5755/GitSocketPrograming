@@ -114,7 +114,7 @@ public class MFDController : MonoBehaviour
         if (_dataTimer >= DataInterval)
         {
             _dataTimer = 0f;
-            if (_gunSystem == null) _gunSystem = FindObjectOfType<GunSystem>();
+            if (_gunSystem == null) _gunSystem = FindFirstObjectByType<GunSystem>();
             UpdateWeapons();
             UpdateFlightData();
         }
@@ -492,7 +492,7 @@ public class MFDController : MonoBehaviour
         tmp.color              = color;
         tmp.alignment          = TextAlignmentOptions.Center;
         tmp.raycastTarget      = false;
-        tmp.enableWordWrapping = false;
+        tmp.textWrappingMode = TextWrappingModes.NoWrap;
         tmp.overflowMode       = TextOverflowModes.Overflow;
         return tmp;
     }

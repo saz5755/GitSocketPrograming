@@ -91,7 +91,7 @@ public class EscortZoneTrigger : MonoBehaviour
         {
             var carrier = transform.parent != null
                 ? transform.parent.GetComponent<CarrierController>()
-                : Object.FindObjectOfType<CarrierController>();
+                : Object.FindFirstObjectByType<CarrierController>();
             AIManager.Instance?.BeginEscortLanding(carrier != null ? carrier.transform : null);
         }
     }

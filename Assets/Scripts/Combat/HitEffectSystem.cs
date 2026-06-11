@@ -23,7 +23,7 @@ public class HitEffectSystem : MonoBehaviour
         _audio   = gameObject.AddComponent<AudioSource>();
     }
 
-    void Start() => _cam = FindObjectOfType<FlightCamera>();
+    void Start() => _cam = FindFirstObjectByType<FlightCamera>();
 
     // 미사일 피격 (강한 폭발 이펙트)
     public void TriggerHit(Vector3 worldPos, bool hitLocalPlayer)

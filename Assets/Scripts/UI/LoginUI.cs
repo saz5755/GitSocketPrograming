@@ -57,7 +57,7 @@ public class LoginUI : MonoBehaviour
             new GameObject("[NetworkManager]").AddComponent<NetworkManager>();
         if (UnityMainThreadDispatcher.Instance == null)
             new GameObject("[Dispatcher]").AddComponent<UnityMainThreadDispatcher>();
-        if (FindObjectOfType<EventSystem>() == null)
+        if (FindFirstObjectByType<EventSystem>() == null)
         {
             var es = new GameObject("EventSystem");
             es.AddComponent<EventSystem>();

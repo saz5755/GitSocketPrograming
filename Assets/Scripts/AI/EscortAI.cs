@@ -97,7 +97,7 @@ public class EscortAI : MonoBehaviour
     void Start()
     {
         if (_cachedCarrier == null)
-            _cachedCarrier = Object.FindObjectOfType<CarrierController>();
+            _cachedCarrier = Object.FindFirstObjectByType<CarrierController>();
     }
 
     // ── 외부 API ──────────────────────────────────────────────────────────────
@@ -119,7 +119,7 @@ public class EscortAI : MonoBehaviour
         _bot.SetTurnRate(Cfg.turnRateOverride);
         _speedJitter      = Random.Range(-Cfg.speedJitterRange, Cfg.speedJitterRange);
         _phase            = spawnedOnDeck ? Phase.OnDeck : Phase.Escorting;
-        _cachedCarrier    = Object.FindObjectOfType<CarrierController>();
+        _cachedCarrier    = Object.FindFirstObjectByType<CarrierController>();
     }
 
     public void UpdateLeader(Transform newLeader)

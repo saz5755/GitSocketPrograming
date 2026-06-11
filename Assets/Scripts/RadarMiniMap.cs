@@ -332,7 +332,7 @@ public class RadarMiniMap : MonoBehaviour
         tmp.color               = color;
         tmp.alignment           = TextAlignmentOptions.Center;
         tmp.raycastTarget       = false;
-        tmp.enableWordWrapping  = false;
+        tmp.textWrappingMode    = TextWrappingModes.NoWrap;
         tmp.overflowMode        = TextOverflowModes.Overflow;
         return tmp;
     }

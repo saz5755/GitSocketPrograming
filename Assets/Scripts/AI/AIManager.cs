@@ -90,7 +90,7 @@ public class AIManager : MonoBehaviour
         _localPlayerAircraft  = leader;
         _escortLandingStarted = false;
 
-        var carrier = FindObjectOfType<CarrierController>();
+        var carrier = FindFirstObjectByType<CarrierController>();
         _cachedCarrier = carrier;
 
         var slots = CollectEscortSlots();
@@ -137,7 +137,7 @@ public class AIManager : MonoBehaviour
         }
         if (list.Count == 0)
         {
-            list.AddRange(FindObjectsOfType<EscortSlot>());
+            list.AddRange(FindObjectsByType<EscortSlot>(FindObjectsSortMode.None));
         }
         // 하이어라키 순서 유지 (sibling index 오름차순)
         list.Sort((a, b) => a.transform.GetSiblingIndex().CompareTo(b.transform.GetSiblingIndex()));
@@ -281,7 +281,7 @@ public class AIManager : MonoBehaviour
 
         // 시퀀스가 아직 시작되지 않은 경우 — 새로 시작
         _escortLandingStarted = true;
-        var carrierTr = _cachedCarrier?.transform ?? FindObjectOfType<CarrierController>()?.transform;
+        var carrierTr = _cachedCarrier?.transform ?? FindFirstObjectByType<CarrierController>()?.transform;
         StartCoroutine(EscortLandingCoroutine(carrierTr, approachDir, wirePos, true));
     }
 

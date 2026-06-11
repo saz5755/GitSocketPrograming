@@ -60,8 +60,8 @@ public class GameModeManager : MonoBehaviour
     {
         _gc = gc;
         _pc = pc;
-        _fc  = FindObjectOfType<FlightCamera>();
-        _hud = FindObjectOfType<FlightHUD>();
+        _fc  = FindFirstObjectByType<FlightCamera>();
+        _hud = FindFirstObjectByType<FlightHUD>();
         _charRenderers = gc.GetComponentsInChildren<Renderer>(true);
 
         // 프리플라이트 시스템 초기화
@@ -176,7 +176,7 @@ public class GameModeManager : MonoBehaviour
             var pf = PreflightSystem.Instance;
             if (pf != null && pf.IsReadyForLaunch)
             {
-                _boardingCarrier ??= FindObjectOfType<CarrierController>();
+                _boardingCarrier ??= FindFirstObjectByType<CarrierController>();
                 string lbl = _boardingCarrier != null ? "CATAPULT LAUNCH" : "TAKE OFF";
                 ShowPrompt(true, lbl, new Color(0f, 1f, 0.5f, 1f), keyLabel: "F");
                 if (Input.GetKeyDown(KeyCode.F))
@@ -207,7 +207,7 @@ public class GameModeManager : MonoBehaviour
                 AIManager.Instance?.TakeOverEscortBot(boardedPC, _pc);
 
             _pc              = boardedPC;
-            _boardingCarrier = FindObjectOfType<CarrierController>();
+            _boardingCarrier = FindFirstObjectByType<CarrierController>();
             EnterCockpit(_pc.transform.position);
         }
 

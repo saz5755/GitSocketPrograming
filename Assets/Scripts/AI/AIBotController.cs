@@ -67,14 +67,16 @@ public class AIBotController : MonoBehaviour
     {
         All.Add(this);
 
-        // SO 값을 인스턴스로 복사 — 런타임에 SetMaxSpeed 등으로 덮어쓸 수 있도록
-        _maxSpeed                    = Cfg.maxSpeed;
-        _accel                       = Cfg.accel;
-        _decel                       = Cfg.decel;
-        _turnRate                    = Cfg.turnRate;
-        _netUpdateInterval           = Cfg.netUpdateInterval;
-        _skipBroadcastWhenStationary = Cfg.skipBroadcastWhenStationary;
-        _stationarySpeedThreshold    = Cfg.stationarySpeedThreshold;
+        // AddComponent 직후 SetConfig 호출 전에는 _config가 null 일 수 있으므로
+        // Cfg 프로퍼티(경고 발생) 대신 조용한 폴백으로 초기화. SetConfig가 즉시 재적용함.
+        var c = _config ?? (s_fallbackConfig ??= ScriptableObject.CreateInstance<AIBotConfigSO>());
+        _maxSpeed                    = c.maxSpeed;
+        _accel                       = c.accel;
+        _decel                       = c.decel;
+        _turnRate                    = c.turnRate;
+        _netUpdateInterval           = c.netUpdateInterval;
+        _skipBroadcastWhenStationary = c.skipBroadcastWhenStationary;
+        _stationarySpeedThreshold    = c.stationarySpeedThreshold;
 
         _pc = GetComponent<PlayerController>();
         _pc.isLocalPlayer = false;
