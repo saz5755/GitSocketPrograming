@@ -236,6 +236,7 @@ public class GameModeManager : MonoBehaviour
         float catapultSpd = _boardingCarrier != null ? _boardingCarrier.CatapultSpeed : 72f;
         _boardingCarrier = null;
         _pc.StartCatapult(catapultSpd);
+        _pc.GetComponent<F35VFXController>()?.TriggerCatapultBoost();
         AIManager.Instance?.EnableAICombat();
 
         // 카메라·HUD 전환

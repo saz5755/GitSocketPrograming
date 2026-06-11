@@ -31,8 +31,12 @@ public class F35VFXController : MonoBehaviour
 
     [Header("Engine Idle Exhaust")]
     ParticleSystem _idleExhaustPS;
+    ParticleSystem _heatHazePS;
     Light          _idleLight;
     bool           _engineIdleOn;
+
+    // 캐터펄트 발진 후 W키 없이 자동 애프터버너 유지 타이머
+    float _catapultBoostTimer;
 
     PlayerController playerController;
     Vector3 lastForward;
@@ -46,6 +50,7 @@ public class F35VFXController : MonoBehaviour
         SetupContrails();
         SetupAfterburner();
         SetupIdleExhaust();
+        SetupHeatHaze();
     }
 
     void EnsureEngineNozzle()
@@ -282,21 +287,96 @@ public class F35VFXController : MonoBehaviour
         _idleLight.intensity = 0f;
     }
 
+    void SetupHeatHaze()
+    {
+        if (engineNozzle == null) return;
+
+        var go = new GameObject("HeatHazeVFX");
+        go.transform.SetParent(engineNozzle);
+        go.transform.localPosition = Vector3.zero;
+        go.transform.localRotation = Quaternion.identity;
+
+        _heatHazePS = go.AddComponent<ParticleSystem>();
+        _heatHazePS.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+
+        var m = _heatHazePS.main;
+        m.duration        = 1f;
+        m.loop            = true;
+        m.startLifetime   = new ParticleSystem.MinMaxCurve(0.8f, 1.6f);
+        m.startSpeed      = new ParticleSystem.MinMaxCurve(12f, 28f);
+        m.startSize       = new ParticleSystem.MinMaxCurve(0.6f, 1.4f);
+        // 거의 투명한 따뜻한 흰색 — 열기 아지랑이 느낌
+        m.startColor      = new ParticleSystem.MinMaxGradient(
+            new Color(1.0f, 0.92f, 0.75f, 0.10f),
+            new Color(0.90f, 0.88f, 0.82f, 0.05f));
+        m.simulationSpace = ParticleSystemSimulationSpace.World;
+        m.playOnAwake     = false;
+
+        var em = _heatHazePS.emission;
+        em.rateOverTime = 18f;
+
+        var sh = _heatHazePS.shape;
+        sh.shapeType = ParticleSystemShapeType.Cone;
+        sh.angle     = 10f;
+        sh.radius    = 0.35f;
+
+        // 크기가 점점 커지며 퍼지는 아지랑이
+        var sz = _heatHazePS.sizeOverLifetime;
+        sz.enabled = true;
+        sz.size = new ParticleSystem.MinMaxCurve(1f,
+            new AnimationCurve(new Keyframe(0f, 0.5f), new Keyframe(1f, 3.5f)));
+
+        // 투명도: 시작에서 급격히 나타났다 서서히 사라짐
+        var col = _heatHazePS.colorOverLifetime;
+        col.enabled = true;
+        var g = new Gradient();
+        g.SetKeys(
+            new GradientColorKey[] {
+                new GradientColorKey(new Color(1.0f, 0.95f, 0.80f), 0.0f),
+                new GradientColorKey(new Color(0.92f, 0.90f, 0.85f), 0.4f),
+                new GradientColorKey(new Color(0.85f, 0.85f, 0.85f), 1.0f) },
+            new GradientAlphaKey[] {
+                new GradientAlphaKey(0.0f, 0.0f),
+                new GradientAlphaKey(0.12f, 0.15f),
+                new GradientAlphaKey(0.0f, 1.0f) });
+        col.color = g;
+
+        // 노이즈 모듈 — 아지랑이 물결 움직임
+        var noise = _heatHazePS.noise;
+        noise.enabled   = true;
+        noise.strength  = new ParticleSystem.MinMaxCurve(0.35f);
+        noise.frequency = 0.6f;
+        noise.scrollSpeed = new ParticleSystem.MinMaxCurve(0.4f);
+        noise.damping   = true;
+
+        var rend = _heatHazePS.GetComponent<ParticleSystemRenderer>();
+        Material alphaMat = _alphaMaterial != null ? _alphaMaterial : Resources.Load<Material>("VFX/Mat_Alpha");
+        if (alphaMat != null) rend.material = alphaMat;
+        rend.renderMode = ParticleSystemRenderMode.Billboard;
+    }
+
     // 지상 프리플라이트 중 엔진 IDLE 상태 배기 VFX 제어
     public void SetEngineIdle(bool on)
     {
         _engineIdleOn = on;
-        if (_idleExhaustPS == null) return;
         if (on)
         {
-            if (!_idleExhaustPS.isPlaying) _idleExhaustPS.Play();
-            _idleLight.intensity = 1.8f;
+            if (_idleExhaustPS != null && !_idleExhaustPS.isPlaying) _idleExhaustPS.Play();
+            if (_heatHazePS    != null && !_heatHazePS.isPlaying)    _heatHazePS.Play();
+            if (_idleLight     != null) _idleLight.intensity = 1.8f;
         }
         else
         {
-            _idleExhaustPS.Stop(false, ParticleSystemStopBehavior.StopEmitting);
-            _idleLight.intensity = 0f;
+            _idleExhaustPS?.Stop(false, ParticleSystemStopBehavior.StopEmitting);
+            _heatHazePS?.Stop(false,    ParticleSystemStopBehavior.StopEmitting);
+            if (_idleLight != null) _idleLight.intensity = 0f;
         }
+    }
+
+    // 캐터펄트 발진 직후 호출 — W키 없이 duration 초 동안 애프터버너 자동 활성
+    public void TriggerCatapultBoost(float duration = 8f)
+    {
+        _catapultBoostTimer = duration;
     }
 
     void Update()
@@ -314,7 +394,9 @@ public class F35VFXController : MonoBehaviour
         leftContrail.emitting = shouldEmitContrails;
         rightContrail.emitting = shouldEmitContrails;
 
-        bool isAfterburnerActive = playerController.CurrentSpeed > 60f && Input.GetKey(KeyCode.W);
+        if (_catapultBoostTimer > 0f) _catapultBoostTimer -= dt;
+        bool catapultBoosting    = _catapultBoostTimer > 0f && playerController.CurrentSpeed > 5f;
+        bool isAfterburnerActive = catapultBoosting || (playerController.CurrentSpeed > 60f && Input.GetKey(KeyCode.W));
         _afterburnerAssembly?.SetActive(isAfterburnerActive, dt);
     }
 }
