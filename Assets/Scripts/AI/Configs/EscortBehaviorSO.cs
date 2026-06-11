@@ -24,7 +24,7 @@ public class EscortBehaviorSO : ScriptableObject
 
     [Header("캐터펄트 발진")]
     [Tooltip("발진 시 직진 유지 시간")]
-    public float launchDuration = 6f;
+    public float launchDuration = 3f;
     [Tooltip("발진 시 직진 목표 속도")]
     public float launchSpeed    = 55f;
 

@@ -29,6 +29,12 @@ public class AIManager : MonoBehaviour
     [SerializeField] bool _spawnEnemies = false;
     [SerializeField] [Range(1, 4)] int _enemyCount = 1;
 
+    [Header("에스코트 착함 타이밍")]
+    [Tooltip("플레이어 와이어 착함 후 에스코트 순차 착함 시작까지 자유비행 대기 시간 (초)")]
+    [SerializeField] float _escortFreeFlightBeforeLanding = 5f;
+    [Tooltip("에스코트 간 착함 시작 시차 (초)")]
+    [SerializeField] float _escortLandingStagger = 1.5f;
+
     bool _isHost;
     bool _initialized;
     bool _escortLandingStarted;
@@ -288,6 +294,10 @@ public class AIManager : MonoBehaviour
     System.Collections.IEnumerator EscortLandingCoroutine(
         Transform carrier, Vector3 approachDir, Vector3 wirePos, bool hasPath)
     {
+        // 플레이어 착함 후 EscortZone 자유비행 대기
+        if (_escortFreeFlightBeforeLanding > 0f)
+            yield return new WaitForSeconds(_escortFreeFlightBeforeLanding);
+
         var escorts = new System.Collections.Generic.List<EscortAI>();
         foreach (var bot in _bots)
         {
@@ -295,28 +305,23 @@ public class AIManager : MonoBehaviour
             var escort = bot.GetComponent<EscortAI>();
             if (escort != null) escorts.Add(escort);
         }
-        // spawn 순서 = 슬롯 인덱스 순서 (Slot_01, Slot_02, ...). 정렬하지 않음.
-        Debug.Log($"[AIManager] EscortLandingCoroutine started  escorts={escorts.Count}  hasPath={hasPath}");
+        Debug.Log($"[AIManager] EscortLandingCoroutine: escorts={escorts.Count}  hasPath={hasPath}");
 
-        // 1.5초 간격으로 1번 에스코트부터 BeginLanding 호출.
-        // 각 에스코트는 자율적으로 자유비행(4초) → 어프로치 → 착함 진행.
-        // 시차 덕에 1번이 먼저 LandingApproach 진입 → 2번 → ... 자연스러운 순차 착함.
-        const float StaggerInterval = 1.5f;
+        // 슬롯 순서(1번→2번→...)로 순차 착함 시작.
+        // 발진 중(Launching)인 에스코트는 발진 완료까지 대기 후 착함.
         for (int i = 0; i < escorts.Count; i++)
         {
             var escort = escorts[i];
 
-            // 발진 중(Launching)이면 종료까지 대기 — 4초 지연 발진된 후속 에스코트가
-            // BeginLanding 호출 받아 발진이 중간에 끊기는 것을 방지
             while (escort != null && escort.IsLaunching) yield return null;
             if (escort == null) continue;
 
-            Debug.Log($"[AIManager] → Calling BeginLanding on '{escort.name}' (slot {i + 1})");
+            Debug.Log($"[AIManager] → BeginLanding '{escort.name}' (slot {i + 1})");
             if (hasPath) escort.BeginLandingWithPath(carrier, approachDir, wirePos);
             else         escort.BeginLanding(carrier);
 
             if (i < escorts.Count - 1)
-                yield return new WaitForSeconds(StaggerInterval);
+                yield return new WaitForSeconds(_escortLandingStagger);
         }
     }
 
