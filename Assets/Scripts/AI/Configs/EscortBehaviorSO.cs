@@ -63,6 +63,8 @@ public class EscortBehaviorSO : ScriptableObject
     public float directLandDistance = 5f;
 
     [Header("어레스팅 와이어 체결 감속")]
+    [Tooltip("와이어 체결 순간 부여되는 진입 속도 (m/s) — 실제 접근 속도와 무관하게 급감속 연출에 사용")]
+    public float arrestEntrySpeed = 65f;
     [Tooltip("와이어 체결 후 전진 속도 감소율 (m/s²)")]
     public float arrestDecelRate = 80f;
     [Tooltip("체결 후 갑판 Y로 스냅되는 보간 속도 (m/s)")]

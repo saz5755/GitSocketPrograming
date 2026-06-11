@@ -232,10 +232,11 @@ public class EscortAI : MonoBehaviour
     {
         if (_phase != Phase.LandingApproach) return;
         _arrestDeckY  = deckY;
-        _arrestSpeed  = _currentSpeed;
+        // 실제 접근 속도 대신 설정 진입 속도 사용 — 급감속 연출을 위한 런어웃 거리 확보
+        _arrestSpeed  = Cfg.arrestEntrySpeed;
         _bot.PositionOverride = true;
         _phase = Phase.BeingArrested;
-        Debug.Log($"[EscortAI] {name} 어레스팅 와이어 체결! 속도={_arrestSpeed:F1}");
+        Debug.Log($"[EscortAI] {name} 어레스팅 와이어 체결! 진입속도={_arrestSpeed:F1}");
     }
 
     // ArrestingWireSystem이 플레이어 와이어 잡힌 후 호출 — 진행 중인 에스코트의 경로 갱신.
