@@ -24,6 +24,10 @@ public class WireSystemSO : ScriptableObject
     [Tooltip("와이어 위 트리거 높이 (m)")]
     public float triggerHeight = 5f;
 
+    [Header("착함 높이 여유")]
+    [Tooltip("갑판 Y에서 항공기 피벗까지의 오프셋 (m) — 값을 높이면 바퀴가 갑판에서 올라감")]
+    public float landingClearance = 1.5f;
+
     [Header("체결 동작")]
     [Tooltip("이 속도 미만이면 와이어가 체결되지 않음 (너무 느리면 와이어 통과)")]
     public float minCatchSpeed = 15f;

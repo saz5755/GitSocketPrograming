@@ -78,6 +78,9 @@ public class ArrestingWireSystem : MonoBehaviour
 
     // 와이어 상태 색은 WireSystemSO에서 가져옴 — 에디터에서 직접 튜닝 가능
 
+    // GameModeManager.TrapCoroutine이 플레이어 착함 Y를 맞출 때 참조
+    public float LandingClearance => Cfg.landingClearance;
+
     // ── 생명주기 ───────────────────────────────────────────────────────────────
     void Awake() { Instance = this; }
 
@@ -491,7 +494,7 @@ public class ArrestingWireSystem : MonoBehaviour
             ws.caught       = true;
             ws.stopped      = false;
             ws.wireWorldY   = ws.root.TransformPoint(Vector3.zero).y;
-            ws.deckTargetY  = DetectDeckY(_local.transform.position, ws.wireWorldY + 0.3f, _local.transform);
+            ws.deckTargetY  = DetectDeckY(_local.transform.position, ws.wireWorldY + Cfg.landingClearance, _local.transform);
             ws.apexPos      = ws.root.TransformPoint(Vector3.zero);
             ws.apexVel      = _local.transform.forward * (speed * 0.25f);
             ws.oscDecay     = 1.0f;
@@ -538,7 +541,7 @@ public class ArrestingWireSystem : MonoBehaviour
             if (skip != null && _deckHits[k].transform.IsChildOf(skip)) continue;
             if (_deckHits[k].point.y > bestY) bestY = _deckHits[k].point.y;
         }
-        return bestY > float.MinValue ? bestY + 0.3f : fallbackY;
+        return bestY > float.MinValue ? bestY + Cfg.landingClearance : fallbackY;
     }
 
     void CheckEscortWire(WireState ws, int wireIdx)
@@ -557,7 +560,7 @@ public class ArrestingWireSystem : MonoBehaviour
 
             if (!inZone) continue;
 
-            float deckY = DetectDeckY(escort.transform.position, ws.wireWorldY + 0.3f, escort.transform);
+            float deckY = DetectDeckY(escort.transform.position, ws.wireWorldY + Cfg.landingClearance, escort.transform);
             escort.OnWireCaught(deckY);
             Debug.Log($"[ArrestWire] Wire {wireIdx + 1} 에스코트 체결: {escort.name}");
             break;

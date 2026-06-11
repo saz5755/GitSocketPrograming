@@ -308,7 +308,10 @@ public class AIManager : MonoBehaviour
             var escort = bot.GetComponent<EscortAI>();
             if (escort != null) escorts.Add(escort);
         }
-        Debug.Log($"[AIManager] EscortLandingCoroutine: escorts={escorts.Count}  hasPath={hasPath}");
+
+        // 착함 슬롯 목록 수집 — 에스코트 i번은 Slot_0(i+1)에 정지
+        var slots = CollectEscortSlots();
+        Debug.Log($"[AIManager] EscortLandingCoroutine: escorts={escorts.Count}  slots={slots.Count}  hasPath={hasPath}");
 
         // 슬롯 순서(1번→2번→...)로 순차 착함 시작.
         // 발진 중(Launching)인 에스코트는 발진 완료까지 대기 후 착함.
@@ -319,15 +322,12 @@ public class AIManager : MonoBehaviour
             while (escort != null && escort.IsLaunching) yield return null;
             if (escort == null) continue;
 
-            // hasPath일 때 에스코트마다 다른 와이어에 배정 (Wire0, Wire1, Wire2 순환)
-            // ArrestingWireSystem.Instance 없으면 플레이어 와이어 위치로 폴백
             if (hasPath)
             {
-                Vector3 targetWirePos = ArrestingWireSystem.Instance != null
-                    ? ArrestingWireSystem.Instance.GetWireWorldPos(i)
-                    : wirePos;
-                Debug.Log($"[AIManager] → BeginLandingWithPath '{escort.name}' (slot {i + 1}) wirePos={targetWirePos}");
-                escort.BeginLandingWithPath(carrier, approachDir, targetWirePos);
+                // 에스코트 i번 → Slot_0(i+1) 위치에 착함. 슬롯 부족 시 wirePos 폴백
+                Vector3 slotPos = i < slots.Count ? slots[i].transform.position : wirePos;
+                Debug.Log($"[AIManager] → BeginLandingWithPath '{escort.name}' → Slot_{i + 1}  pos={slotPos}");
+                escort.BeginLandingWithPath(carrier, approachDir, slotPos);
             }
             else
             {

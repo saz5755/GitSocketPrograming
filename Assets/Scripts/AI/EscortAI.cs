@@ -76,8 +76,10 @@ public class EscortAI : MonoBehaviour
     bool    _hasPatrolWaypoint;
 
     // 어레스팅 와이어 체결 상태
-    float _arrestDeckY;
-    float _arrestSpeed;
+    float   _arrestDeckY;
+    float   _arrestSpeed;
+    Vector3 _landingSlot;       // 착함 목표 슬롯 월드 좌표 — BeingArrested가 이 위치에 정지
+    float   _modelBottomOffset; // transform.position.y ~ 모델 최하단까지 거리 (바퀴 관통 방지)
 
     public Vector3 FormationOffset => _formationOffset;
     public bool    IsLeftSide      => _formationOffset.x < 0f;
@@ -124,6 +126,12 @@ public class EscortAI : MonoBehaviour
         _speedJitter      = Random.Range(-Cfg.speedJitterRange, Cfg.speedJitterRange);
         _phase            = spawnedOnDeck ? Phase.OnDeck : Phase.Escorting;
         _cachedCarrier    = Object.FindFirstObjectByType<CarrierController>();
+
+        // 모델 최하단 ~ 피벗 거리 계산 — 착함 시 바퀴 갑판 관통 방지
+        float minY = float.MaxValue;
+        foreach (var r in GetComponentsInChildren<Renderer>())
+            if (r.bounds.min.y < minY) minY = r.bounds.min.y;
+        _modelBottomOffset = minY < float.MaxValue ? transform.position.y - minY : 0f;
     }
 
     public void UpdateLeader(Transform newLeader)
@@ -162,12 +170,13 @@ public class EscortAI : MonoBehaviour
         BeginLandingShared();
     }
 
-    // AIManager.BeginEscortLandingFromWire() → 와이어 체결 후 플레이어 경로 기반 착함
-    public void BeginLandingWithPath(Transform carrier, Vector3 approachDir, Vector3 wirePos)
+    // AIManager.BeginEscortLandingFromWire() → 슬롯 위치 기반 착함
+    public void BeginLandingWithPath(Transform carrier, Vector3 approachDir, Vector3 slotPos)
     {
         _carrier           = carrier != null ? carrier : _cachedCarrier?.transform;
         _playerApproachDir = approachDir;
-        _playerWirePos     = wirePos;
+        _playerWirePos     = slotPos;
+        _landingSlot       = slotPos;
         _hasApproachInfo   = true;
         BeginLandingShared();
     }
@@ -227,16 +236,17 @@ public class EscortAI : MonoBehaviour
         }
     }
 
-    // ArrestingWireSystem이 와이어 체결 시 호출
+    // ArrestingWireSystem이 와이어 체결 시 호출 (또는 UpdateLandingApproach 내부에서 직접)
     public void OnWireCaught(float deckY)
     {
         if (_phase != Phase.LandingApproach) return;
-        _arrestDeckY  = deckY;
-        // 실제 접근 속도 대신 설정 진입 속도 사용 — 급감속 연출을 위한 런어웃 거리 확보
-        _arrestSpeed  = Cfg.arrestEntrySpeed;
+        _arrestDeckY  = deckY + _modelBottomOffset; // 피벗 높이 보정 — 바퀴 갑판 관통 방지
+        _arrestSpeed  = Cfg.arrestEntrySpeed;        // 고정 진입속도로 급감속 연출
+        // CheckEscortWire 경로: _landingSlot이 미설정이면 현재 목표로 초기화
+        if (_landingSlot == Vector3.zero) _landingSlot = _landingSpot;
         _bot.PositionOverride = true;
         _phase = Phase.BeingArrested;
-        Debug.Log($"[EscortAI] {name} 어레스팅 와이어 체결! 진입속도={_arrestSpeed:F1}");
+        Debug.Log($"[EscortAI] {name} 와이어 체결! 진입속도={_arrestSpeed:F1}  목표슬롯={_landingSlot}");
     }
 
     // ArrestingWireSystem이 플레이어 와이어 잡힌 후 호출 — 진행 중인 에스코트의 경로 갱신.
@@ -512,13 +522,14 @@ public class EscortAI : MonoBehaviour
             Vector3 toLanding = _landingSpot - transform.position;
             float   dist      = toLanding.magnitude;
 
-            if (dist < Cfg.directLandDistance)
+            // 어레스팅 진입 트리거: 물리 공식 기반 런아웃 거리 이내 → BeingArrested 시작
+            // catchDist = v²/(2a) — 이 거리에서 체결하면 arrestEntrySpeed로 감속해 슬롯에 정확히 정지
+            float catchDist = Cfg.arrestEntrySpeed * Cfg.arrestEntrySpeed / (2f * Cfg.arrestDecelRate);
+            if (dist < catchDist)
             {
-                // CheckEscortWire 미체결 보장 트리거 — 직접 스냅 대신 감속 착함으로 전환
-                // _currentSpeed로 BeingArrested 진입 → UpdateBeingArrested에서 플레이어와 동일 감속 처리
                 float deckY = _hasApproachInfo
-                    ? _playerWirePos.y + 0.3f
-                    : _carrier.position.y + 0.3f;
+                    ? _landingSlot.y
+                    : (_carrier != null ? _carrier.position.y : _landingSpot.y);
                 OnWireCaught(deckY);
                 return;
             }
@@ -542,14 +553,12 @@ public class EscortAI : MonoBehaviour
     {
         _arrestSpeed = Mathf.MoveTowards(_arrestSpeed, 0f, Cfg.arrestDecelRate * Time.deltaTime);
 
-        // 수평 방향만 전진 — 하강 각도 성분 제거로 갑판 관통 및 과주 방지
-        Vector3 arrestDir = new Vector3(transform.forward.x, 0f, transform.forward.z);
-        if (arrestDir.sqrMagnitude > 0.001f) arrestDir.Normalize();
-        transform.position += arrestDir * _arrestSpeed * Time.deltaTime;
+        // XZ: 슬롯 방향으로 MoveTowards — 오버슈트 없이 정확히 슬롯에 정지
+        Vector3 flatSlot = new Vector3(_landingSlot.x, transform.position.y, _landingSlot.z);
+        Vector3 pos = Vector3.MoveTowards(transform.position, flatSlot, _arrestSpeed * Time.deltaTime);
 
-        // 갑판 Y에 스냅
-        var pos = transform.position;
-        pos.y = Mathf.MoveTowards(pos.y, _arrestDeckY, Cfg.arrestYSnapRate * Time.deltaTime);
+        // Y: 갑판 높이로 수렴 (피벗 오프셋 이미 _arrestDeckY에 포함)
+        pos.y = Mathf.MoveTowards(transform.position.y, _arrestDeckY, Cfg.arrestYSnapRate * Time.deltaTime);
         transform.position = pos;
 
         // 피치/롤 수평 복귀
@@ -559,21 +568,26 @@ public class EscortAI : MonoBehaviour
 
         _bot.SetTarget(transform.position, transform.rotation, _arrestSpeed);
 
-        if (_arrestSpeed < Cfg.arrestStopSpeed)
+        // 정지 판정: 속도 임계 이하 또는 XZ 기준 슬롯 도착
+        float xzDist = Mathf.Sqrt(
+            (pos.x - _landingSlot.x) * (pos.x - _landingSlot.x) +
+            (pos.z - _landingSlot.z) * (pos.z - _landingSlot.z));
+        bool reached = _arrestSpeed < Cfg.arrestStopSpeed || xzDist < 0.05f;
+        if (reached)
         {
-            pos = transform.position;
-            pos.y = _arrestDeckY;
+            // XZ를 슬롯에 정확히 스냅, Y는 갑판 높이
+            pos = new Vector3(_landingSlot.x, _arrestDeckY, _landingSlot.z);
             transform.position = pos;
-            // _carrier가 null이면 씬에서 다시 탐색
+
             if (_carrier == null)
                 _carrier = _cachedCarrier?.transform
                         ?? Object.FindFirstObjectByType<CarrierController>()?.transform;
-            // 항모 이동을 따라가도록 부착 — 착함 후 항모 위에서 슬라이드 방지
             if (_carrier != null)
                 transform.SetParent(_carrier, worldPositionStays: true);
+
             _bot.SetTarget(pos, transform.rotation, 0f);
             _phase = Phase.Landed;
-            Debug.Log($"[EscortAI] {name} 어레스팅 와이어 착함 완료");
+            Debug.Log($"[EscortAI] {name} 착함 완료  슬롯={_landingSlot}");
         }
     }
 
@@ -587,12 +601,13 @@ public class EscortAI : MonoBehaviour
         {
             // 플레이어가 접근한 방향을 역산해 어프로치 웨이포인트 설정
             Vector3 backDir   = -_playerApproachDir.normalized;
-            Vector3 wpBase    = _playerWirePos + backDir * Cfg.approachDistance;
-            _approachWaypoint = new Vector3(wpBase.x, _playerWirePos.y + Cfg.approachAltitude, wpBase.z);
+            Vector3 slotBase  = _landingSlot;
+            Vector3 wpBase    = slotBase + backDir * Cfg.approachDistance;
+            _approachWaypoint = new Vector3(wpBase.x, slotBase.y + Cfg.approachAltitude, wpBase.z);
 
-            // 와이어 중심을 직접 목표로 — 측면 오프셋 없이 CheckEscortWire 체결 성공률 극대화
-            _landingSpot   = _playerWirePos;
-            _landingSpot.y = _playerWirePos.y + 0.5f;
+            // 슬롯 위치가 착함 목표 — 약간 높게 접근한 뒤 catchDist에서 BeingArrested 진입
+            _landingSpot   = _landingSlot;
+            _landingSpot.y = _landingSlot.y + 0.5f;
         }
         else
         {

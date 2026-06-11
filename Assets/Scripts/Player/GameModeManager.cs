@@ -359,7 +359,8 @@ public class GameModeManager : MonoBehaviour
 
         ShowPrompt(true, "■  ARRESTED  ■  DECELERATING", new Color(1f, 0.75f, 0f, 1f));
 
-        float     deckY = platform.position.y + 0.3f;
+        float clearance = ArrestingWireSystem.Instance != null ? ArrestingWireSystem.Instance.LandingClearance : 1.5f;
+        float     deckY = platform.position.y + clearance;
         Transform pcT   = _pc.transform;
 
         while (_pc != null && _pc.CurrentSpeed >= 0.2f)
