@@ -424,8 +424,8 @@ public class ArrestingWireSystem : MonoBehaviour
                     ws.stopped    = true;
                     ws.resetTimer = Cfg.resetDelay;
                     SetColors(ws, Cfg.emissionStopped, Cfg.lineColorStopped, Cfg.zoneColorStopped);
-                    // 플레이어 완전 정지 후 에스코트 순차 착함 시작 (플레이어와 동일 경로)
-                    AIManager.Instance?.BeginEscortLandingFromWire(_arrestApproachDir, _arrestWirePos);
+                    // 플레이어 경로 저장 — 실제 착함 트리거는 ExitFlight(F키 하차)에서 발생
+                    AIManager.Instance?.StoreArrestInfo(_arrestApproachDir, _arrestWirePos);
                     Debug.Log($"[ArrestWire] Wire {i + 1}: 정지 → EndArrest");
                 }
 

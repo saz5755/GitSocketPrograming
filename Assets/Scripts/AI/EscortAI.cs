@@ -419,6 +419,7 @@ public class EscortAI : MonoBehaviour
 
     // 존 안에서 빙글빙글 돌지 않도록 내·외부 여유 반경 사이의 랜덤 지점을 반환.
     // 현재 위치에서 최소 200m 이상 떨어진 지점을 골라 즉각 U턴을 방지한다.
+    // XZ 반경과 고도 오프셋이 함께 outerR 구 안에 들어오도록 3D 구 제약을 적용한다.
     Vector3 PickPatrolWaypoint(Vector3 zoneCenter, float innerR, float outerR)
     {
         float safeInner = innerR + 80f;
@@ -426,9 +427,11 @@ public class EscortAI : MonoBehaviour
 
         for (int i = 0; i < 10; i++)
         {
-            float angle     = Random.Range(0f, Mathf.PI * 2f);
-            float radius    = Random.Range(safeInner, safeOuter);
-            float altOffset = Random.Range(80f, 280f);
+            float angle  = Random.Range(0f, Mathf.PI * 2f);
+            float radius = Random.Range(safeInner, safeOuter);
+            // 3D 구 제약: xzDist^2 + altOffset^2 ≤ outerR^2
+            float maxAltInSphere = Mathf.Sqrt(Mathf.Max(0f, outerR * outerR - radius * radius)) - 20f;
+            float altOffset = Random.Range(80f, Mathf.Max(81f, maxAltInSphere));
             Vector3 candidate = new Vector3(
                 zoneCenter.x + Mathf.Cos(angle) * radius,
                 zoneCenter.y + altOffset,
@@ -437,11 +440,12 @@ public class EscortAI : MonoBehaviour
                 return candidate;
         }
         // 폴백: 반드시 반환
-        float fa = Random.Range(0f, Mathf.PI * 2f);
-        float fr = (safeInner + safeOuter) * 0.5f;
+        float fa  = Random.Range(0f, Mathf.PI * 2f);
+        float fr  = (safeInner + safeOuter) * 0.5f;
+        float fma = Mathf.Sqrt(Mathf.Max(0f, outerR * outerR - fr * fr)) - 20f;
         return new Vector3(
             zoneCenter.x + Mathf.Cos(fa) * fr,
-            zoneCenter.y + 150f,
+            zoneCenter.y + Mathf.Clamp(150f, 80f, fma),
             zoneCenter.z + Mathf.Sin(fa) * fr);
     }
 

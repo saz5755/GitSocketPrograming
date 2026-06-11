@@ -335,9 +335,9 @@ public class GameModeManager : MonoBehaviour
         _fc?.SetGroundTarget(_gc.transform);
         _hud?.SetVisible(false);
 
-        // 항모 착함 시: 에스코트 AI 순차 착함 시작
+        // 항모 착함 시: 저장된 와이어 경로로 에스코트 AI 순차 착함 시작
         if (platform != null)
-            AIManager.Instance?.BeginEscortLanding(platform);
+            AIManager.Instance?.BeginEscortLandingAfterDismount();
 
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible   = false;

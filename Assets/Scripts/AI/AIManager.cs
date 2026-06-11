@@ -30,14 +30,17 @@ public class AIManager : MonoBehaviour
     [SerializeField] [Range(1, 4)] int _enemyCount = 1;
 
     [Header("에스코트 착함 타이밍")]
-    [Tooltip("플레이어 와이어 착함 후 에스코트 순차 착함 시작까지 자유비행 대기 시간 (초)")]
-    [SerializeField] float _escortFreeFlightBeforeLanding = 5f;
-    [Tooltip("에스코트 간 착함 시작 시차 (초)")]
-    [SerializeField] float _escortLandingStagger = 1.5f;
+    [Tooltip("에스코트 간 착함 시작 시차 (초) — 플레이어 F키 하차 후 1번기부터 이 간격으로 순차 착함")]
+    [SerializeField] float _escortLandingStagger = 5f;
 
     bool _isHost;
     bool _initialized;
     bool _escortLandingStarted;
+
+    // 플레이어 어레스팅 와이어 경로 (와이어 정지 시 저장, 하차 시 사용)
+    Vector3 _arrestedApproachDir;
+    Vector3 _arrestedWirePos;
+    bool    _hasArrestInfo;
 
     // 호스트가 관리하는 AI 봇 목록
     readonly List<AIBotController> _bots = new();
@@ -221,6 +224,7 @@ public class AIManager : MonoBehaviour
     public void EnableAICombat()
     {
         _escortLandingStarted = false;
+        _hasArrestInfo        = false;
         // 적 전투 활성
         foreach (var bot in _bots)
             bot?.GetComponent<EnemyAI>()?.EnableCombat();
@@ -248,6 +252,26 @@ public class AIManager : MonoBehaviour
         escort.BeginLaunchSequence();
     }
 
+    // 어레스팅 와이어로 플레이어 정지 시 호출 — 경로만 저장 (착함 트리거는 하차 시)
+    public void StoreArrestInfo(Vector3 approachDir, Vector3 wirePos)
+    {
+        _arrestedApproachDir = approachDir;
+        _arrestedWirePos     = wirePos;
+        _hasArrestInfo       = true;
+    }
+
+    // 플레이어 F키 하차(ExitFlight) 시 호출 — 저장된 경로로 에스코트 순차 착함 시작
+    public void BeginEscortLandingAfterDismount()
+    {
+        if (!_isHost || _escortLandingStarted) return;
+        _escortLandingStarted = true;
+        var carrierTr = _cachedCarrier?.transform ?? FindFirstObjectByType<CarrierController>()?.transform;
+        if (_hasArrestInfo)
+            StartCoroutine(EscortLandingCoroutine(carrierTr, _arrestedApproachDir, _arrestedWirePos, true));
+        else
+            StartCoroutine(EscortLandingCoroutine(carrierTr, Vector3.zero, Vector3.zero, false));
+    }
+
     // 플레이어 어레스팅 와이어 체결 직후 호출 — 에스코트 즉시 자유비행 전환
     public void BeginEscortFreeFlightNow()
     {
@@ -268,36 +292,9 @@ public class AIManager : MonoBehaviour
         StartCoroutine(EscortLandingCoroutine(carrier, Vector3.zero, Vector3.zero, false));
     }
 
-    // 어레스팅 와이어 정지 후 호출 (ArrestingWireSystem 경로) — 플레이어 경로로 순차 착함
-    public void BeginEscortLandingFromWire(Vector3 approachDir, Vector3 wirePos)
-    {
-        Debug.Log($"[AIManager] BeginEscortLandingFromWire called  isHost={_isHost}  landingStarted={_escortLandingStarted}  dir={approachDir}  wirePos={wirePos}");
-        if (!_isHost) return;
-
-        // 이미 zone 진입 시점에 시퀀스가 시작됐다면 — 진행 중인 모든 에스코트의 path를 와이어 위치로 갱신
-        if (_escortLandingStarted)
-        {
-            foreach (var bot in _bots)
-            {
-                if (bot == null) continue;
-                bot.GetComponent<EscortAI>()?.UpdateApproachPath(approachDir, wirePos);
-            }
-            return;
-        }
-
-        // 시퀀스가 아직 시작되지 않은 경우 — 새로 시작
-        _escortLandingStarted = true;
-        var carrierTr = _cachedCarrier?.transform ?? FindFirstObjectByType<CarrierController>()?.transform;
-        StartCoroutine(EscortLandingCoroutine(carrierTr, approachDir, wirePos, true));
-    }
-
     System.Collections.IEnumerator EscortLandingCoroutine(
         Transform carrier, Vector3 approachDir, Vector3 wirePos, bool hasPath)
     {
-        // 플레이어 착함 후 EscortZone 자유비행 대기
-        if (_escortFreeFlightBeforeLanding > 0f)
-            yield return new WaitForSeconds(_escortFreeFlightBeforeLanding);
-
         var escorts = new System.Collections.Generic.List<EscortAI>();
         foreach (var bot in _bots)
         {
