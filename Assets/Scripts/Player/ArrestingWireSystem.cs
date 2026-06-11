@@ -33,6 +33,8 @@ public class ArrestingWireSystem : MonoBehaviour
         }
     }
 
+    public static ArrestingWireSystem Instance { get; private set; }
+
     // ── 상수 ───────────────────────────────────────────────────────────────────
     const int Segs = 20;
 
@@ -77,6 +79,8 @@ public class ArrestingWireSystem : MonoBehaviour
     // 와이어 상태 색은 WireSystemSO에서 가져옴 — 에디터에서 직접 튜닝 가능
 
     // ── 생명주기 ───────────────────────────────────────────────────────────────
+    void Awake() { Instance = this; }
+
     void Start()
     {
         FindDeckMaterial();
@@ -615,9 +619,19 @@ public class ArrestingWireSystem : MonoBehaviour
 
     void OnDestroy()
     {
+        if (Instance == this) Instance = null;
         if (_local == null) return;
         foreach (var ws in _wires)
             if (ws.caught && !ws.stopped) _local.EndArrest();
+    }
+
+    // 와이어 인덱스(0-based)로 월드 좌표 반환 — 에스코트 착함 목표 지정에 사용.
+    // Start() 이후 _wires가 빌드되므로 런타임에서만 호출해야 한다.
+    public Vector3 GetWireWorldPos(int idx)
+    {
+        if (_wires == null || _wires.Length == 0) return transform.position;
+        var ws = _wires[Mathf.Clamp(idx, 0, _wires.Length - 1)];
+        return ws?.root != null ? ws.root.TransformPoint(Vector3.zero) : transform.position;
     }
 
     // ── 투명 재질 생성 ─────────────────────────────────────────────────────────

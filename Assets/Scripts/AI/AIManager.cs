@@ -319,9 +319,21 @@ public class AIManager : MonoBehaviour
             while (escort != null && escort.IsLaunching) yield return null;
             if (escort == null) continue;
 
-            Debug.Log($"[AIManager] → BeginLanding '{escort.name}' (slot {i + 1})");
-            if (hasPath) escort.BeginLandingWithPath(carrier, approachDir, wirePos);
-            else         escort.BeginLanding(carrier);
+            // hasPath일 때 에스코트마다 다른 와이어에 배정 (Wire0, Wire1, Wire2 순환)
+            // ArrestingWireSystem.Instance 없으면 플레이어 와이어 위치로 폴백
+            if (hasPath)
+            {
+                Vector3 targetWirePos = ArrestingWireSystem.Instance != null
+                    ? ArrestingWireSystem.Instance.GetWireWorldPos(i)
+                    : wirePos;
+                Debug.Log($"[AIManager] → BeginLandingWithPath '{escort.name}' (slot {i + 1}) wirePos={targetWirePos}");
+                escort.BeginLandingWithPath(carrier, approachDir, targetWirePos);
+            }
+            else
+            {
+                Debug.Log($"[AIManager] → BeginLanding '{escort.name}' (slot {i + 1})");
+                escort.BeginLanding(carrier);
+            }
 
             if (i < escorts.Count - 1)
                 yield return new WaitForSeconds(_escortLandingStagger);

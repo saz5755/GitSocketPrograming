@@ -559,10 +559,9 @@ public class EscortAI : MonoBehaviour
             Vector3 wpBase    = _playerWirePos + backDir * Cfg.approachDistance;
             _approachWaypoint = new Vector3(wpBase.x, _playerWirePos.y + Cfg.approachAltitude, wpBase.z);
 
-            // 좌/우 에스코트가 겹치지 않도록 진행 방향 기준 측면 오프셋
-            Vector3 sideDir = Vector3.Cross(_playerApproachDir.normalized, Vector3.up).normalized;
-            _landingSpot    = _playerWirePos + sideDir * Cfg.GetSideOffset(isLeft);
-            _landingSpot.y  = _playerWirePos.y + 1f;
+            // 와이어 중심을 직접 목표로 — 측면 오프셋 없이 CheckEscortWire 체결 성공률 극대화
+            _landingSpot   = _playerWirePos;
+            _landingSpot.y = _playerWirePos.y + 0.5f;
         }
         else
         {
