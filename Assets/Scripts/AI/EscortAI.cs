@@ -493,11 +493,12 @@ public class EscortAI : MonoBehaviour
 
             if (dist < Cfg.directLandDistance)
             {
-                // 와이어에 안 잡힌 경우 — 직접 착함
-                transform.SetPositionAndRotation(_landingSpot, _carrier.rotation);
-                _bot.SetTarget(_landingSpot, _carrier.rotation, 0f);
-                _phase = Phase.Landed;
-                Debug.Log($"[EscortAI] {name} 직접 착함");
+                // CheckEscortWire 미체결 보장 트리거 — 직접 스냅 대신 감속 착함으로 전환
+                // _currentSpeed로 BeingArrested 진입 → UpdateBeingArrested에서 플레이어와 동일 감속 처리
+                float deckY = _hasApproachInfo
+                    ? _playerWirePos.y + 0.3f
+                    : _carrier.position.y + 0.3f;
+                OnWireCaught(deckY);
                 return;
             }
 
