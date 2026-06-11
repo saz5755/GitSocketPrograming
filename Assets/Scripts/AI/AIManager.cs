@@ -33,9 +33,10 @@ public class AIManager : MonoBehaviour
     [Tooltip("에스코트 간 착함 시작 시차 (초) — 플레이어 F키 하차 후 1번기부터 이 간격으로 순차 착함")]
     [SerializeField] float _escortLandingStagger = 5f;
 
-    bool _isHost;
-    bool _initialized;
-    bool _escortLandingStarted;
+    bool      _isHost;
+    bool      _initialized;
+    bool      _escortLandingStarted;
+    Coroutine _landingCoroutine;   // EscortLandingCoroutine 핸들 — 재시작 시 취소용
 
     // 플레이어 어레스팅 와이어 경로 (와이어 정지 시 저장, 하차 시 사용)
     Vector3 _arrestedApproachDir;
@@ -260,16 +261,21 @@ public class AIManager : MonoBehaviour
         _hasArrestInfo       = true;
     }
 
-    // 플레이어 F키 하차(ExitFlight) 시 호출 — 저장된 경로로 에스코트 순차 착함 시작
+    // GameModeManager.ExitFlight에서 착함 트리거 판단용
+    public bool HasArrestInfo => _hasArrestInfo;
+
+    // 플레이어 F키 하차(ExitFlight) 시 호출 — 저장된 경로로 에스코트 순차 착함 시작.
+    // 와이어 체결 정보가 있을 때만 동작하며, 폴백 코루틴이 이미 실행 중이더라도 덮어씀.
     public void BeginEscortLandingAfterDismount()
     {
-        if (!_isHost || _escortLandingStarted) return;
+        if (!_isHost || !_hasArrestInfo) return;
+        // 폴백 코루틴(UpdateEscorting leaderStopTimer)이 먼저 시작됐을 수 있으므로
+        // arrest info가 있을 때는 기존 착함 코루틴을 취소하고 올바른 경로로 재시작한다.
+        if (_landingCoroutine != null) { StopCoroutine(_landingCoroutine); _landingCoroutine = null; }
         _escortLandingStarted = true;
         var carrierTr = _cachedCarrier?.transform ?? FindFirstObjectByType<CarrierController>()?.transform;
-        if (_hasArrestInfo)
-            StartCoroutine(EscortLandingCoroutine(carrierTr, _arrestedApproachDir, _arrestedWirePos, true));
-        else
-            StartCoroutine(EscortLandingCoroutine(carrierTr, Vector3.zero, Vector3.zero, false));
+        Debug.Log($"[AIManager] BeginEscortLandingAfterDismount: carrier={(carrierTr != null ? carrierTr.name : "null")}  dir={_arrestedApproachDir}  wirePos={_arrestedWirePos}");
+        _landingCoroutine = StartCoroutine(EscortLandingCoroutine(carrierTr, _arrestedApproachDir, _arrestedWirePos, true));
     }
 
     // 플레이어 어레스팅 와이어 체결 직후 호출 — 에스코트 즉시 자유비행 전환
@@ -283,13 +289,13 @@ public class AIManager : MonoBehaviour
         }
     }
 
-    // 플레이어 항모 착함 후 호출 (GameModeManager 경로) — 에스코트 순차 착함
+    // 플레이어 항모 착함 후 호출 (폴백 경로 — 와이어 없이 착함, 또는 UpdateEscorting 폴백)
     public void BeginEscortLanding(Transform carrier)
     {
         Debug.Log($"[AIManager] BeginEscortLanding called  isHost={_isHost}  landingStarted={_escortLandingStarted}  carrier={(carrier != null ? carrier.name : "null")}");
         if (!_isHost || _escortLandingStarted) return;
         _escortLandingStarted = true;
-        StartCoroutine(EscortLandingCoroutine(carrier, Vector3.zero, Vector3.zero, false));
+        _landingCoroutine = StartCoroutine(EscortLandingCoroutine(carrier, Vector3.zero, Vector3.zero, false));
     }
 
     System.Collections.IEnumerator EscortLandingCoroutine(

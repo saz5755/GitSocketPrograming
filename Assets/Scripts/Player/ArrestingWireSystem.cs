@@ -496,6 +496,8 @@ public class ArrestingWireSystem : MonoBehaviour
             _local.BeginArrest();
             _arrestApproachDir = _local.transform.forward;
             _arrestWirePos     = ws.root.TransformPoint(Vector3.zero);
+            // 와이어 체결 즉시 에스코트를 자유비행으로 전환 (TrapCoroutine 경로와 무관하게 보장)
+            AIManager.Instance?.BeginEscortFreeFlightNow();
             Debug.Log($"[ArrestWire] Wire {i + 1} 체결! 속도={speed:F1} m/s  deckY={ws.deckTargetY:F2}");
         }
 

@@ -335,8 +335,9 @@ public class GameModeManager : MonoBehaviour
         _fc?.SetGroundTarget(_gc.transform);
         _hud?.SetVisible(false);
 
-        // 항모 착함 시: 저장된 와이어 경로로 에스코트 AI 순차 착함 시작
-        if (platform != null)
+        // 와이어 체결 후 하차 시: 저장된 경로로 에스코트 AI 순차 착함 시작
+        // platform != null (Carrier존) 또는 HasArrestInfo (Landing존에서 와이어 체결 후 하차) 모두 처리
+        if (platform != null || (AIManager.Instance != null && AIManager.Instance.HasArrestInfo))
             AIManager.Instance?.BeginEscortLandingAfterDismount();
 
         Cursor.lockState = CursorLockMode.Locked;
