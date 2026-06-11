@@ -283,6 +283,7 @@ public class EscortAI : MonoBehaviour
             case Phase.FreeFlight:      UpdateFreeFlight();      break;
             case Phase.LandingApproach: UpdateLandingApproach(); break;
             case Phase.BeingArrested:   UpdateBeingArrested();   break;
+            case Phase.Landed:          UpdateLanded();          break;
         }
     }
 
@@ -469,11 +470,26 @@ public class EscortAI : MonoBehaviour
         }
     }
 
+    // ── 갑판 정지 유지 ───────────────────────────────────────────────────────
+    // Landed 상태에서 매 프레임 PositionOverride를 강제 유지 — 외부 상태 변화 방어
+    void UpdateLanded()
+    {
+        _bot.PositionOverride = true;
+        _bot.SetTarget(transform.position, transform.rotation, 0f);
+    }
+
     // ── 파이널 어프로치 & 착함 ───────────────────────────────────────────────
 
     void UpdateLandingApproach()
     {
-        if (_carrier == null) { _phase = Phase.Escorting; return; }
+        // _carrier가 null이어도 hasApproachInfo가 있으면 접근 가능 — 먼저 lazily 탐색 후 판단
+        if (_carrier == null)
+        {
+            _carrier = _cachedCarrier?.transform
+                    ?? Object.FindFirstObjectByType<CarrierController>()?.transform;
+            if (_carrier == null && !_hasApproachInfo)
+            { _phase = Phase.Escorting; return; }
+        }
 
         // 각속도 기반 회전 (90°/s) — 직선 비행 중 옆으로 미끄러지는 모습 방지
         const float ApproachTurnRate = 90f;
@@ -547,6 +563,10 @@ public class EscortAI : MonoBehaviour
             pos = transform.position;
             pos.y = _arrestDeckY;
             transform.position = pos;
+            // _carrier가 null이면 씬에서 다시 탐색
+            if (_carrier == null)
+                _carrier = _cachedCarrier?.transform
+                        ?? Object.FindFirstObjectByType<CarrierController>()?.transform;
             // 항모 이동을 따라가도록 부착 — 착함 후 항모 위에서 슬라이드 방지
             if (_carrier != null)
                 transform.SetParent(_carrier, worldPositionStays: true);
