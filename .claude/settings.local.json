@@ -81,7 +81,16 @@
       "mcp__coplay-mcp__rename_game_object",
       "mcp__coplay-mcp__install_git_package",
       "mcp__coplay-mcp__assign_material",
-      "PowerShell(Remove-Item *)"
+      "PowerShell(Remove-Item *)",
+      "Bash(git ls-remote *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git remote *)",
+      "Bash(git rm *)",
+      "Bash(grep -v \"Awake\\\\|Start\\\\|Init\\\\|//\")",
+      "Bash(where unity *)",
+      "Bash(\"/c/Program Files/Unity/Hub/Editor/6000.4.1f1/Editor/Unity.exe\" -batchmode -nographics -projectPath \"C:/Unity/GitSocketPrograming\" -quit -logFile -)"
     ]
   }
 }

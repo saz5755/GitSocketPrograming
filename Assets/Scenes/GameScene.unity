@@ -10147,6 +10147,7 @@ MonoBehaviour:
   _botConfig: {fileID: 11400000, guid: 14e4ea523f2055a4484033e34f87772b, type: 2}
   _spawnEnemies: 0
   _enemyCount: 2
+  _escortLandingStagger: 1.5
 --- !u!1 &1271288922
 GameObject:
   m_ObjectHideFlags: 0
@@ -13741,7 +13742,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 616d0aa5a28a1554780ac674afe86d14, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DevSettings
-  skipPreflight: 0
+  skipPreflight: 1
   editorAutoStart: 0
   autoServerIP: 
   autoNickname: Editor
