@@ -54,8 +54,11 @@ public class Room
 
         DespawnPacket despawn = new()
         {
-            type = PacketType.DESPAWN,
-            nickname = player.nickname
+            type      = PacketType.DESPAWN,
+            nickname  = player.nickname,
+            wasFlying = player.isFlying,
+            posX = player.posX, posY = player.posY, posZ = player.posZ,
+            rotX = player.rotX, rotY = player.rotY, rotZ = player.rotZ
         };
         Broadcast(despawn);
 

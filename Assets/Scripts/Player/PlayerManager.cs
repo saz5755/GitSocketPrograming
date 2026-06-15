@@ -21,6 +21,8 @@ public class PlayerManager : MonoBehaviour
     readonly Dictionary<string, GameObject>              _readyLabels      = new();
     // nickname → 점령된 AircraftBoardingTrigger (IsOccupied 해제용)
     readonly Dictionary<string, AircraftBoardingTrigger> _occupiedAircraft = new();
+    // 비행 중 퇴장한 플레이어의 방치 항공기 오브젝트
+    readonly Dictionary<string, GameObject>              _abandonedAircraft = new();
 
     static Material _grayMat;
 
@@ -69,22 +71,76 @@ public class PlayerManager : MonoBehaviour
         }
     }
 
-    void HandleDespawn(string nickname)
+    void HandleDespawn(DespawnPacket p)
     {
-        if (players.TryGetValue(nickname, out var pc))
+        if (players.TryGetValue(p.nickname, out var pc))
         {
-            players.Remove(nickname);
+            players.Remove(p.nickname);
             if (pc != null) Destroy(pc.gameObject);
         }
 
-        if (_groundChars.TryGetValue(nickname, out var gc))
+        if (_groundChars.TryGetValue(p.nickname, out var gc))
         {
-            _groundChars.Remove(nickname);
+            _groundChars.Remove(p.nickname);
             if (gc != null) Destroy(gc);
         }
 
-        HideReadyLabel(nickname);
-        Debug.Log($"[Player] Despawned: {nickname}");
+        HideReadyLabel(p.nickname);
+
+        // 비행 중 퇴장: 마지막 위치에 방치 항공기 생성
+        if (p.wasFlying && (p.posX != 0f || p.posY != 0f || p.posZ != 0f))
+        {
+            SpawnAbandonedAircraft(
+                p.nickname,
+                new Vector3(p.posX, p.posY, p.posZ),
+                Quaternion.Euler(p.rotX, p.rotY, p.rotZ));
+        }
+
+        Debug.Log($"[Player] Despawned: {p.nickname}  wasFlying={p.wasFlying}");
+    }
+
+    // 비행 중 퇴장한 플레이어의 전투기를 마지막 위치에 정적으로 배치
+    void SpawnAbandonedAircraft(string nickname, Vector3 pos, Quaternion rot)
+    {
+        GameObject go;
+
+        if (playerPrefab != null)
+        {
+            go = Instantiate(playerPrefab, pos, rot);
+            go.name = $"Abandoned_{nickname}";
+
+            // 움직임·AI·네트워크 컴포넌트 제거 — 렌더러·콜라이더는 유지
+            foreach (var t in new System.Type[]
+            {
+                typeof(PlayerController), typeof(AIBotController),
+                typeof(EscortAI), typeof(AircraftBoardingTrigger), typeof(EscortVFXController)
+            })
+            {
+                var c = go.GetComponentInChildren(t);
+                if (c != null) Destroy(c);
+            }
+
+            // Rigidbody가 있으면 중력 낙하 방지
+            var rb = go.GetComponentInChildren<Rigidbody>();
+            if (rb != null) Destroy(rb);
+        }
+        else
+        {
+            // playerPrefab 없을 때 황색 캡슐로 표시
+            go = new GameObject($"Abandoned_{nickname}");
+            var body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+            Destroy(body.GetComponent<CapsuleCollider>());
+            var mat = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
+            mat.color = new Color(1f, 0.8f, 0.1f);
+            body.GetComponent<Renderer>().sharedMaterial = mat;
+            body.transform.SetParent(go.transform, false);
+            body.transform.localScale = new Vector3(1.2f, 0.28f, 3.8f);
+            go.transform.SetPositionAndRotation(pos, rot);
+        }
+
+        go.AddComponent<PlayerLabel>().SetNickname($"{nickname} [OFFLINE]");
+        _abandonedAircraft[nickname] = go;
+        Debug.Log($"[PlayerManager] Abandoned aircraft placed at {pos} for {nickname}");
     }
 
     void HandleMove(MoveBroadcastPacket p)
@@ -353,6 +409,10 @@ public class PlayerManager : MonoBehaviour
         foreach (var t in _occupiedAircraft.Values)
             if (t != null) t.IsOccupied = false;
         _occupiedAircraft.Clear();
+
+        foreach (var go in _abandonedAircraft.Values)
+            if (go != null) Destroy(go);
+        _abandonedAircraft.Clear();
     }
 
     void ClearRemoteMissiles()

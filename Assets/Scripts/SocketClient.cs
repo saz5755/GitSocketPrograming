@@ -35,7 +35,7 @@ public class SocketClient : MonoBehaviour
     public event Action<LoginResultPacket>    OnLoginResult;
     public event Action<string>               OnChat;
     public event Action<SpawnPacket>          OnSpawn;
-    public event Action<string>               OnDespawn;
+    public event Action<DespawnPacket>        OnDespawn;
     public event Action<MoveBroadcastPacket>  OnMove;
     public event Action<MoveAckPacket>        OnMoveAck;
     public event Action<List<RoomInfo>>       OnRoomList;
@@ -141,7 +141,7 @@ public class SocketClient : MonoBehaviour
                 UnityMainThreadDispatcher.Instance.Enqueue(() =>
                 {
                     lastTicks.TryRemove(p.nickname, out _);
-                    OnDespawn?.Invoke(p.nickname);
+                    OnDespawn?.Invoke(p);
                 });
                 break;
             }

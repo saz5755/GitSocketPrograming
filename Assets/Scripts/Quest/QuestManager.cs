@@ -246,10 +246,10 @@ public class QuestManager : MonoBehaviour
     void OnRemoteSpawned(SpawnPacket _) => SendQuestUpdate();
 
     // 플레이어 퇴장 시 RemoteStates에서 제거하고 UI 갱신
-    void OnRemoteDespawned(string nickname)
+    void OnRemoteDespawned(DespawnPacket p)
     {
-        if (RemoteStates.Remove(nickname))
-            OnRemoteUpdated?.Invoke(nickname);
+        if (RemoteStates.Remove(p.nickname))
+            OnRemoteUpdated?.Invoke(p.nickname);
     }
 }
 
