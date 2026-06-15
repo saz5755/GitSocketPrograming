@@ -81,6 +81,9 @@ public class EscortAI : MonoBehaviour
     Vector3 _landingSlot;       // 착함 목표 슬롯 월드 좌표 — BeingArrested가 이 위치에 정지
     float   _modelBottomOffset; // transform.position.y ~ 모델 최하단까지 거리 (바퀴 관통 방지)
 
+    // 편대 비행 회전 보간 — 매 프레임 raw 목표 회전을 즉시 적용하면 좌우 진동 발생
+    Quaternion _smoothFormationRot;
+
     public Vector3 FormationOffset => _formationOffset;
     public bool    IsLeftSide      => _formationOffset.x < 0f;
     public bool    IsLaunching     => _phase == Phase.Launching;
@@ -123,8 +126,9 @@ public class EscortAI : MonoBehaviour
         _bot.PositionOverride = true;
         _bot.SetMaxSpeed(Cfg.maxSpeedOverride);
         _bot.SetTurnRate(Cfg.turnRateOverride);
-        _speedJitter      = Random.Range(-Cfg.speedJitterRange, Cfg.speedJitterRange);
-        _phase            = spawnedOnDeck ? Phase.OnDeck : Phase.Escorting;
+        _speedJitter          = Random.Range(-Cfg.speedJitterRange, Cfg.speedJitterRange);
+        _smoothFormationRot   = transform.rotation;
+        _phase                = spawnedOnDeck ? Phase.OnDeck : Phase.Escorting;
         _cachedCarrier    = Object.FindFirstObjectByType<CarrierController>();
 
         // 모델 최하단 ~ 피벗 거리 계산 — 착함 시 바퀴 갑판 관통 방지
@@ -376,14 +380,21 @@ public class EscortAI : MonoBehaviour
             }
             else
             {
-                Quaternion lookRot = Quaternion.LookRotation(toTarget.normalized, _leader.up);
+                // 리더 로컬 좌표로 변환 후 횡방향(X) 성분을 줄임
+                // — X 오차를 그대로 두면 오버슈트 → 반대 방향 수정 → 좌우 진동 반복
+                Vector3 toTargetLocal = _leader.InverseTransformDirection(toTarget);
+                toTargetLocal.x *= 0.25f;
+                Quaternion lookRot = Quaternion.LookRotation(
+                    _leader.TransformDirection(toTargetLocal).normalized, _leader.up);
                 float blend = Mathf.Clamp01(1f - dist / Cfg.snapDistance);
                 rot = Quaternion.Slerp(lookRot, leaderRot, blend);
             }
         }
 
+        // 목표 회전을 매 프레임 즉시 적용하지 않고 서서히 추종 — 급반전에 의한 좌우 떨림 방지
+        _smoothFormationRot = Quaternion.Slerp(_smoothFormationRot, rot, Cfg.rotSmoothSpeed * Time.deltaTime);
         _bot.PositionOverride = false;
-        _bot.SetTarget(targetPos, rot, targetSpeed);
+        _bot.SetTarget(targetPos, _smoothFormationRot, targetSpeed);
 
         // ── 리더 정지 감지 → 자동 착함 시작 ────────────────────────────────────
         // FreeFlightZone과 동일한 보호 로직 — Escorting 상태에서도 leader가 멈추면

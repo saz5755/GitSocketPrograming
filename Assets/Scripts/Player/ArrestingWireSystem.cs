@@ -544,6 +544,24 @@ public class ArrestingWireSystem : MonoBehaviour
         return bestY > float.MinValue ? bestY + Cfg.landingClearance : fallbackY;
     }
 
+    // 에스코트 전용 — clearance 미포함 순수 갑판 면 Y 반환.
+    // EscortAI._modelBottomOffset이 피벗 보정을 담당하므로 clearance를 이중 적용하지 않는다.
+    float DetectRawDeckY(Vector3 fromPos, float fallbackY, Transform ignoreSelf = null)
+    {
+        int count = Physics.RaycastNonAlloc(
+            fromPos + Vector3.up * 3f, Vector3.down,
+            _deckHits, 8f,
+            Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+
+        float bestY = float.MinValue;
+        for (int k = 0; k < count; k++)
+        {
+            if (ignoreSelf != null && _deckHits[k].transform.IsChildOf(ignoreSelf)) continue;
+            if (_deckHits[k].point.y > bestY) bestY = _deckHits[k].point.y;
+        }
+        return bestY > float.MinValue ? bestY : fallbackY;
+    }
+
     void CheckEscortWire(WireState ws, int wireIdx)
     {
         foreach (var escort in EscortAI.AllEscorts)
@@ -560,8 +578,9 @@ public class ArrestingWireSystem : MonoBehaviour
 
             if (!inZone) continue;
 
-            float deckY = DetectDeckY(escort.transform.position, ws.wireWorldY + Cfg.landingClearance, escort.transform);
-            escort.OnWireCaught(deckY);
+            // 에스코트는 순수 갑판 면 Y 전달 — EscortAI._modelBottomOffset이 피벗 보정
+            float rawDeckY = DetectRawDeckY(escort.transform.position, ws.wireWorldY, escort.transform);
+            escort.OnWireCaught(rawDeckY);
             Debug.Log($"[ArrestWire] Wire {wireIdx + 1} 에스코트 체결: {escort.name}");
             break;
         }

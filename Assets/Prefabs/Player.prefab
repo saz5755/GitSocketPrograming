@@ -222,7 +222,6 @@ GameObject:
   - component: {fileID: 7247021537001746904}
   - component: {fileID: 6406557038143727355}
   - component: {fileID: 5196087537230184306}
-  - component: {fileID: 8448826043390730952}
   - component: {fileID: 3344905410776169347}
   m_Layer: 0
   m_Name: Player
@@ -272,7 +271,7 @@ CapsuleCollider:
   m_Radius: 1
   m_Height: 8
   m_Direction: 2
-  m_Center: {x: 0, y: 0, z: 0}
+  m_Center: {x: 0, y: 1.1, z: 0.2}
 --- !u!114 &7530593515189148540
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -326,7 +325,263 @@ MonoBehaviour:
   leftWingtip: {fileID: 0}
   rightWingtip: {fileID: 0}
   contrailThreshold: 15
+  contrail:
+    trailTime: 1.5
+    startWidth: 0.4
+    endWidth: 2
+    minVertexDistance: 0.2
+    colorGradient:
+      serializedVersion: 2
+      key0: {r: 1, g: 1, b: 1, a: 0.5}
+      key1: {r: 0.8, g: 0.8, b: 0.8, a: 0}
+      key2: {r: 0, g: 0, b: 0, a: 0}
+      key3: {r: 0, g: 0, b: 0, a: 0}
+      key4: {r: 0, g: 0, b: 0, a: 0}
+      key5: {r: 0, g: 0, b: 0, a: 0}
+      key6: {r: 0, g: 0, b: 0, a: 0}
+      key7: {r: 0, g: 0, b: 0, a: 0}
+      ctime0: 0
+      ctime1: 65535
+      ctime2: 0
+      ctime3: 0
+      ctime4: 0
+      ctime5: 0
+      ctime6: 0
+      ctime7: 0
+      atime0: 0
+      atime1: 65535
+      atime2: 0
+      atime3: 0
+      atime4: 0
+      atime5: 0
+      atime6: 0
+      atime7: 0
+      m_Mode: 0
+      m_ColorSpace: -1
+      m_NumColorKeys: 2
+      m_NumAlphaKeys: 2
+  _afterburnerVFXPrefab: {fileID: 0}
   engineNozzle: {fileID: 0}
+  _additiveMaterial: {fileID: 0}
+  _shockDiamondMaterial: {fileID: 0}
+  _alphaMaterial: {fileID: 0}
+  idleExhaust:
+    lifetimeMin: 0.4
+    lifetimeMax: 0.8
+    speedMin: 6
+    speedMax: 14
+    sizeMin: 0.25
+    sizeMax: 0.55
+    colorA: {r: 1, g: 0.55, b: 0.15, a: 0.65}
+    colorB: {r: 0.75, g: 0.3, b: 0.05, a: 0.3}
+    emissionRate: 30
+    coneAngle: 4
+    coneRadius: 0.28
+    sizeOverLifetime:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0.4
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1.8
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+    colorOverLifetime:
+      serializedVersion: 2
+      key0: {r: 1, g: 0.65, b: 0.25, a: 0.7}
+      key1: {r: 0.55, g: 0.55, b: 0.55, a: 0}
+      key2: {r: 0, g: 0, b: 0, a: 0}
+      key3: {r: 0, g: 0, b: 0, a: 0}
+      key4: {r: 0, g: 0, b: 0, a: 0}
+      key5: {r: 0, g: 0, b: 0, a: 0}
+      key6: {r: 0, g: 0, b: 0, a: 0}
+      key7: {r: 0, g: 0, b: 0, a: 0}
+      ctime0: 0
+      ctime1: 65535
+      ctime2: 0
+      ctime3: 0
+      ctime4: 0
+      ctime5: 0
+      ctime6: 0
+      ctime7: 0
+      atime0: 0
+      atime1: 65535
+      atime2: 0
+      atime3: 0
+      atime4: 0
+      atime5: 0
+      atime6: 0
+      atime7: 0
+      m_Mode: 0
+      m_ColorSpace: -1
+      m_NumColorKeys: 2
+      m_NumAlphaKeys: 2
+    lightColor: {r: 1, g: 0.5, b: 0.1, a: 1}
+    lightIntensity: 1.8
+    lightRange: 7
+  heatHaze:
+    lifetimeMin: 0.8
+    lifetimeMax: 1.6
+    speedMin: 12
+    speedMax: 28
+    sizeMin: 0.6
+    sizeMax: 1.4
+    colorA: {r: 1, g: 0.92, b: 0.75, a: 0.1}
+    colorB: {r: 0.9, g: 0.88, b: 0.82, a: 0.05}
+    emissionRate: 18
+    coneAngle: 10
+    coneRadius: 0.35
+    sizeOverLifetime:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0.5
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 3.5
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+    colorOverLifetime:
+      serializedVersion: 2
+      key0: {r: 1, g: 0.95, b: 0.8, a: 0}
+      key1: {r: 0.92, g: 0.9, b: 0.85, a: 0.12}
+      key2: {r: 0.85, g: 0.85, b: 0.85, a: 0}
+      key3: {r: 0, g: 0, b: 0, a: 0}
+      key4: {r: 0, g: 0, b: 0, a: 0}
+      key5: {r: 0, g: 0, b: 0, a: 0}
+      key6: {r: 0, g: 0, b: 0, a: 0}
+      key7: {r: 0, g: 0, b: 0, a: 0}
+      ctime0: 0
+      ctime1: 26214
+      ctime2: 65535
+      ctime3: 0
+      ctime4: 0
+      ctime5: 0
+      ctime6: 0
+      ctime7: 0
+      atime0: 0
+      atime1: 9830
+      atime2: 65535
+      atime3: 0
+      atime4: 0
+      atime5: 0
+      atime6: 0
+      atime7: 0
+      m_Mode: 0
+      m_ColorSpace: -1
+      m_NumColorKeys: 3
+      m_NumAlphaKeys: 3
+    noiseStrength: 0.35
+    noiseFrequency: 0.6
+    noiseScrollSpeed: 0.4
+  afterburnerCfg:
+    outerLifetime: 0.12
+    outerSpeed: 40
+    outerSize: 1.5
+    outerColor: {r: 1, g: 0.4, b: 0.05, a: 0.8}
+    outerEmission: 80
+    outerConeAngle: 1
+    outerConeRadius: 0.35
+    innerLifetime: 0.1
+    innerSpeed: 50
+    innerSize: 0.8
+    innerColor: {r: 0.7, g: 0.9, b: 1, a: 1}
+    innerEmission: 60
+    innerSizeOverLifetime:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 0.2
+        value: 0.4
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 0.4
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 0.6
+        value: 0.4
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 0.8
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 0.2
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+    lightColor: {r: 1, g: 0.6, b: 0.2, a: 1}
+    lightRange: 20
+  catapultCfg:
+    boostDuration: 8
+    minBoostSpeed: 5
+    afterburnerMinSpeed: 60
 --- !u!65 &5196087537230184306
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -346,29 +601,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 5.6, y: 0.3, z: 3.8}
-  m_Center: {x: 0, y: -0.1, z: 0.15}
---- !u!65 &8448826043390730952
-BoxCollider:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 6036812862657962760}
-  m_Material: {fileID: 0}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_LayerOverridePriority: 0
-  m_IsTrigger: 0
-  m_ProvidesContacts: 0
-  m_Enabled: 1
-  serializedVersion: 3
-  m_Size: {x: 1.2, y: 1.6, z: 7.8}
-  m_Center: {x: 0, y: 0.3, z: 0}
+  m_Size: {x: 5.6, y: 0.3, z: 4.2}
+  m_Center: {x: 0, y: 1.1, z: -2.2}
 --- !u!114 &3344905410776169347
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -512,7 +746,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 2e28a1494a96aab46b5ef3c8a5880f33, type: 3}
       propertyPath: m_LocalPosition.y
-      value: -1.2
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 2e28a1494a96aab46b5ef3c8a5880f33, type: 3}
       propertyPath: m_LocalPosition.z

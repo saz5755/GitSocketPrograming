@@ -3,7 +3,7 @@ using UnityEngine;
 public class F35VFXController : MonoBehaviour
 {
     // EscortVFXController가 동일 위치를 참조할 수 있도록 노즐 로컬 좌표를 공유
-    public static Vector3 SharedNozzleLocalPos = new Vector3(0f, 0f, -4.0f);
+    public static Vector3 SharedNozzleLocalPos = new Vector3(0f, 1.2f, -4.0f);
 
     // ── 아트 튜닝용 설정 클래스 (인스펙터에서 모두 수정 가능) ───────────────────
 
@@ -218,7 +218,7 @@ public class F35VFXController : MonoBehaviour
         {
             GameObject nozzle = new GameObject("EngineNozzle");
             nozzle.transform.SetParent(transform);
-            nozzle.transform.localPosition = new Vector3(0f, 0f, -4.0f);
+            nozzle.transform.localPosition = new Vector3(0f, 1.2f, -4.0f);
             engineNozzle = nozzle.transform;
         }
         SharedNozzleLocalPos = engineNozzle.localPosition;

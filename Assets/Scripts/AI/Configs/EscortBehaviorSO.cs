@@ -15,6 +15,8 @@ public class EscortBehaviorSO : ScriptableObject
     public float slotAheadThreshold = 5f;
     [Tooltip("슬롯 거리 이 값 이내에서 보간 가중치 1로 수렴")]
     public float snapDistance = 40f;
+    [Tooltip("편대 비행 회전 보간 속도. 낮을수록 부드럽지만 선회 반응이 느림. 좌우 떨림 발생 시 줄임 (4~8 권장)")]
+    [Range(2f, 15f)] public float rotSmoothSpeed = 6f;
 
     [Header("봇 한계 (Initialize 시 적용)")]
     [Tooltip("에스코트가 추격 시 낼 수 있는 최대 속도")]

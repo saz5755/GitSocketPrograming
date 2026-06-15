@@ -303,7 +303,7 @@ Transform:
   m_GameObject: {fileID: 47556394}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 1, z: 0, w: 0}
-  m_LocalPosition: {x: -3.7, y: 0, z: 27.2}
+  m_LocalPosition: {x: -3.7, y: -2.12, z: 27.2}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -321,7 +321,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 949d2570d14c25c4f9131261c1b0f1c9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EscortSlot
-  formationOffset: {x: 8, y: -5, z: -40}
+  formationOffset: {x: 8, y: -3, z: -25}
   nickname: 
 --- !u!1 &49351284
 GameObject:
@@ -1277,7 +1277,7 @@ Transform:
   m_GameObject: {fileID: 196685720}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 1, z: 0, w: 0}
-  m_LocalPosition: {x: -10.1, y: 0, z: 27.2}
+  m_LocalPosition: {x: -10.1, y: -2.12, z: 27.2}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1295,7 +1295,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 949d2570d14c25c4f9131261c1b0f1c9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EscortSlot
-  formationOffset: {x: 16, y: -5, z: -40}
+  formationOffset: {x: 16, y: -4, z: -35}
   nickname: 
 --- !u!1 &232904709
 GameObject:
@@ -2152,7 +2152,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::FlightCamera
   chaseOffset: {x: 0, y: 3, z: -12}
   chaseSmooth: 6
-  cockpitOffset: {x: 0, y: 0.45, z: 2.45}
+  cockpitOffset: {x: 0, y: 1.75, z: 2.45}
   cockpitDownTilt: 8
   cockpitFOV: 55
   chaseFOV: 60
@@ -3236,7 +3236,7 @@ Transform:
   m_GameObject: {fileID: 460208179}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 1, z: 0, w: 0}
-  m_LocalPosition: {x: 3.1, y: 0, z: 27.2}
+  m_LocalPosition: {x: 3.1, y: -2.12, z: 27.2}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -3254,7 +3254,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 949d2570d14c25c4f9131261c1b0f1c9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EscortSlot
-  formationOffset: {x: -16, y: -5, z: -40}
+  formationOffset: {x: -16, y: -4, z: -35}
   nickname: 
 --- !u!1 &467879380
 GameObject:
@@ -9847,7 +9847,7 @@ Transform:
   m_GameObject: {fileID: 1208653666}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 1, z: 0, w: 0}
-  m_LocalPosition: {x: 9.7, y: 0, z: 27.2}
+  m_LocalPosition: {x: 9.7, y: -2.12, z: 27.2}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -9865,7 +9865,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 949d2570d14c25c4f9131261c1b0f1c9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EscortSlot
-  formationOffset: {x: -8, y: -5, z: -40}
+  formationOffset: {x: -8, y: -3, z: -25}
   nickname: 
 --- !u!1 &1211628120
 GameObject:
@@ -11872,7 +11872,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4160635106912926266, guid: 7cccd4623a96e8646b2aed594e1dd140, type: 3}
       propertyPath: m_LocalPosition.y
-      value: -0.95
+      value: -2.12
       objectReference: {fileID: 0}
     - target: {fileID: 4160635106912926266, guid: 7cccd4623a96e8646b2aed594e1dd140, type: 3}
       propertyPath: m_LocalPosition.z

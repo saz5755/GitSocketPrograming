@@ -8,7 +8,7 @@ public class FlightCamera : MonoBehaviour
     [SerializeField] float chaseSmooth = 6f;
 
     [Header("Cockpit Camera")]
-    [SerializeField] Vector3 cockpitOffset    = new Vector3(0f, 0.45f, 2.45f);
+    [SerializeField] Vector3 cockpitOffset    = new Vector3(0f, 1.75f, 2.45f);
     [SerializeField] float   cockpitDownTilt  = 8f;    // 기본 하향 시선 각도 (도)
     [SerializeField] float   cockpitFOV       = 55f;
     [SerializeField] float   chaseFOV         = 60f;

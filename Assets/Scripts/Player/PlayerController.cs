@@ -215,7 +215,7 @@ public class PlayerController : MonoBehaviour
         }
         if (!found) return;
 
-        float floor = bestY + 0.3f;
+        float floor = bestY - 0.097f;
         if (transform.position.y < floor)
         {
             var p = transform.position; p.y = floor; transform.position = p;
