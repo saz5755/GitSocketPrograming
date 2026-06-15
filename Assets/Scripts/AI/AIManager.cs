@@ -66,9 +66,10 @@ public class AIManager : MonoBehaviour
     {
         var sc = NetworkManager.Instance?.socketClient;
         if (sc == null) return;
-        sc.OnAISpawn   += HandleRemoteAISpawn;
-        sc.OnAIDespawn += HandleRemoteAIDespawn;
-        sc.OnAIMove    += HandleRemoteAIMove;
+        sc.OnAISpawn    += HandleRemoteAISpawn;
+        sc.OnAIDespawn  += HandleRemoteAIDespawn;
+        sc.OnAIMove     += HandleRemoteAIMove;
+        sc.OnHostChange += HandleHostChange;
     }
 
     void OnDestroy()
@@ -76,9 +77,10 @@ public class AIManager : MonoBehaviour
         if (Instance == this) Instance = null;
         var sc = NetworkManager.Instance?.socketClient;
         if (sc == null) return;
-        sc.OnAISpawn   -= HandleRemoteAISpawn;
-        sc.OnAIDespawn -= HandleRemoteAIDespawn;
-        sc.OnAIMove    -= HandleRemoteAIMove;
+        sc.OnAISpawn    -= HandleRemoteAISpawn;
+        sc.OnAIDespawn  -= HandleRemoteAIDespawn;
+        sc.OnAIMove     -= HandleRemoteAIMove;
+        sc.OnHostChange -= HandleHostChange;
     }
 
     // ── 호스트 초기화 (PlayerManager.CreateLocalPlayer에서 호출) ───────────
@@ -173,6 +175,75 @@ public class AIManager : MonoBehaviour
 
             Debug.Log($"[AIManager] Enemy spawned: {nick}");
         }
+    }
+
+    // ── 호스트 승계 ───────────────────────────────────────────────────────
+
+    // 서버가 HOST_CHANGE 패킷을 보낼 때 호출 — 이전 호스트(방장) 퇴장 시
+    void HandleHostChange(HostChangePacket p)
+    {
+        string myNick = NetworkManager.Instance?.socketClient?.myNickname ?? string.Empty;
+        if (p.newHostNickname != myNick) return;
+
+        Debug.Log("[AIManager] Host handoff received — taking over escort bots");
+        TakeOverRemoteBotsAsHost();
+    }
+
+    // 원격 뷰(_remoteBots)로 있던 에스코트 봇을 로컬 AI 제어로 전환
+    void TakeOverRemoteBotsAsHost()
+    {
+        // 로컬 플레이어 조회
+        PlayerController localPlayer = null;
+        foreach (var pc in FindObjectsByType<PlayerController>(FindObjectsSortMode.None))
+        {
+            if (pc.isLocalPlayer) { localPlayer = pc; break; }
+        }
+
+        if (localPlayer == null)
+        {
+            Debug.LogWarning("[AIManager] TakeOver: local PlayerController not found");
+            return;
+        }
+
+        _localPlayerAircraft  = localPlayer;
+        _cachedCarrier        = FindFirstObjectByType<CarrierController>();
+        _escortLandingStarted = false;
+        _hasArrestInfo        = false;
+
+        var slots = CollectEscortSlots();
+
+        // 에스코트 봇 닉네임만 추출 (순회 중 딕셔너리 수정 방지)
+        var escortKeys = new System.Collections.Generic.List<string>();
+        foreach (var kv in _remoteBots)
+            if (IsEscortBot(kv.Key)) escortKeys.Add(kv.Key);
+
+        int idx = 0;
+        foreach (string key in escortKeys)
+        {
+            if (!_remoteBots.TryGetValue(key, out var remotePC) || remotePC == null)
+            {
+                idx++; continue;
+            }
+            _remoteBots.Remove(key);
+
+            // 스냅샷 인터폴레이션 대신 EscortAI가 직접 위치를 제어하도록 전환
+            var bot = remotePC.gameObject.AddComponent<AIBotController>();
+            bot.SetConfig(_botConfig);
+            bot.SetNickname(key);
+
+            var escort = remotePC.gameObject.AddComponent<EscortAI>();
+            escort.SetBehavior(_escortBehavior);
+            Vector3 offset = idx < slots.Count
+                ? slots[idx].formationOffset
+                : new Vector3(-32f, -5f, -40f);
+            // spawnedOnDeck: false → 즉시 Escorting 상태로 진입 (이미 비행 중)
+            escort.Initialize(localPlayer.transform, offset, spawnedOnDeck: false);
+
+            _bots.Add(bot);
+            idx++;
+        }
+
+        Debug.Log($"[AIManager] Host takeover complete: {idx} escort bots now under local control");
     }
 
     // ── 원격 클라이언트: AI 패킷 핸들러 ──────────────────────────────────

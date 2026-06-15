@@ -51,6 +51,7 @@ public class SocketClient : MonoBehaviour
     public event Action<AISpawnPacket>          OnAISpawn;
     public event Action<string>                 OnAIDespawn;
     public event Action<AIMovePacket>           OnAIMove;
+    public event Action<HostChangePacket>       OnHostChange;
 
     // ── 연결 ──────────────────────────────────────────────────────────────
     public void Connect(string ip = null)
@@ -224,6 +225,13 @@ public class SocketClient : MonoBehaviour
                     lastTicks.TryRemove(p.nickname, out _);
                     OnAIDespawn?.Invoke(p.nickname);
                 });
+                break;
+            }
+
+            case PacketType.HOST_CHANGE:
+            {
+                var p = JsonConvert.DeserializeObject<HostChangePacket>(json);
+                UnityMainThreadDispatcher.Instance.Enqueue(() => OnHostChange?.Invoke(p));
                 break;
             }
 

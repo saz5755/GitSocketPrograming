@@ -109,9 +109,10 @@ class EnterRoomHandler
         // 4. 입장 성공 결과 전송
         ServerSender.SendPacket(session, new EnterRoomResultPacket
         {
-            type    = PacketType.ENTER_ROOM_RESULT,
-            success = true,
-            roomId  = room.roomId
+            type         = PacketType.ENTER_ROOM_RESULT,
+            success      = true,
+            roomId       = room.roomId,
+            hostNickname = room.hostNickname
         });
 
         Console.WriteLine($"[Room] {session.player.nickname} entered room {packet.roomId}");

@@ -28,4 +28,5 @@ public enum PacketType
     AI_SPAWN           = 26,
     AI_DESPAWN         = 27,
     AI_MOVE            = 28,
+    HOST_CHANGE        = 29,
 }

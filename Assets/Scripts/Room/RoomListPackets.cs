@@ -37,4 +37,5 @@ public class EnterRoomResultPacket : Packet
     public bool   success;
     public int    roomId;
     public string errorMessage;
+    public string hostNickname;
 }
