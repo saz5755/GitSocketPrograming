@@ -99,7 +99,7 @@ public class PlayerManager : MonoBehaviour
         Debug.Log($"[Player] Despawned: {p.nickname}  wasFlying={p.wasFlying}");
     }
 
-    // 비행 중 퇴장한 플레이어의 전투기를 마지막 위치에 정적으로 배치
+    // 비행 중 퇴장한 플레이어의 전투기를 갑판에 자동 착함 후 탑승 가능 상태로 배치
     void SpawnAbandonedAircraft(string nickname, Vector3 pos, Quaternion rot)
     {
         GameObject go;
@@ -109,25 +109,23 @@ public class PlayerManager : MonoBehaviour
             go = Instantiate(playerPrefab, pos, rot);
             go.name = $"Abandoned_{nickname}";
 
-            // 움직임·AI·네트워크 컴포넌트 제거 — 렌더러·콜라이더는 유지
+            // AI·이동 컴포넌트만 제거 — PlayerController·AircraftBoardingTrigger는 탑승에 필요하므로 유지
             foreach (var t in new System.Type[]
-            {
-                typeof(PlayerController), typeof(AIBotController),
-                typeof(EscortAI), typeof(AircraftBoardingTrigger), typeof(EscortVFXController)
-            })
+                { typeof(AIBotController), typeof(EscortAI), typeof(EscortVFXController) })
             {
                 var c = go.GetComponentInChildren(t);
                 if (c != null) Destroy(c);
             }
 
-            // Rigidbody가 있으면 중력 낙하 방지
+            // 물리 낙하 방지 (코루틴으로 직접 이동하므로 Rigidbody 불필요)
             var rb = go.GetComponentInChildren<Rigidbody>();
-            if (rb != null) Destroy(rb);
+            if (rb != null) { rb.isKinematic = true; Destroy(rb); }
         }
         else
         {
-            // playerPrefab 없을 때 황색 캡슐로 표시
             go = new GameObject($"Abandoned_{nickname}");
+            go.AddComponent<PlayerController>().enabled = false;
+
             var body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
             Destroy(body.GetComponent<CapsuleCollider>());
             var mat = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
@@ -138,9 +136,57 @@ public class PlayerManager : MonoBehaviour
             go.transform.SetPositionAndRotation(pos, rot);
         }
 
+        // 탑승 트리거 추가 — [RequireComponent(PlayerController)] 충족 필요
+        if (go.GetComponent<AircraftBoardingTrigger>() == null)
+            go.AddComponent<AircraftBoardingTrigger>();
+
         go.AddComponent<PlayerLabel>().SetNickname($"{nickname} [OFFLINE]");
         _abandonedAircraft[nickname] = go;
-        Debug.Log($"[PlayerManager] Abandoned aircraft placed at {pos} for {nickname}");
+
+        // 항모가 있으면 갑판으로 자동 착함 → 지상 플레이어가 F키 탑승 가능
+        var carrier = Object.FindFirstObjectByType<CarrierController>();
+        if (carrier != null)
+            StartCoroutine(AutoLandAbandoned(go, carrier.transform));
+
+        Debug.Log($"[PlayerManager] Abandoned aircraft spawned at {pos} for {nickname}");
+    }
+
+    // 방치 항공기를 항모 갑판으로 자동 비행·착함
+    System.Collections.IEnumerator AutoLandAbandoned(GameObject aircraft, Transform carrier)
+    {
+        // 갑판 착함 목표 — EscortSlot 위치 우선, 없으면 항모 중심에서 추정
+        Vector3 deckTarget;
+        var slot = Object.FindFirstObjectByType<EscortSlot>();
+        if (slot != null)
+        {
+            deckTarget = slot.transform.position;
+        }
+        else
+        {
+            Vector3 above = carrier.position + Vector3.up * 200f;
+            deckTarget = Physics.Raycast(above, Vector3.down, out RaycastHit hit, 400f,
+                                         Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore)
+                         ? hit.point + Vector3.up * 1.5f
+                         : carrier.position + carrier.up * 8f;
+        }
+
+        const float speed = 90f; // m/s
+
+        while (aircraft != null &&
+               Vector3.Distance(aircraft.transform.position, deckTarget) > 1.5f)
+        {
+            aircraft.transform.position = Vector3.MoveTowards(
+                aircraft.transform.position, deckTarget, speed * Time.deltaTime);
+            aircraft.transform.rotation = Quaternion.Slerp(
+                aircraft.transform.rotation, carrier.rotation, 3f * Time.deltaTime);
+            yield return null;
+        }
+
+        if (aircraft != null)
+        {
+            aircraft.transform.SetPositionAndRotation(deckTarget, carrier.rotation);
+            Debug.Log("[PlayerManager] Abandoned aircraft auto-landed on carrier deck");
+        }
     }
 
     void HandleMove(MoveBroadcastPacket p)
