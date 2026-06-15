@@ -1,2 +1,0 @@
-C:\Unity\GitSocketPrograming\SocketServer\publish\SocketServer.pdb
-C:\Unity\GitSocketPrograming\SocketServer\publish\SocketServer.exe

@@ -8,6 +8,16 @@
 /[Oo]bj/
 /[Bb]uild/
 /[Bb]uilds/
+
+# SocketServer build artifacts
+SocketServer/bin/
+SocketServer/obj/
+
+# Unity temp/empty assets
+Assets/Temp/
+Assets/Temp.meta
+Assets/New Actions.inputactions
+Assets/New Actions.inputactions.meta
 /[Ll]ogs/
 /[Uu]ser[Ss]ettings/
 *.log
