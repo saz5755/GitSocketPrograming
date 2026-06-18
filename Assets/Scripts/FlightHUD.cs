@@ -604,7 +604,7 @@ public class FlightHUD : MonoBehaviour
 
     ILSBeacon FindNearestILS(Vector3 pos)
     {
-        var       beacons = FindObjectsByType<ILSBeacon>(FindObjectsSortMode.None);
+        var       beacons = FindObjectsByType<ILSBeacon>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
         ILSBeacon nearest = null;
         float     minDist = float.MaxValue;
         foreach (var b in beacons)

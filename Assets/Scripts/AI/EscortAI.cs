@@ -70,6 +70,7 @@ public class EscortAI : MonoBehaviour
 
     // 리더 정지/하차 감지용 타이머
     float _leaderStopTimer;
+    bool  _landingRequested;   // BeginEscortLanding 중복 호출 방지
 
     // FreeFlightZone 순찰 웨이포인트
     Vector3 _patrolWaypoint;
@@ -161,6 +162,7 @@ public class EscortAI : MonoBehaviour
             transform.SetParent(null, worldPositionStays: true);
 
         _launchTimer              = 0f;
+        _landingRequested         = false;
         _bot.PositionOverride     = false;
         _phase                    = Phase.Launching;
     }
@@ -403,12 +405,16 @@ public class EscortAI : MonoBehaviour
         if (!leaderFlying)
         {
             _leaderStopTimer += Time.deltaTime;
-            if (_leaderStopTimer >= Cfg.leaderStopTimeout)
+            if (_leaderStopTimer >= Cfg.leaderStopTimeout && !_landingRequested)
+            {
+                _landingRequested = true;
                 AIManager.Instance?.BeginEscortLanding(_cachedCarrier?.transform);
+            }
         }
         else
         {
-            _leaderStopTimer = 0f;
+            _leaderStopTimer  = 0f;
+            _landingRequested = false;
         }
     }
 

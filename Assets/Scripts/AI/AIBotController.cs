@@ -60,6 +60,8 @@ public class AIBotController : MonoBehaviour
     Quaternion _lastBroadcastRot;
     bool       _hasLastBroadcast;
 
+    static readonly int s_hashMove = Animator.StringToHash("Move");
+
     PlayerController _pc;
     Animator         _anim;
 
@@ -145,7 +147,7 @@ public class AIBotController : MonoBehaviour
         if (!PositionOverride)
             transform.position += transform.forward * Speed * dt;
 
-        _anim?.SetBool("Move", Speed > 0.5f);
+        _anim?.SetBool(s_hashMove, Speed > 0.5f);
 
         _netTimer += dt;
         if (_netTimer >= _netUpdateInterval)

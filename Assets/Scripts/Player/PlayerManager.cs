@@ -772,7 +772,7 @@ public class PlayerManager : MonoBehaviour
             }
         }
         // 씬에 이미 있는 렌더러 재질을 차용 (Hidden 셰이더 제외)
-        foreach (var r in Object.FindObjectsByType<Renderer>(FindObjectsSortMode.None))
+        foreach (var r in Object.FindObjectsByType<Renderer>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
         {
             if (r.sharedMaterial?.shader != null &&
                 !r.sharedMaterial.shader.name.StartsWith("Hidden"))

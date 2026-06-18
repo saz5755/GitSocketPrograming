@@ -17,6 +17,9 @@ public class GroundController : MonoBehaviour
     [Header("Character Rotation")]
     [SerializeField] float turnSpeed  = 720f;   // 이동 방향으로 회전하는 속도 (deg/s)
 
+    static readonly int s_hashState = Animator.StringToHash("State");
+    static readonly int s_hashSpeed = Animator.StringToHash("Speed");
+
     CharacterController _cc;
     Animator            _anim;
     bool                _hasStateParam;
@@ -117,7 +120,7 @@ public class GroundController : MonoBehaviour
         if (_anim != null)
         {
             if (_hasStateParam)
-                _anim.SetInteger("State", (int)CurrentAnimState);
+                _anim.SetInteger(s_hashState, (int)CurrentAnimState);
 
             if (_hasSpeedParam)
             {
@@ -126,7 +129,7 @@ public class GroundController : MonoBehaviour
                     : _currentSpeed <= walkSpeed
                         ? (_currentSpeed / walkSpeed) * 0.5f
                         : 0.5f + ((_currentSpeed - walkSpeed) / (runSpeed - walkSpeed)) * 0.5f;
-                _anim.SetFloat("Speed", animSpeed);
+                _anim.SetFloat(s_hashSpeed, animSpeed);
             }
         }
 

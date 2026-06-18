@@ -118,7 +118,7 @@ public class PlaneModelBuilder : MonoBehaviour
             var sh = Shader.Find(n);
             if (sh != null) return new Material(sh);
         }
-        foreach (var r in FindObjectsByType<Renderer>(FindObjectsSortMode.None))
+        foreach (var r in FindObjectsByType<Renderer>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
         {
             if (r.sharedMaterial?.shader != null &&
                 !r.sharedMaterial.shader.name.StartsWith("Hidden"))

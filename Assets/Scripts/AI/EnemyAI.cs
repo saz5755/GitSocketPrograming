@@ -33,9 +33,10 @@ public class EnemyAI : MonoBehaviour
 
     public void EnableCombat() => _combatEnabled = true;
 
-    AIBotController _bot;
-    Transform       _target;
-    string          _targetNick;
+    AIBotController  _bot;
+    Transform        _target;
+    string           _targetNick;
+    PlayerController _targetPC;   // GetComponent 매 프레임 호출 방지
 
     CombatState _state      = CombatState.Patrol;
     float       _stateTimer;
@@ -51,6 +52,7 @@ public class EnemyAI : MonoBehaviour
     {
         _target       = target;
         _targetNick   = targetNickname;
+        _targetPC     = target != null ? target.GetComponent<PlayerController>() : null;
         _bot          = GetComponent<AIBotController>();
         _patrolCenter = transform.position;
         _patrolWP     = NextPatrolWP();
@@ -117,8 +119,7 @@ public class EnemyAI : MonoBehaviour
         if (dist < minFlightDist)         { Transition(CombatState.Evade);    return; }
 
         // 예측 교점으로 비행 (lead pursuit)
-        var   targetPC  = _target.GetComponent<PlayerController>();
-        float targetSpd = targetPC != null ? targetPC.CurrentSpeed : 60f;
+        float targetSpd = _targetPC != null ? _targetPC.CurrentSpeed : 60f;
         float tof       = dist / Mathf.Max(DynSpeed, 1f);
         Vector3 predict = _target.position + _target.forward * (targetSpd * tof * 0.4f);
         FlyTo(predict, DynSpeed);

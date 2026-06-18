@@ -12,6 +12,8 @@ public class PlayerController : MonoBehaviour
 
     List<Snapshot> snapshots = new();
 
+    static readonly int s_hashMove = Animator.StringToHash("Move");
+
     Animator anim;
     bool     _hasMoveParam;
     float    moveSendTimer;
@@ -162,7 +164,7 @@ public class PlayerController : MonoBehaviour
             transform.Rotate(pitchC, yawC, rollC, Space.Self);
 
             transform.position += transform.forward * currentSpeed * dt;
-            if (anim != null) anim.SetBool("Move", true);
+            if (anim != null) anim.SetBool(s_hashMove, true);
 
             moveSendTimer += dt;
             if (moveSendTimer >= Cfg.sendInterval)
@@ -203,7 +205,7 @@ public class PlayerController : MonoBehaviour
         transform.position += transform.forward * currentSpeed * dt;
         if (currentSpeed > 0.1f) ConstrainToSurface();
 
-        if (anim != null) anim.SetBool("Move", currentSpeed > 0.5f);
+        if (anim != null) anim.SetBool(s_hashMove, currentSpeed > 0.5f);
 
         moveSendTimer += dt;
         if (moveSendTimer >= Cfg.sendInterval)
@@ -339,7 +341,7 @@ public class PlayerController : MonoBehaviour
         transform.position = Vector3.Lerp(from.position, to.position, t);
         transform.rotation = Quaternion.Slerp(from.rotation, to.rotation, t);
 
-        if (anim != null && _hasMoveParam) anim.SetBool("Move", to.isMove);
+        if (anim != null && _hasMoveParam) anim.SetBool(s_hashMove, to.isMove);
     }
 
     // ── 스냅샷 ────────────────────────────────────────────────────────────────

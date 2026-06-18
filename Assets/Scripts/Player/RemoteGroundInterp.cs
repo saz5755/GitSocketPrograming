@@ -10,6 +10,9 @@ public class RemoteGroundInterp : MonoBehaviour
     Quaternion _targetRot;
     bool       _initialized;
 
+    static readonly int s_hashState = Animator.StringToHash("State");
+    static readonly int s_hashSpeed = Animator.StringToHash("Speed");
+
     Animator _anim;
     bool     _hasStateParam;
     bool     _hasSpeedParam;
@@ -60,18 +63,19 @@ public class RemoteGroundInterp : MonoBehaviour
         if (_anim == null) return;
 
         if (_hasStateParam)
-            _anim.SetInteger("State", animState);
+            _anim.SetInteger(s_hashState, animState);
 
         if (_hasSpeedParam)
         {
             // Soldier.controller BlendTree 매핑: 0=Idle, 0.5=Walk, 1.0=Run
+            // dampTime으로 로컬과 동일한 부드러운 가속/감속 재현 (즉시 점프 방지)
             float speed = animState switch
             {
                 1 => 0.5f,   // Walk
                 2 => 1.0f,   // Run
                 _ => 0.0f    // Idle / Jump
             };
-            _anim.SetFloat("Speed", speed);
+            _anim.SetFloat(s_hashSpeed, speed, 0.12f, Time.deltaTime);
         }
     }
 

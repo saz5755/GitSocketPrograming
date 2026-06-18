@@ -37,6 +37,7 @@ public class AIManager : MonoBehaviour
     bool      _isHost;
     bool      _initialized;
     bool      _escortLandingStarted;
+    bool      _enemiesSpawned;     // 적 AI 중복 스폰 방지 플래그
     Coroutine _landingCoroutine;   // EscortLandingCoroutine 핸들 — 재시작 시 취소용
 
     // EnterRoomResult에서 수신한 방장 닉네임 — 호스트 판정에 사용
@@ -106,9 +107,9 @@ public class AIManager : MonoBehaviour
         if (!isNetworkHost) return;
 
         _isHost = true;
-        // localPlayer는 공유 항공기 방식에서 null일 수 있음 — 각 스폰 함수가 null 처리
+        // 에스코트: 갑판에서 대기하므로 localPlayer=null도 허용
         if (_spawnEscorts) SpawnEscorts(localPlayer);
-        if (_spawnEnemies && localPlayer != null) SpawnEnemies(localPlayer);  // 적 AI는 리더 필요
+        // 적 AI: 플레이어 항공기 위치가 필요하므로 SetLocalPlayerAircraft() 시점에 스폰
     }
 
     /// <summary>
@@ -121,6 +122,13 @@ public class AIManager : MonoBehaviour
         {
             if (bot == null) continue;
             bot.GetComponent<EscortAI>()?.UpdateLeader(pc?.transform);
+        }
+
+        // 적 AI: 플레이어 이륙 시점에 스폰 (스폰 위치가 리더 항공기 기준)
+        if (_isHost && _spawnEnemies && !_enemiesSpawned && pc != null)
+        {
+            SpawnEnemies(pc);
+            _enemiesSpawned = true;
         }
     }
 
@@ -214,7 +222,7 @@ public class AIManager : MonoBehaviour
         }
         if (list.Count == 0)
         {
-            list.AddRange(FindObjectsByType<EscortSlot>(FindObjectsSortMode.None));
+            list.AddRange(FindObjectsByType<EscortSlot>(FindObjectsInactive.Exclude, FindObjectsSortMode.None));
         }
         // 하이어라키 순서 유지 (sibling index 오름차순)
         list.Sort((a, b) => a.transform.GetSiblingIndex().CompareTo(b.transform.GetSiblingIndex()));
@@ -260,7 +268,7 @@ public class AIManager : MonoBehaviour
         _isHost = true;
         // 로컬 플레이어 조회
         PlayerController localPlayer = null;
-        foreach (var pc in FindObjectsByType<PlayerController>(FindObjectsSortMode.None))
+        foreach (var pc in FindObjectsByType<PlayerController>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
         {
             if (pc.isLocalPlayer) { localPlayer = pc; break; }
         }
@@ -453,9 +461,9 @@ public class AIManager : MonoBehaviour
     // 플레이어 항모 착함 후 호출 (폴백 경로 — 와이어 없이 착함, 또는 UpdateEscorting 폴백)
     public void BeginEscortLanding(Transform carrier)
     {
-        Debug.Log($"[AIManager] BeginEscortLanding called  isHost={_isHost}  landingStarted={_escortLandingStarted}  carrier={(carrier != null ? carrier.name : "null")}");
         if (!_isHost || _escortLandingStarted) return;
         _escortLandingStarted = true;
+        Debug.Log($"[AIManager] BeginEscortLanding: starting landing coroutine  carrier={(carrier != null ? carrier.name : "null")}");
         _landingCoroutine = StartCoroutine(EscortLandingCoroutine(carrier, Vector3.zero, Vector3.zero, false));
     }
 
