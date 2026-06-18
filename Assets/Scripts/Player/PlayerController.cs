@@ -13,6 +13,7 @@ public class PlayerController : MonoBehaviour
     List<Snapshot> snapshots = new();
 
     Animator anim;
+    bool     _hasMoveParam;
     float    moveSendTimer;
     int      localTick;
 
@@ -71,6 +72,11 @@ public class PlayerController : MonoBehaviour
     void Awake()
     {
         anim = GetComponent<Animator>();
+        if (anim != null)
+        {
+            foreach (var p in anim.parameters)
+                if (p.name == "Move") { _hasMoveParam = true; break; }
+        }
         All.Add(this);
     }
 
@@ -115,6 +121,20 @@ public class PlayerController : MonoBehaviour
             currentSpeed = Mathf.MoveTowards(currentSpeed, 0f, Cfg.arrestDecel * dt);
             transform.position += transform.forward * currentSpeed * dt;
             ConstrainToSurface();
+
+            moveSendTimer += dt;
+            if (moveSendTimer >= Cfg.sendInterval)
+            {
+                moveSendTimer -= Cfg.sendInterval;
+                localTick++;
+                Vector3 arrestEuler = transform.eulerAngles;
+                NetworkManager.Instance.socketClient.SendMove(
+                    transform.position.x, transform.position.y, transform.position.z,
+                    arrestEuler.x, arrestEuler.y, arrestEuler.z,
+                    currentSpeed > 0.5f,
+                    GameModeManager.Instance != null && GameModeManager.Instance.IsFlying,
+                    localTick);
+            }
             return;
         }
 
@@ -143,6 +163,20 @@ public class PlayerController : MonoBehaviour
 
             transform.position += transform.forward * currentSpeed * dt;
             if (anim != null) anim.SetBool("Move", true);
+
+            moveSendTimer += dt;
+            if (moveSendTimer >= Cfg.sendInterval)
+            {
+                moveSendTimer -= Cfg.sendInterval;
+                localTick++;
+                Vector3 catEuler = transform.eulerAngles;
+                NetworkManager.Instance.socketClient.SendMove(
+                    transform.position.x, transform.position.y, transform.position.z,
+                    catEuler.x, catEuler.y, catEuler.z,
+                    true,
+                    GameModeManager.Instance != null && GameModeManager.Instance.IsFlying,
+                    localTick);
+            }
             return;
         }
 
@@ -305,7 +339,7 @@ public class PlayerController : MonoBehaviour
         transform.position = Vector3.Lerp(from.position, to.position, t);
         transform.rotation = Quaternion.Slerp(from.rotation, to.rotation, t);
 
-        if (anim != null) anim.SetBool("Move", to.isMove);
+        if (anim != null && _hasMoveParam) anim.SetBool("Move", to.isMove);
     }
 
     // ── 스냅샷 ────────────────────────────────────────────────────────────────

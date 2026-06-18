@@ -24,7 +24,12 @@ class CockpitStateHandler
             session.player.rotZ = packet.rotZ;
         }
 
-        // 상태 변경은 신뢰성 있는 TCP로 룸 전체 브로드캐스트 (UDP 손실 방지)
+        // isBoardedInCockpit=true일 때만 브로드캐스트 (READY 레이블 즉시 표시)
+        // isBoardedInCockpit=false(ESC 취소·이륙)는 다음 UDP MOVE가 상태를 갱신하므로 브로드캐스트 생략
+        // — 브로드캐스트하면 isFlying=false, isBoardedInCockpit=false 패킷이 다른 클라이언트에
+        //   잠깐 지상 캐릭터를 노출시키는 시각적 플리커를 유발한다
+        if (!session.player.isBoardedInCockpit) return;
+
         var broadcast = new MoveBroadcastPacket
         {
             type               = PacketType.MOVE,
@@ -36,8 +41,8 @@ class CockpitStateHandler
             rotY               = session.player.rotY,
             rotZ               = session.player.rotZ,
             isMove             = false,
-            isFlying           = session.player.isFlying,
-            isBoardedInCockpit = session.player.isBoardedInCockpit,
+            isFlying           = false,
+            isBoardedInCockpit = true,
             animState          = session.player.animState
         };
         foreach (Player target in session.player.room.GetPlayers())

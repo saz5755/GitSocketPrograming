@@ -21,6 +21,7 @@ public class Player
     public bool isFlying;
     public bool isBoardedInCockpit;
     public int  animState;
+    public int  boardedAircraftId = -1;
     public int hp = 100;
 
     public DateTime lastInputTime;

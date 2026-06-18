@@ -29,4 +29,6 @@ public enum PacketType
     AI_DESPAWN         = 27,
     AI_MOVE            = 28,
     HOST_CHANGE        = 29,
+    BOARD_AIRCRAFT     = 30,
+    LEAVE_AIRCRAFT     = 31,
 }

@@ -6,7 +6,8 @@ using UnityEngine;
 // └ 원격 클라이언트: AI_SPAWN/AI_MOVE 패킷을 받아 PlayerController 뷰를 갱신.
 //
 // 씬에 이 컴포넌트를 가진 GameObject를 배치하고 Inspector에서 설정하세요.
-// _spawnEscorts / _spawnEnemies 를 체크한 클라이언트가 호스트 역할을 합니다.
+// 호스트 판정: EnterRoomResultPacket.hostNickname(서버 방장)이 일치하는 클라이언트만 AI를 스폰.
+// _spawnEscorts / _spawnEnemies 는 "이 씬에서 해당 AI를 켤 것인가" 여부만 결정.
 public class AIManager : MonoBehaviour
 {
     public static AIManager Instance { get; private set; }
@@ -38,6 +39,9 @@ public class AIManager : MonoBehaviour
     bool      _escortLandingStarted;
     Coroutine _landingCoroutine;   // EscortLandingCoroutine 핸들 — 재시작 시 취소용
 
+    // EnterRoomResult에서 수신한 방장 닉네임 — 호스트 판정에 사용
+    string    _networkHostNickname = "";
+
     // 플레이어 어레스팅 와이어 경로 (와이어 정지 시 저장, 하차 시 사용)
     Vector3 _arrestedApproachDir;
     Vector3 _arrestedWirePos;
@@ -66,10 +70,12 @@ public class AIManager : MonoBehaviour
     {
         var sc = NetworkManager.Instance?.socketClient;
         if (sc == null) return;
-        sc.OnAISpawn    += HandleRemoteAISpawn;
-        sc.OnAIDespawn  += HandleRemoteAIDespawn;
-        sc.OnAIMove     += HandleRemoteAIMove;
-        sc.OnHostChange += HandleHostChange;
+        sc.OnAISpawn         += HandleRemoteAISpawn;
+        sc.OnAIDespawn       += HandleRemoteAIDespawn;
+        sc.OnAIMove          += HandleRemoteAIMove;
+        sc.OnHostChange      += HandleHostChange;
+        sc.OnEnterRoomResult += HandleEnterRoomResult;
+        sc.OnSpawn           += HandleRemotePlayerJoin;
     }
 
     void OnDestroy()
@@ -77,10 +83,12 @@ public class AIManager : MonoBehaviour
         if (Instance == this) Instance = null;
         var sc = NetworkManager.Instance?.socketClient;
         if (sc == null) return;
-        sc.OnAISpawn    -= HandleRemoteAISpawn;
-        sc.OnAIDespawn  -= HandleRemoteAIDespawn;
-        sc.OnAIMove     -= HandleRemoteAIMove;
-        sc.OnHostChange -= HandleHostChange;
+        sc.OnAISpawn         -= HandleRemoteAISpawn;
+        sc.OnAIDespawn       -= HandleRemoteAIDespawn;
+        sc.OnAIMove          -= HandleRemoteAIMove;
+        sc.OnHostChange      -= HandleHostChange;
+        sc.OnEnterRoomResult -= HandleEnterRoomResult;
+        sc.OnSpawn           -= HandleRemotePlayerJoin;
     }
 
     // ── 호스트 초기화 (PlayerManager.CreateLocalPlayer에서 호출) ───────────
@@ -89,17 +97,70 @@ public class AIManager : MonoBehaviour
     {
         if (_initialized) return;
         _initialized = true;
-        _isHost = true;
 
+        // 서버가 지정한 방장(hostNickname)만 AI를 스폰한다.
+        // EnterRoomResult가 아직 안 왔거나 빈 값이면 첫 접속자(싱글 테스트)로 간주.
+        string myNick = NetworkManager.Instance?.socketClient?.myNickname ?? "";
+        bool isNetworkHost = string.IsNullOrEmpty(_networkHostNickname)
+                             || myNick == _networkHostNickname;
+        if (!isNetworkHost) return;
+
+        _isHost = true;
+        // localPlayer는 공유 항공기 방식에서 null일 수 있음 — 각 스폰 함수가 null 처리
         if (_spawnEscorts) SpawnEscorts(localPlayer);
-        if (_spawnEnemies) SpawnEnemies(localPlayer);
+        if (_spawnEnemies && localPlayer != null) SpawnEnemies(localPlayer);  // 적 AI는 리더 필요
+    }
+
+    /// <summary>
+    /// 플레이어가 항공기에 탑승해 이륙할 때 호출 — 에스코트 봇 리더를 현재 항공기로 설정.
+    /// </summary>
+    public void SetLocalPlayerAircraft(PlayerController pc)
+    {
+        _localPlayerAircraft = pc;
+        foreach (var bot in _bots)
+        {
+            if (bot == null) continue;
+            bot.GetComponent<EscortAI>()?.UpdateLeader(pc?.transform);
+        }
+    }
+
+    // EnterRoomResult 수신 시 방장 닉네임 저장
+    void HandleEnterRoomResult(EnterRoomResultPacket p)
+    {
+        if (p.success) _networkHostNickname = p.hostNickname ?? "";
+    }
+
+    // 새 플레이어 입장 시 호스트가 현재 AI 목록을 재전송 — 늦게 합류한 클라이언트 동기화
+    void HandleRemotePlayerJoin(SpawnPacket p)
+    {
+        string myNick = NetworkManager.Instance?.socketClient?.myNickname ?? "";
+        if (p.nickname == myNick) return;       // 자신의 스폰은 무시
+        if (!_isHost || _bots.Count == 0) return;
+
+        StartCoroutine(ReSendAISpawnToNewJoiner());
+    }
+
+    System.Collections.IEnumerator ReSendAISpawnToNewJoiner()
+    {
+        // 상대방이 씬을 완전히 초기화할 시간을 줌
+        yield return new WaitForSeconds(1f);
+        var sc = NetworkManager.Instance?.socketClient;
+        if (sc == null) yield break;
+
+        foreach (var bot in _bots)
+        {
+            if (bot == null) continue;
+            sc.SendAISpawn(bot.Nickname, bot.transform.position, bot.transform.eulerAngles,
+                           IsEnemyBot(bot.Nickname) ? 1 : 0);
+        }
+        Debug.Log($"[AIManager] Re-sent AI_SPAWN for {_bots.Count} bot(s) to new joiner");
     }
 
     // ── 호스트: AI 스폰 ───────────────────────────────────────────────────
 
     void SpawnEscorts(PlayerController leader)
     {
-        _localPlayerAircraft  = leader;
+        _localPlayerAircraft  = leader;  // null 허용 — 이륙 시 SetLocalPlayerAircraft()로 업데이트
         _escortLandingStarted = false;
 
         var carrier = FindFirstObjectByType<CarrierController>();
@@ -123,11 +184,15 @@ public class AIManager : MonoBehaviour
             var go     = BuildAIObject(nick, spawnPos, spawnRot);
             var escort = go.AddComponent<EscortAI>();
             escort.SetBehavior(_escortBehavior);
-            escort.Initialize(leader.transform, slot.formationOffset, spawnedOnDeck: true);
+            escort.Initialize(leader?.transform, slot.formationOffset, spawnedOnDeck: true);
 
             // AIBotController.Awake() 이후에 추가해야 DisableIfPresent<> 영향을 받지 않음
             go.AddComponent<AircraftBoardingTrigger>();
             go.AddComponent<EscortVFXController>();
+
+            // NetworkAircraft: 전 클라이언트에서 동일 오브젝트를 식별 (BOARD_AIRCRAFT 프로토콜)
+            var na = go.GetComponent<NetworkAircraft>() ?? go.AddComponent<NetworkAircraft>();
+            na.SetNetworkId(i + 1);  // BOT_E1→1, BOT_E2→2
 
             _bots.Add(go.GetComponent<AIBotController>());
             NetworkManager.Instance?.socketClient?.SendAISpawn(
@@ -192,6 +257,7 @@ public class AIManager : MonoBehaviour
     // 원격 뷰(_remoteBots)로 있던 에스코트 봇을 로컬 AI 제어로 전환
     void TakeOverRemoteBotsAsHost()
     {
+        _isHost = true;
         // 로컬 플레이어 조회
         PlayerController localPlayer = null;
         foreach (var pc in FindObjectsByType<PlayerController>(FindObjectsSortMode.None))
@@ -212,10 +278,13 @@ public class AIManager : MonoBehaviour
 
         var slots = CollectEscortSlots();
 
-        // 에스코트 봇 닉네임만 추출 (순회 중 딕셔너리 수정 방지)
+        // 에스코트 봇 닉네임 추출 (적 봇·점령 중 항공기 제외)
         var escortKeys = new System.Collections.Generic.List<string>();
         foreach (var kv in _remoteBots)
-            if (IsEscortBot(kv.Key)) escortKeys.Add(kv.Key);
+        {
+            if (!IsAIBot(kv.Key) || IsEnemyBot(kv.Key)) continue;
+            escortKeys.Add(kv.Key);
+        }
 
         int idx = 0;
         foreach (string key in escortKeys)
@@ -224,6 +293,13 @@ public class AIManager : MonoBehaviour
             {
                 idx++; continue;
             }
+
+            // 다른 플레이어가 탑승 중인 항공기는 AI로 전환하지 않음
+            if (remotePC.GetComponent<AircraftBoardingTrigger>()?.IsOccupied == true)
+            {
+                idx++; continue;
+            }
+
             _remoteBots.Remove(key);
 
             // 스냅샷 인터폴레이션 대신 EscortAI가 직접 위치를 제어하도록 전환
@@ -250,7 +326,7 @@ public class AIManager : MonoBehaviour
 
     void HandleRemoteAISpawn(AISpawnPacket p)
     {
-        if (_isHost) return;              // 호스트는 이미 로컬에서 생성
+        if (_isHost) return;
         if (_remoteBots.ContainsKey(p.nickname)) return;
 
         var pos = new Vector3(p.posX, p.posY, p.posZ);
@@ -268,8 +344,22 @@ public class AIManager : MonoBehaviour
         pc.IsFlying      = true;
         pc.AddSnapshot(pos, rot, isMove: true);
 
+        // 에스코트 봇(BOT_E*): 탑승 가능 + NetworkAircraft → BOARD_AIRCRAFT 프로토콜 연동
+        if (p.aiType == 0 && IsEscortBot(p.nickname))
+        {
+            int id = ParseBotNetworkId(p.nickname);
+            if (id >= 0)
+            {
+                var na = go.GetComponent<NetworkAircraft>() ?? go.AddComponent<NetworkAircraft>();
+                na.SetNetworkId(id);
+            }
+            if (go.GetComponent<AircraftBoardingTrigger>() == null)
+                go.AddComponent<AircraftBoardingTrigger>();
+            pc.enabled = true;  // AircraftBoardingTrigger.Awake()가 PC를 비활성화하므로 재활성화
+        }
+
         _remoteBots[p.nickname] = pc;
-        Debug.Log($"[AIManager] Remote AI view created: {p.nickname}");
+        Debug.Log($"[AIManager] Remote AI view: {p.nickname} (aiType={p.aiType})");
     }
 
     void HandleRemoteAIDespawn(string nickname)
@@ -429,18 +519,16 @@ public class AIManager : MonoBehaviour
         if (escortAI  != null) { escortAI.StopAllCoroutines();  Destroy(escortAI);  }
         if (escortBot != null) { _bots.Remove(escortBot); Destroy(escortBot); }
 
-        // 탑승한 기체의 BoardingTrigger 제거 — 플레이어 기체에는 불필요
-        var bt = newPlayerPC.GetComponent<AircraftBoardingTrigger>();
-        if (bt != null) Destroy(bt);
-
         // 2. 해당 기체를 로컬 플레이어 항공기로 전환
+        //    BoardingTrigger 유지 — 하차 후 재탑승 가능 (IsOccupied로 다른 플레이어 차단)
         newPlayerPC.nickname      = playerNickname;
         newPlayerPC.isLocalPlayer = true;
 
         // 3. 기존 플레이어 기체를 에스코트 AI로 전환
-        // AddComponent<AIBotController>() Awake가 AircraftBoardingTrigger를 자동 비활성화함
+        //    새 닉네임(BOT_SW_*) 사용 → 원격의 NetworkAircraft ID 충돌 방지
+        string newEscortNick = $"BOT_SW_{playerNickname}";
         var newBot = oldPlayerPC.gameObject.AddComponent<AIBotController>();
-        newBot.SetNickname(botNick);
+        newBot.SetNickname(newEscortNick);
         newBot.PositionOverride = true;
 
         var newEscort = oldPlayerPC.gameObject.AddComponent<EscortAI>();
@@ -455,14 +543,47 @@ public class AIManager : MonoBehaviour
             bot.GetComponent<EscortAI>()?.UpdateLeader(newPlayerPC.transform);
         }
 
-        // 5. 멀티플레이어 동기화: 기존 AI 제거 알림 + 새 AI(이전 플레이어 기체) 스폰 알림
+        // 5. 동기화: 기존 에스코트 뷰는 원격에서 BOARD_AIRCRAFT로 플레이어 항공기가 되므로
+        //    AI_DESPAWN 불필요. 이전 플레이어 기체(새 에스코트)만 새 닉네임으로 알림.
         var sc = NetworkManager.Instance?.socketClient;
-        sc?.SendAIDespawn(botNick);
-        sc?.SendAISpawn(botNick, oldPlayerPC.transform.position,
+        sc?.SendAISpawn(newEscortNick, oldPlayerPC.transform.position,
                         oldPlayerPC.transform.eulerAngles, aiType: 0);
 
         _localPlayerAircraft = newPlayerPC;
-        Debug.Log($"[AIManager] Escort takeover: '{botNick}' → player, player aircraft → '{botNick}' AI");
+        Debug.Log($"[AIManager] Escort takeover: '{botNick}' → player, old aircraft → '{newEscortNick}' escort");
+    }
+
+    /// <summary>
+    /// 지상 캐릭터 상태(기존 항공기 없음)에서 에스코트 봇에 탑승.
+    /// AI 컴포넌트를 제거하고 플레이어 항공기로 전환한다.
+    /// 원격 클라이언트의 에스코트 뷰는 BOARD_AIRCRAFT 프로토콜로 인계되므로 AI_DESPAWN 불필요.
+    /// </summary>
+    public void BoardEscortFromGround(PlayerController escortPC)
+    {
+        if (!_isHost) return;
+
+        var escortAI = escortPC.GetComponent<EscortAI>();
+        var bot      = escortPC.GetComponent<AIBotController>();
+        string nick  = bot?.Nickname ?? escortPC.name;
+
+        if (escortAI != null) { escortAI.StopAllCoroutines(); Destroy(escortAI); }
+        if (bot != null)      { _bots.Remove(bot);            Destroy(bot);      }
+
+        // BoardingTrigger 유지 — 하차 후 재탑승 가능
+        string myNick = NetworkManager.Instance?.socketClient?.myNickname ?? "";
+        escortPC.nickname      = myNick;
+        escortPC.isLocalPlayer = true;
+
+        Debug.Log($"[AIManager] BoardEscortFromGround: '{nick}' AI 제거, 플레이어 탑승");
+    }
+
+    // BOT_E1 → 1, BOT_E2 → 2. 패턴 불일치 시 -1
+    static int ParseBotNetworkId(string nick)
+    {
+        const string prefix = "BOT_E";
+        if (nick.StartsWith(prefix) && int.TryParse(nick.Substring(prefix.Length), out int id))
+            return id;
+        return -1;
     }
 
     public static bool IsAIBot(string nickname)    => nickname.StartsWith("BOT_");
@@ -501,9 +622,16 @@ public class AIManager : MonoBehaviour
         go.transform.localScale = new Vector3(1.2f, 0.28f, 3.8f);
         Object.Destroy(go.GetComponent<CapsuleCollider>());
 
-        var mat = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
-        mat.color = isEnemy ? new Color(0.80f, 0.12f, 0.12f) : new Color(0.15f, 0.60f, 1.00f);
-        go.GetComponent<Renderer>().sharedMaterial = mat;
+        // 셰이더를 찾지 못하면 new Material(null) → 마젠타 발생하므로 null 체크
+        var shader = Shader.Find("Universal Render Pipeline/Lit")
+                  ?? Shader.Find("Universal Render Pipeline/Simple Lit")
+                  ?? Shader.Find("Standard");
+        if (shader != null)
+        {
+            var mat = new Material(shader);
+            mat.color = isEnemy ? new Color(0.80f, 0.12f, 0.12f) : new Color(0.15f, 0.60f, 1.00f);
+            go.GetComponent<Renderer>().sharedMaterial = mat;
+        }
         return go;
     }
 }

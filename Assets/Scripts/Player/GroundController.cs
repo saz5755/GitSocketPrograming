@@ -29,9 +29,8 @@ public class GroundController : MonoBehaviour
     Vector3 _lastMoveDir;
 
     // ── 네트워크 송신 ────────────────────────────────────────────────────────
-    float            _sendTimer;
-    PlayerController _localPC;
-    const float      SendInterval = 0.05f;
+    float _sendTimer;
+    const float SendInterval = 0.05f;
 
     public float CameraYaw    => _cameraYaw;
     public float CurrentSpeed => _currentSpeed;
@@ -62,12 +61,6 @@ public class GroundController : MonoBehaviour
         Cursor.visible   = false;
         _vy           = 0f;
         _currentSpeed = 0f;
-
-        if (_localPC == null)
-        {
-            foreach (var pc in PlayerController.All)
-                if (pc.isLocalPlayer) { _localPC = pc; break; }
-        }
     }
 
     public void InitYaw(float yaw)
@@ -142,8 +135,6 @@ public class GroundController : MonoBehaviour
 
     void SendNetworkUpdate()
     {
-        if (_localPC == null) return;
-
         var sc = NetworkManager.Instance?.socketClient;
         if (sc == null) return;
 
@@ -152,10 +143,12 @@ public class GroundController : MonoBehaviour
         _sendTimer -= SendInterval;
 
         Vector3 euler = transform.eulerAngles;
+        // tick=0: UDP 순서 보장 불필요 (지상 이동은 느림).
+        // 비행 모드 전환 시 PlayerController가 tick=1부터 재시작 — 순서 충돌 없음.
         sc.SendMove(
             transform.position.x, transform.position.y, transform.position.z,
             euler.x, euler.y, euler.z,
-            _currentSpeed > 0.1f, false, _localPC.GetNextTick(),
+            _currentSpeed > 0.1f, false, 0,
             animState: (int)CurrentAnimState);
     }
 }

@@ -20,10 +20,12 @@ class MoveHandler
         MovePacket? packet = JsonConvert.DeserializeObject<MovePacket>(json);
         if (packet == null) return;
 
-        if (packet.tick <= session.player.lastProcessedTick)
+        // tick=0은 지상 이동 패킷 — 순서 보장 불필요, 항상 통과 (클라이언트 수신 측과 동일 처리)
+        if (packet.tick > 0 && packet.tick <= session.player.lastProcessedTick)
             return;
 
-        session.player.lastProcessedTick = packet.tick;
+        if (packet.tick > 0)
+            session.player.lastProcessedTick = packet.tick;
         session.player.lastInputTime = DateTime.UtcNow;
 
         session.player.posX = packet.posX;

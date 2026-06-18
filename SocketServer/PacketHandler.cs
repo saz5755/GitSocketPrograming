@@ -62,6 +62,9 @@ class PacketHandler
         handlers[PacketType.AI_SPAWN]   = AISpawnHandler.Handle;
         handlers[PacketType.AI_DESPAWN] = AISpawnHandler.HandleDespawn;
         udpHandlers[PacketType.AI_MOVE] = AIMoveHandler.HandleUDP;
+
+        handlers[PacketType.BOARD_AIRCRAFT] = AircraftBoardHandler.HandleBoard;
+        handlers[PacketType.LEAVE_AIRCRAFT] = AircraftBoardHandler.HandleLeave;
     }
 
     // 기본적으로 TCP Handle
@@ -96,7 +99,5 @@ class PacketHandler
         {
             udpHandlers[packet.type](remoteEP, json);
         }
-
-        Console.WriteLine($"UDP : {json}");
     }
 }

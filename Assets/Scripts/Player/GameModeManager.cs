@@ -90,6 +90,8 @@ public class GameModeManager : MonoBehaviour
         // 지상 캐릭터 시작 위치: Zone 12m 뒤, 지면 위 5cm
         Vector3 charStart = new Vector3(groundPos.x, groundPos.y + 0.05f, groundPos.z - 12f);
         ApplyGroundMode(charStart, 0f);
+
+        Debug.Log($"[GameMode] Init complete. _pc={(pc != null ? pc.name : "null (공유 항공기 대기)")}");
     }
 
     // ── 존 알림 ─────────────────────────────────────────────────────────────
@@ -116,6 +118,13 @@ public class GameModeManager : MonoBehaviour
     // 새 플레이어가 입장했을 때 현재 상태를 재전송 (타이밍 경쟁 보완)
     public void BroadcastCurrentState()
     {
+        // 공유 항공기 탑승 상태도 재전송 — 새 입장자가 어느 항공기인지 알 수 있도록
+        if (IsBoardedInCockpit || IsFlying)
+        {
+            int id = _pc?.GetComponent<NetworkAircraft>()?.networkId ?? -1;
+            if (id >= 0) NetworkManager.Instance?.socketClient?.SendBoardAircraft(id);
+        }
+
         if (IsBoardedInCockpit)
             _pc?.SendCockpitState(true);
         else if (IsFlying)
@@ -202,11 +211,16 @@ public class GameModeManager : MonoBehaviour
         {
             var boardedPC = _boardingTrigger.Aircraft;
 
-            // 에스코트 AI 기체 탑승 시: 해당 AI를 플레이어 기체로, 기존 기체를 에스코트 AI로 전환
             if (boardedPC.GetComponent<AIBotController>() != null)
-                AIManager.Instance?.TakeOverEscortBot(boardedPC, _pc);
+            {
+                if (_pc != null)
+                    AIManager.Instance?.TakeOverEscortBot(boardedPC, _pc);  // 기체 간 교환
+                else
+                    AIManager.Instance?.BoardEscortFromGround(boardedPC);   // 지상에서 첫 탑승
+            }
 
             _pc              = boardedPC;
+            _pc.isLocalPlayer = true;
             _boardingCarrier = FindFirstObjectByType<CarrierController>();
             EnterCockpit(_pc.transform.position);
         }
@@ -230,6 +244,15 @@ public class GameModeManager : MonoBehaviour
             ? _boardingCarrier.transform.rotation
             : _pc.transform.rotation;
         _pc.transform.SetPositionAndRotation(boardingPos, launchRot);
+
+        // 서버의 isBoardedInCockpit을 false로 초기화해야 원격 클라이언트가 항공기 뷰로 전환됨
+        _pc.SendCockpitState(false);
+        Debug.Log($"[GameMode] EnterFlight: sent CockpitState(false) at {boardingPos}");
+
+        // PC가 씬에서 already-enabled 상태이면 enabled=true가 no-op → OnEnable 미발동 → OnMoveAck 미구독
+        // 강제 disable→enable 사이클로 OnEnable을 반드시 발동시킨다
+        _pc.enabled = false;
+        _pc.isLocalPlayer = true;
         _pc.enabled = true;
 
         // 캐리어 유무와 관계없이 프리플라이트 완료 후 발진이면 항상 카타펄트
@@ -237,6 +260,8 @@ public class GameModeManager : MonoBehaviour
         _boardingCarrier = null;
         _pc.StartCatapult(catapultSpd);
         _pc.GetComponent<F35VFXController>()?.TriggerCatapultBoost();
+        // 공유 항공기: 이제 _pc가 확정됐으므로 에스코트 리더 등록 후 전투 시작
+        AIManager.Instance?.SetLocalPlayerAircraft(_pc);
         AIManager.Instance?.EnableAICombat();
 
         // 카메라·HUD 전환
@@ -265,6 +290,10 @@ public class GameModeManager : MonoBehaviour
 
         // 콕핏 탑승 상태를 원격 플레이어에게 알림 (항공기 위치 포함)
         _pc.SendCockpitState(true);
+
+        // 공유 항공기: 어느 항공기를 점령했는지 전체 브로드캐스트
+        int boardedId = _pc.GetComponent<NetworkAircraft>()?.networkId ?? -1;
+        if (boardedId >= 0) NetworkManager.Instance?.socketClient?.SendBoardAircraft(boardedId);
 
         // 카메라를 콕핏 탑승 모드로 전환 (HUD 미활성)
         _fc?.BeginCockpitBoarding(_pc);
@@ -314,6 +343,10 @@ public class GameModeManager : MonoBehaviour
         IsFlying = false;
 
         float yaw = _pc.transform.eulerAngles.y;
+
+        // 공유 항공기 점령 해제 — 원격 클라이언트가 해당 항공기를 idle로 전환
+        int leavingId = _pc.GetComponent<NetworkAircraft>()?.networkId ?? -1;
+        if (leavingId >= 0) NetworkManager.Instance?.socketClient?.SendLeaveAircraft(leavingId);
 
         // 비행 종료를 원격 플레이어에게 즉시 통보 (isFlying=false 패킷)
         _pc.SendFlightState(false);
@@ -404,7 +437,7 @@ public class GameModeManager : MonoBehaviour
     {
         IsFlying = false;
 
-        _pc.enabled = false;
+        if (_pc != null) _pc.enabled = false;
 
         _gc.transform.position = charPos;
         _gc.InitYaw(yaw);

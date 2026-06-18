@@ -41,11 +41,12 @@ class EnterRoomHandler
             session.player.room.Leave(session.player);
 
         // 재입장 시 상태 리셋 (비행 상태 포함)
-        session.player.lastProcessedTick = 0;
+        session.player.lastProcessedTick  = 0;
         session.player.isFlying           = false;
         session.player.isMove             = false;
         session.player.isBoardedInCockpit = false;
         session.player.animState          = 0;
+        session.player.boardedAircraftId  = -1;
         session.player.posX = session.player.posY = session.player.posZ = 0;
         session.player.rotX = session.player.rotY = session.player.rotZ = 0;
 
@@ -69,14 +70,28 @@ class EnterRoomHandler
             ServerSender.SendPacket(session, spawn);
         }
 
-        // 1.5. 기존 플레이어의 현재 상태를 TCP로 즉시 전송
-        //      Spawn 패킷의 isBoardedInCockpit/isFlying은 타이밍 경쟁으로 틀릴 수 있음.
-        //      여기서 서버가 알고 있는 최신 상태를 덮어쓰도록 한다.
+        // 1.5. 공유 항공기 탑승 상태를 MOVE보다 먼저 전송
+        //      MOVE 수신 시 클라이언트가 _boardedAircraftId를 이미 알아야 fallback RemoteAircraft 생성을 방지할 수 있음
+        foreach (Player player in room.GetPlayers())
+        {
+            if (player.boardedAircraftId < 0) continue;
+            ServerSender.SendPacket(session, new AircraftBoardPacket
+            {
+                type       = PacketType.BOARD_AIRCRAFT,
+                nickname   = player.nickname,
+                aircraftId = player.boardedAircraftId
+            });
+        }
+
+        // 1.75. 기존 플레이어의 현재 상태를 TCP로 즉시 전송
+        //       Spawn 패킷의 isBoardedInCockpit/isFlying은 타이밍 경쟁으로 틀릴 수 있음.
+        //       여기서 서버가 알고 있는 최신 상태를 덮어쓰도록 한다.
         foreach (Player player in room.GetPlayers())
         {
             ServerSender.SendPacket(session, new MoveBroadcastPacket
             {
                 type               = PacketType.MOVE,
+                tick               = player.lastProcessedTick,
                 nickname           = player.nickname,
                 posX               = player.posX,
                 posY               = player.posY,

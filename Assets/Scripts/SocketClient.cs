@@ -52,6 +52,8 @@ public class SocketClient : MonoBehaviour
     public event Action<string>                 OnAIDespawn;
     public event Action<AIMovePacket>           OnAIMove;
     public event Action<HostChangePacket>       OnHostChange;
+    public event Action<AircraftBoardPacket>    OnAircraftBoard;
+    public event Action<AircraftBoardPacket>    OnAircraftLeave;
 
     // ── 연결 ──────────────────────────────────────────────────────────────
     public void Connect(string ip = null)
@@ -232,6 +234,22 @@ public class SocketClient : MonoBehaviour
             {
                 var p = JsonConvert.DeserializeObject<HostChangePacket>(json);
                 UnityMainThreadDispatcher.Instance.Enqueue(() => OnHostChange?.Invoke(p));
+                break;
+            }
+
+            case PacketType.BOARD_AIRCRAFT:
+            {
+                var p = JsonConvert.DeserializeObject<AircraftBoardPacket>(json);
+                if (p.nickname != myNickname)
+                    UnityMainThreadDispatcher.Instance.Enqueue(() => OnAircraftBoard?.Invoke(p));
+                break;
+            }
+
+            case PacketType.LEAVE_AIRCRAFT:
+            {
+                var p = JsonConvert.DeserializeObject<AircraftBoardPacket>(json);
+                if (p.nickname != myNickname)
+                    UnityMainThreadDispatcher.Instance.Enqueue(() => OnAircraftLeave?.Invoke(p));
                 break;
             }
 
@@ -467,6 +485,12 @@ public class SocketClient : MonoBehaviour
             isBoardedInCockpit = boarded,
             posX = pos.x, posY = pos.y, posZ = pos.z,
             rotX = rot.x, rotY = rot.y, rotZ = rot.z });
+
+    public void SendBoardAircraft(int aircraftId)
+        => SendTCP(new AircraftBoardPacket { type = PacketType.BOARD_AIRCRAFT, aircraftId = aircraftId });
+
+    public void SendLeaveAircraft(int aircraftId)
+        => SendTCP(new AircraftBoardPacket { type = PacketType.LEAVE_AIRCRAFT, aircraftId = aircraftId });
 
     public void SendGunHit(string shooterNick, string targetNick, Vector3 pos)
         => SendTCP(new GunHitPacket {

@@ -21,8 +21,5 @@ class UdpSender
             data,
             data.Length,
             endPoint);
-
-        Console.WriteLine(
-            $"UDP SEND : {json}");
     }
 }
