@@ -13,9 +13,11 @@ public class RemoteGroundInterp : MonoBehaviour
     static readonly int s_hashState = Animator.StringToHash("State");
     static readonly int s_hashSpeed = Animator.StringToHash("Speed");
 
-    Animator _anim;
-    bool     _hasStateParam;
-    bool     _hasSpeedParam;
+    Animator                    _anim;
+    ProceduralCharacterAnimator _procAnim;
+    bool                        _hasStateParam;
+    bool                        _hasSpeedParam;
+    float                       _lastAnimUpdateTime;
 
     Vector3 _initialScale;
     (Transform t, Vector3 scale)[] _childScales;
@@ -31,13 +33,19 @@ public class RemoteGroundInterp : MonoBehaviour
         _childScales = children.ToArray();
 
         _anim = GetComponentInChildren<Animator>();
-        if (_anim == null) return;
-
-        foreach (var p in _anim.parameters)
+        if (_anim != null)
         {
-            if (p.name == "State") _hasStateParam = true;
-            if (p.name == "Speed") _hasSpeedParam = true;
+            foreach (var p in _anim.parameters)
+            {
+                if (p.name == "State") _hasStateParam = true;
+                if (p.name == "Speed") _hasSpeedParam = true;
+            }
         }
+
+        _procAnim = GetComponent<ProceduralCharacterAnimator>();
+        if (_procAnim != null) _procAnim.SetRemoteMode(true);
+
+        _lastAnimUpdateTime = Time.time;
     }
 
     // SetActive(false) → 재활성 시 반드시 텔레포트하도록 초기화 상태 리셋
@@ -60,6 +68,18 @@ public class RemoteGroundInterp : MonoBehaviour
 
     void ApplyAnim(int animState)
     {
+        // 패킷 수신 간격을 직접 측정해 dampTime 진행량 계산 (Time.deltaTime은 렌더 프레임 간격으로 부정확)
+        float now = Time.time;
+        float dt  = Mathf.Clamp(now - _lastAnimUpdateTime, 0.01f, 0.2f);
+        _lastAnimUpdateTime = now;
+
+        // 절차적 애니메이터가 있으면 위임 (FBX Animator 없는 procedural 모델용)
+        if (_procAnim != null)
+        {
+            _procAnim.SetRemoteAnimState((GroundAnimState)animState);
+            return;
+        }
+
         if (_anim == null) return;
 
         if (_hasStateParam)
@@ -68,14 +88,13 @@ public class RemoteGroundInterp : MonoBehaviour
         if (_hasSpeedParam)
         {
             // Soldier.controller BlendTree 매핑: 0=Idle, 0.5=Walk, 1.0=Run
-            // dampTime으로 로컬과 동일한 부드러운 가속/감속 재현 (즉시 점프 방지)
             float speed = animState switch
             {
                 1 => 0.5f,   // Walk
                 2 => 1.0f,   // Run
                 _ => 0.0f    // Idle / Jump
             };
-            _anim.SetFloat(s_hashSpeed, speed, 0.12f, Time.deltaTime);
+            _anim.SetFloat(s_hashSpeed, speed, 0.12f, dt);
         }
     }
 

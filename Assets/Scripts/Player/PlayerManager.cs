@@ -604,9 +604,6 @@ public class PlayerManager : MonoBehaviour
             if (gc != null) Destroy(gc);
             var cc = go.GetComponent<CharacterController>();
             if (cc != null) Destroy(cc);
-            // 절차적 애니메이터는 GroundController에 의존하므로 원격 캐릭터에서 불필요
-            var pa = go.GetComponent<ProceduralCharacterAnimator>();
-            if (pa != null) Destroy(pa);
             // 루트 모션이 RemoteGroundInterp의 위치 제어를 방해하지 않도록 비활성화
             var anim = go.GetComponentInChildren<Animator>();
             if (anim != null) anim.applyRootMotion = false;
@@ -614,12 +611,8 @@ public class PlayerManager : MonoBehaviour
         else
         {
             go = new GameObject($"RemoteGround_{nickname}");
-            var body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            Destroy(body.GetComponent<CapsuleCollider>());
-            body.GetComponent<Renderer>().sharedMaterial = GetGrayMaterial();
-            body.transform.SetParent(go.transform, false);
-            body.transform.localScale    = new Vector3(0.5f, 0.9f, 0.5f);
-            body.transform.localPosition = new Vector3(0f, 0.9f, 0f);
+            go.AddComponent<CharacterModelBuilder>();
+            go.AddComponent<ProceduralCharacterAnimator>();
         }
         go.transform.SetPositionAndRotation(pos, rot);
         go.AddComponent<RemoteGroundInterp>().SetTarget(pos, rot);

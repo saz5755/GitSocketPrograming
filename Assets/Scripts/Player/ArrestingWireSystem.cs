@@ -431,8 +431,9 @@ public class ArrestingWireSystem : MonoBehaviour
                     ws.stopped    = true;
                     ws.resetTimer = Cfg.resetDelay;
                     SetColors(ws, Cfg.emissionStopped, Cfg.lineColorStopped, Cfg.zoneColorStopped);
-                    // 플레이어 경로 저장 — 실제 착함 트리거는 ExitFlight(F키 하차)에서 발생
+                    // 플레이어 경로 저장 후 GameModeManager에 착함 완료 통보
                     AIManager.Instance?.StoreArrestInfo(_arrestApproachDir, _arrestWirePos);
+                    GameModeManager.Instance?.OnArrestWireStopped(_local.transform.position, ws.root);
                     Debug.Log($"[ArrestWire] Wire {i + 1}: 정지 → EndArrest");
                 }
 

@@ -23,6 +23,11 @@ public class ProceduralCharacterAnimator : MonoBehaviour
     [SerializeField] float bodyBobAmp   = 0.03f;
 
     GroundController _gc;
+    bool             _isRemote;
+    GroundAnimState  _remoteState;
+
+    public void SetRemoteMode(bool remote) => _isRemote = remote;
+    public void SetRemoteAnimState(GroundAnimState state) => _remoteState = state;
 
     Transform _lUpperLeg, _rUpperLeg;
     Transform _lLowerLeg, _rLowerLeg;
@@ -66,18 +71,20 @@ public class ProceduralCharacterAnimator : MonoBehaviour
 
     void Update()
     {
-        if (_gc == null) return;
+        if (!_isRemote && _gc == null) return;
 
-        var state   = _gc.CurrentAnimState;
-        bool moving = state == GroundAnimState.Walk || state == GroundAnimState.Run;
+        var state    = _isRemote ? _remoteState : _gc.CurrentAnimState;
+        bool moving  = state == GroundAnimState.Walk || state == GroundAnimState.Run;
         bool running = state == GroundAnimState.Run;
 
         // 이동 블렌드 (정지 ↔ 이동 부드럽게 전환)
         _blend = Mathf.Lerp(_blend, moving ? 1f : 0f, Time.deltaTime * 9f);
 
-        // 사이클 위상: 실제 속도 비례로 진행해서 발걸음이 이동 속도와 맞음
-        float freq      = running ? runFreq : walkFreq;
-        float speedRatio = _gc.CurrentSpeed / (running ? _gc.RunSpeed : _gc.WalkSpeed);
+        // 사이클 위상: 원격 모드에서는 상태로 속도 비율 추정
+        float freq       = running ? runFreq : walkFreq;
+        float speedRatio = _isRemote
+            ? (moving ? 1.0f : 0.0f)
+            : _gc.CurrentSpeed / (running ? _gc.RunSpeed : _gc.WalkSpeed);
         _phase += Time.deltaTime * freq * Mathf.PI * 2f * Mathf.Clamp01(speedRatio);
 
         float s         = Mathf.Sin(_phase);

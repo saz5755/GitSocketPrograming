@@ -432,6 +432,21 @@ public class GameModeManager : MonoBehaviour
         _trapping = false;
     }
 
+    // ArrestingWireSystem에서 와이어 정지 확인 시 호출.
+    // TrapCoroutine(루프 탈출 대기)을 강제 종료하고 ExitFlight를 직접 실행.
+    public void OnArrestWireStopped(Vector3 landingPos, Transform platform)
+    {
+        if (!IsFlying) return;
+        StopTrap();
+        StartCoroutine(DelayedExitAfterArrest(landingPos, platform));
+    }
+
+    System.Collections.IEnumerator DelayedExitAfterArrest(Vector3 landingPos, Transform platform)
+    {
+        yield return new WaitForSeconds(0.4f);
+        ExitFlight(landingPos, platform);
+    }
+
     // ── 내부 헬퍼 ────────────────────────────────────────────────────────────
     void ApplyGroundMode(Vector3 charPos, float yaw)
     {
