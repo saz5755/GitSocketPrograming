@@ -71,6 +71,12 @@ public class AIManager : MonoBehaviour
     {
         var sc = NetworkManager.Instance?.socketClient;
         if (sc == null) return;
+
+        // ENTER_ROOM_RESULT는 씬 전환 전(로비)에 수신되므로 OnEnterRoomResult 이벤트를 놓칠 수 있음.
+        // SocketClient가 수신 스레드에서 즉시 저장한 roomHostNickname을 폴백으로 읽는다.
+        if (!string.IsNullOrEmpty(sc.roomHostNickname))
+            _networkHostNickname = sc.roomHostNickname;
+
         sc.OnAISpawn         += HandleRemoteAISpawn;
         sc.OnAIDespawn       += HandleRemoteAIDespawn;
         sc.OnAIMove          += HandleRemoteAIMove;
@@ -558,6 +564,7 @@ public class AIManager : MonoBehaviour
                         oldPlayerPC.transform.eulerAngles, aiType: 0);
 
         _localPlayerAircraft = newPlayerPC;
+        RecalculateEscortFormation();
         Debug.Log($"[AIManager] Escort takeover: '{botNick}' → player, old aircraft → '{newEscortNick}' escort");
     }
 
@@ -582,7 +589,75 @@ public class AIManager : MonoBehaviour
         escortPC.nickname      = myNick;
         escortPC.isLocalPlayer = true;
 
+        RecalculateEscortFormation();
         Debug.Log($"[AIManager] BoardEscortFromGround: '{nick}' AI 제거, 플레이어 탑승");
+    }
+
+    // 플레이어 탑승 후 남은 에스코트들의 편대 오프셋을 좌우 대칭으로 재배분.
+    // 오름차순(x 기준) 정렬 → 왼쪽 절반·오른쪽 절반 쌍 배치, 홀수 나머지 1기는 정후방.
+    void RecalculateEscortFormation()
+    {
+        var escorts = new System.Collections.Generic.List<EscortAI>();
+        foreach (var bot in _bots)
+        {
+            if (bot == null) continue;
+            var e = bot.GetComponent<EscortAI>();
+            if (e != null) escorts.Add(e);
+        }
+
+        int N = escorts.Count;
+        if (N == 0) return;
+
+        // 기존 FormationOffset.x 기준 오름차순 (좌→우) — 좌우 소속을 유지하며 재배분
+        escorts.Sort((a, b) => a.FormationOffset.x.CompareTo(b.FormationOffset.x));
+
+        const float LateralBase = 32f;   // 안쪽 쌍 측면 거리 (m)
+        const float LateralStep = 28f;   // 쌍 rank 증가당 측면 추가
+        const float RearBase    = 40f;   // 안쪽 쌍 후방 거리 (m)
+        const float RearStep    = 40f;   // 쌍 rank 증가당 후방 추가
+        const float AltBase     = -5f;   // 기본 고도 차 (m)
+        const float AltStep     = -3f;   // rank 증가당 고도 감소
+
+        int  pairs     = N / 2;
+        bool hasBehind = (N % 2) == 1;
+
+        // 왼쪽 절반 (indices 0..pairs-1) — 가장 왼쪽(i=0)이 바깥 rank
+        for (int i = 0; i < pairs; i++)
+        {
+            int   rank    = pairs - i;                          // 바깥=pairs, 안쪽=1
+            float lateral = LateralBase + (rank - 1) * LateralStep;
+            float rear    = RearBase    + (rank - 1) * RearStep;
+            float alt     = AltBase     + (rank - 1) * AltStep;
+            escorts[i].SetFormationOffset(new Vector3(-lateral, alt, -rear));
+        }
+
+        // 정후방 (홀수 남은 1기)
+        if (hasBehind)
+        {
+            float rear = RearBase + pairs * RearStep;
+            float alt  = AltBase  + pairs * AltStep;
+            escorts[pairs].SetFormationOffset(new Vector3(0f, alt, -rear));
+        }
+
+        // 오른쪽 절반 — 안쪽(rank 1)부터 시작
+        int rightStart = hasBehind ? pairs + 1 : pairs;
+        for (int i = rightStart; i < N; i++)
+        {
+            int   rank    = i - rightStart + 1;
+            float lateral = LateralBase + (rank - 1) * LateralStep;
+            float rear    = RearBase    + (rank - 1) * RearStep;
+            float alt     = AltBase     + (rank - 1) * AltStep;
+            escorts[i].SetFormationOffset(new Vector3(lateral, alt, -rear));
+        }
+
+        if (Application.isPlaying)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.Append($"[AIManager] 편대 재배분 N={N}  쌍={pairs}  후방={hasBehind}\n");
+            foreach (var e in escorts)
+                sb.Append($"  {e.name}: {e.FormationOffset}\n");
+            Debug.Log(sb.ToString());
+        }
     }
 
     // BOT_E1 → 1, BOT_E2 → 2. 패턴 불일치 시 -1

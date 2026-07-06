@@ -219,6 +219,10 @@ public class GameModeManager : MonoBehaviour
                     AIManager.Instance?.BoardEscortFromGround(boardedPC);   // 지상에서 첫 탑승
             }
 
+            // 이전 항공기의 isLocalPlayer를 해제해야 ArrestingWireSystem._local이 새 기체로 재스캔됨
+            if (_pc != null && _pc != boardedPC)
+                _pc.isLocalPlayer = false;
+
             _pc              = boardedPC;
             _pc.isLocalPlayer = true;
             _boardingCarrier = FindFirstObjectByType<CarrierController>();
@@ -321,6 +325,10 @@ public class GameModeManager : MonoBehaviour
 
         // 콕핏 하차 상태를 원격 플레이어에게 알림
         _pc.SendCockpitState(false);
+
+        // LEAVE_AIRCRAFT 전송: 원격 _boardedAircraftId / _remoteBoarded 해제 → 캐릭터 가시성 복구
+        int exitingId = _pc?.GetComponent<NetworkAircraft>()?.networkId ?? -1;
+        if (exitingId >= 0) NetworkManager.Instance?.socketClient?.SendLeaveAircraft(exitingId);
 
         _fc?.EndCockpitBoarding();
         _fc?.SetGroundTarget(_gc.transform);

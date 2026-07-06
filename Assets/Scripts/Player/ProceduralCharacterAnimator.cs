@@ -41,12 +41,18 @@ public class ProceduralCharacterAnimator : MonoBehaviour
     Quaternion _origLForearm,  _origRForearm;
     Vector3    _origBodyPos;
 
-    float _phase;   // 보행 사이클 위상 (라디안)
-    float _blend;   // 0=정지, 1=이동
+    float _phase;         // 보행 사이클 위상 (라디안)
+    float _blend;         // 0=정지, 1=이동
+    float _currentFreq;
+    float _currentLegSwing;
+    float _currentArmSwing;
 
     void Start()
     {
         _gc = GetComponent<GroundController>();
+        _currentFreq     = walkFreq;
+        _currentLegSwing = walkLegSwing;
+        _currentArmSwing = walkArmSwing;
 
         _lUpperLeg = transform.Find("LUpperLeg");
         _rUpperLeg = transform.Find("RUpperLeg");
@@ -80,16 +86,22 @@ public class ProceduralCharacterAnimator : MonoBehaviour
         // 이동 블렌드 (정지 ↔ 이동 부드럽게 전환)
         _blend = Mathf.Lerp(_blend, moving ? 1f : 0f, Time.deltaTime * 9f);
 
-        // 사이클 위상: 원격 모드에서는 상태로 속도 비율 추정
-        float freq       = running ? runFreq : walkFreq;
+        // Walk/Run 파라미터를 부드럽게 보간해 전환 시 튀는 현상 방지
+        float lerpRate = Time.deltaTime * 8f;
+        _currentFreq     = Mathf.Lerp(_currentFreq,     running ? runFreq     : walkFreq,     lerpRate);
+        _currentLegSwing = Mathf.Lerp(_currentLegSwing, running ? runLegSwing : walkLegSwing, lerpRate);
+        _currentArmSwing = Mathf.Lerp(_currentArmSwing, running ? runArmSwing : walkArmSwing, lerpRate);
+
+        // 사이클 위상: CurrentAnimSpeed(0~1)를 2배 스케일해 clamp
+        // Walk max(0.5)와 Run 시작(0.5)이 모두 speedRatio=1.0 → Walk/Run 경계에서 불연속 없음
         float speedRatio = _isRemote
             ? (moving ? 1.0f : 0.0f)
-            : _gc.CurrentSpeed / (running ? _gc.RunSpeed : _gc.WalkSpeed);
-        _phase += Time.deltaTime * freq * Mathf.PI * 2f * Mathf.Clamp01(speedRatio);
+            : Mathf.Clamp01(_gc.CurrentAnimSpeed * 2f);
+        _phase += Time.deltaTime * _currentFreq * Mathf.PI * 2f * speedRatio;
 
-        float s         = Mathf.Sin(_phase);
-        float legSwing  = (running ? runLegSwing : walkLegSwing) * _blend;
-        float armSwing  = (running ? runArmSwing : walkArmSwing) * _blend;
+        float s        = Mathf.Sin(_phase);
+        float legSwing = _currentLegSwing * _blend;
+        float armSwing = _currentArmSwing * _blend;
         float kneeMult  = kneeBendMax * _blend;
 
         // 다리: 좌우 반대 위상

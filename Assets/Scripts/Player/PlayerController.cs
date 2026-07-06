@@ -128,7 +128,7 @@ public class PlayerController : MonoBehaviour
             if (moveSendTimer >= Cfg.sendInterval)
             {
                 moveSendTimer -= Cfg.sendInterval;
-                localTick++;
+                localTick = NetworkManager.Instance.socketClient.GetNextTick();
                 Vector3 arrestEuler = transform.eulerAngles;
                 NetworkManager.Instance.socketClient.SendMove(
                     transform.position.x, transform.position.y, transform.position.z,
@@ -170,7 +170,7 @@ public class PlayerController : MonoBehaviour
             if (moveSendTimer >= Cfg.sendInterval)
             {
                 moveSendTimer -= Cfg.sendInterval;
-                localTick++;
+                localTick = NetworkManager.Instance.socketClient.GetNextTick();
                 Vector3 catEuler = transform.eulerAngles;
                 NetworkManager.Instance.socketClient.SendMove(
                     transform.position.x, transform.position.y, transform.position.z,
@@ -211,7 +211,7 @@ public class PlayerController : MonoBehaviour
         if (moveSendTimer >= Cfg.sendInterval)
         {
             moveSendTimer -= Cfg.sendInterval;
-            localTick++;
+            localTick = NetworkManager.Instance.socketClient.GetNextTick();
 
             if (_inputHistory.Count >= MaxHistory) _inputHistory.Dequeue();
             _inputHistory.Enqueue(new TickRecord
@@ -354,8 +354,8 @@ public class PlayerController : MonoBehaviour
 
     public void ClearSnapshots() => snapshots.Clear();
 
-    // GroundController가 단일 틱 시퀀스를 공유하도록 노출
-    public int GetNextTick() => ++localTick;
+    // GroundController가 단일 틱 시퀀스를 공유하도록 노출 (현재 GroundController는 SocketClient.GetNextTick() 직접 사용)
+    public int GetNextTick() => localTick = NetworkManager.Instance.socketClient.GetNextTick();
 
     // 비행 상태 전환 시 즉시 한 번 전송 (비행 종료 시 isFlying=false 알림용)
     public void SendFlightState(bool flying)

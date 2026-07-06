@@ -106,10 +106,20 @@ class EnterRoomHandler
             });
         }
 
-        // 2. 입장 처리
+        // 2. 입장 성공 결과를 SPAWN/MOVE보다 먼저 전송
+        //    클라이언트가 hostNickname을 알아야 이후 SPAWN 처리 시 호스트 여부를 정확히 판별할 수 있음
+        ServerSender.SendPacket(session, new EnterRoomResultPacket
+        {
+            type         = PacketType.ENTER_ROOM_RESULT,
+            success      = true,
+            roomId       = room.roomId,
+            hostNickname = room.hostNickname
+        });
+
+        // 3. 입장 처리
         room.Enter(session.player);
 
-        // 3. 새 플레이어 스폰을 룸 전체에 브로드캐스트
+        // 4. 새 플레이어 스폰을 룸 전체에 브로드캐스트
         SpawnPacket mySpawn = new()
         {
             type     = PacketType.SPAWN,
@@ -120,15 +130,6 @@ class EnterRoomHandler
             isFlying = false
         };
         room.Broadcast(mySpawn);
-
-        // 4. 입장 성공 결과 전송
-        ServerSender.SendPacket(session, new EnterRoomResultPacket
-        {
-            type         = PacketType.ENTER_ROOM_RESULT,
-            success      = true,
-            roomId       = room.roomId,
-            hostNickname = room.hostNickname
-        });
 
         Console.WriteLine($"[Room] {session.player.nickname} entered room {packet.roomId}");
     }

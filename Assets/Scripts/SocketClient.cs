@@ -31,6 +31,13 @@ public class SocketClient : MonoBehaviour
     // UDP 틱 추적 (스레드 안전, PlayerManager 불필요)
     readonly ConcurrentDictionary<string, int> lastTicks = new();
 
+    // 아웃바운드 MOVE 틱 카운터 — Ground/Flight 공용, 단조 증가로 중복 패킷 차단
+    int _outTick = 0;
+    public int GetNextTick() => ++_outTick;
+
+    // 현재 방의 호스트 닉네임 — ENTER_ROOM_RESULT 수신 즉시 세팅 (씬 전환 전에도 참조 가능)
+    public string roomHostNickname = "";
+
     // ── 이벤트 (Unity 메인스레드에서 발행) ──────────────────────────────
     public event Action<LoginResultPacket>    OnLoginResult;
     public event Action<string>               OnChat;
@@ -201,6 +208,8 @@ public class SocketClient : MonoBehaviour
             case PacketType.ENTER_ROOM_RESULT:
             {
                 var p = JsonConvert.DeserializeObject<EnterRoomResultPacket>(json);
+                // 씬 전환 전(수신 스레드)에 즉시 저장 — AIManager.TryInitializeAsHost가 씬 로드 후 참조
+                if (p.success) roomHostNickname = p.hostNickname ?? "";
                 UnityMainThreadDispatcher.Instance.Enqueue(() => OnEnterRoomResult?.Invoke(p));
                 break;
             }
@@ -384,6 +393,8 @@ public class SocketClient : MonoBehaviour
     public void LeaveRoom()
     {
         lastTicks.Clear();
+        roomHostNickname = "";
+        _outTick = 0;
         SendTCP(new LeaveRoomPacket { type = PacketType.LEAVE_ROOM });
     }
 

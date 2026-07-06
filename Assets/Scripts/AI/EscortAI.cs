@@ -87,6 +87,7 @@ public class EscortAI : MonoBehaviour
 
     public Vector3 FormationOffset => _formationOffset;
     public bool    IsLeftSide      => _formationOffset.x < 0f;
+    public void    SetFormationOffset(Vector3 offset) => _formationOffset = offset;
     public bool    IsLaunching     => _phase == Phase.Launching;
     public bool    IsLanded        => _phase == Phase.Landed || _phase == Phase.BeingArrested;
     // ArrestingWireSystem이 체결 시도 여부를 판단하는 프로퍼티

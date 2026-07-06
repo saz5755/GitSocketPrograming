@@ -282,11 +282,13 @@ public class FlightCamera : MonoBehaviour
             : _groundTarget.eulerAngles.y;
         Quaternion camRot = Quaternion.Euler(_groundPitch, cameraYaw, 0f);
 
-        Vector3 targetPos = _groundTarget.position + camRot * groundOffset;
-
-        Vector3 dir = targetPos - _groundTarget.position;
-        if (Physics.SphereCast(_groundTarget.position + Vector3.up * 1.5f,
-                               0.3f, dir.normalized, out RaycastHit hit, dir.magnitude))
+        Vector3 targetPos  = _groundTarget.position + camRot * groundOffset;
+        // CharacterController 캡슐(height=1.8m) 상단 + SphereCast radius(0.3m) 위에서 시작
+        // → 자신의 캡슐을 절대 self-hit하지 않음 (레이어 제외 없이 안전)
+        Vector3 castOrigin = _groundTarget.position + Vector3.up * 2.1f;
+        Vector3 castDir    = targetPos - castOrigin;
+        if (Physics.SphereCast(castOrigin, 0.3f, castDir.normalized, out RaycastHit hit,
+                               castDir.magnitude, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
         {
             targetPos = hit.point + hit.normal * 0.3f;
         }

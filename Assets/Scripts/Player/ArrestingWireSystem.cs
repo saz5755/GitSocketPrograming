@@ -91,6 +91,61 @@ public class ArrestingWireSystem : MonoBehaviour
         Vector3[] pos = { Cfg.wire1LocalPos, Cfg.wire2LocalPos, Cfg.wire3LocalPos };
         for (int i = 0; i < 3; i++)
             _wires[i] = BuildWire(i + 1, pos[i]);
+
+        // WireSystemSO의 Y 값이 모델 피벗 기준으로 부정확할 수 있으므로
+        // 각 와이어 XZ 위치에서 레이캐스트로 실제 갑판 면 Y를 탐지해 자동 보정.
+        SnapWiresToDeckHeight();
+    }
+
+    // 와이어 루트를 실제 갑판 높이에 자동 배치.
+    // 1차: 레이캐스트(MeshCollider 필요). 2차: 자식 Renderer Bounds(MeshCollider 없는 모델 대응).
+    void SnapWiresToDeckHeight()
+    {
+        var renderers = GetComponentsInChildren<Renderer>();
+
+        foreach (var ws in _wires)
+        {
+            if (ws?.root == null) continue;
+
+            Vector3 xzPos = ws.root.position;
+            int n = Physics.RaycastNonAlloc(
+                new Vector3(xzPos.x, 500f, xzPos.z), Vector3.down,
+                _deckHits, 1000f,
+                Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+
+            float deckY = float.MinValue;
+            for (int k = 0; k < n; k++)
+                if (_deckHits[k].point.y > deckY) deckY = _deckHits[k].point.y;
+
+            // 레이캐스트가 와이어 기본 Y + 1m 이하(= 바다 수면 등 콜라이더 미탐지)면
+            // 자식 Renderer Bounds로 갑판 면 Y를 탐지한다.
+            // 갑판 표면은 가장 낮은 maxY(> -1m) 렌더러 — 갑판 위 구조물보다 낮기 때문.
+            if (deckY <= ws.root.position.y + 1f)
+            {
+                Vector3 localWZ = transform.InverseTransformPoint(xzPos);
+                float rMinDeckY = float.MaxValue;
+                foreach (var r in renderers)
+                {
+                    if (r.bounds.size.y > 3f) continue;
+                    Vector3 rc = transform.InverseTransformPoint(r.bounds.center);
+                    if (Mathf.Abs(rc.z - localWZ.z) > 15f) continue;
+                    // 갑판 범위(-1m ~ 5m)의 maxY 중 최솟값 = 갑판 표면 (선체 아래 제외)
+                    if (r.bounds.max.y < -1f || r.bounds.max.y > 5f) continue;
+                    if (r.bounds.max.y < rMinDeckY) rMinDeckY = r.bounds.max.y;
+                }
+                if (rMinDeckY < float.MaxValue) deckY = rMinDeckY;
+            }
+
+            if (deckY <= float.MinValue) continue;
+
+            Vector3 lp = ws.root.localPosition;
+            lp.y = transform.InverseTransformPoint(
+                       new Vector3(xzPos.x, deckY, xzPos.z)).y;
+            ws.root.localPosition = lp;
+            ws.wireWorldY         = deckY;
+            ws.apexPos            = ws.root.TransformPoint(Vector3.zero);
+            Debug.Log($"[ArrestWire] Snapped to deck Y={deckY:F2} (localY={lp.y:F2})");
+        }
     }
 
     // ── 갑판 재질 탐색 ─────────────────────────────────────────────────────────
@@ -530,9 +585,10 @@ public class ArrestingWireSystem : MonoBehaviour
     static readonly RaycastHit[] _deckHits = new RaycastHit[8];
     float DetectDeckY(Vector3 fromPos, float fallbackY, Transform ignoreSelf = null)
     {
+        // 위로 30 m에서 하강 레이캐스트 — 와이어 루트 Y가 갑판보다 낮더라도 갑판을 탐지
         int count = Physics.RaycastNonAlloc(
-            fromPos + Vector3.up * 3f, Vector3.down,
-            _deckHits, 8f,
+            fromPos + Vector3.up * 30f, Vector3.down,
+            _deckHits, 60f,
             Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
 
         var skip = ignoreSelf ?? _local?.transform;
@@ -542,6 +598,25 @@ public class ArrestingWireSystem : MonoBehaviour
             if (skip != null && _deckHits[k].transform.IsChildOf(skip)) continue;
             if (_deckHits[k].point.y > bestY) bestY = _deckHits[k].point.y;
         }
+
+        // 레이캐스트가 와이어 위치 Y + 1m 이하(= 바다 수면 등)만 탐지하면
+        // 자식 Renderer Bounds로 갑판 면 Y를 보완한다 (MeshCollider 없는 모델 대응).
+        // 갑판 표면 = 갑판 범위(-1m~5m)에서 가장 낮은 maxY (갑판 위 구조물 제외).
+        if (bestY <= fallbackY + 1f)
+        {
+            float rMinDeckY = float.MaxValue;
+            Vector3 fp      = transform.InverseTransformPoint(fromPos);
+            foreach (var r in GetComponentsInChildren<Renderer>())
+            {
+                if (r.bounds.size.y > 3f) continue;
+                Vector3 rc = transform.InverseTransformPoint(r.bounds.center);
+                if (Mathf.Abs(rc.z - fp.z) > 20f) continue;
+                if (r.bounds.max.y < -1f || r.bounds.max.y > 5f) continue;
+                if (r.bounds.max.y < rMinDeckY) rMinDeckY = r.bounds.max.y;
+            }
+            if (rMinDeckY < float.MaxValue && rMinDeckY > bestY) bestY = rMinDeckY;
+        }
+
         return bestY > float.MinValue ? bestY + Cfg.landingClearance : fallbackY;
     }
 

@@ -57,15 +57,15 @@ class MoveHandler
             catch { }
         }
 
-        BroadcastMove(session.player);
+        BroadcastMove(session.player, packet.tick);
     }
 
-    public static void BroadcastMove(Player sender)
+    public static void BroadcastMove(Player sender, int broadcastTick = 0)
     {
         MoveBroadcastPacket broadcast = new()
         {
             type = PacketType.MOVE,
-            tick = sender.lastProcessedTick,
+            tick = broadcastTick,
             nickname = sender.nickname,
             posX = sender.posX,
             posY = sender.posY,
