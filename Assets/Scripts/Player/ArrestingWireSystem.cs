@@ -456,6 +456,12 @@ public class ArrestingWireSystem : MonoBehaviour
             _local = null;
             foreach (var pc in PlayerController.All)
                 if (pc != null && pc.isLocalPlayer) { _local = pc; break; }
+            // 에스코트 전투기 탑승 시 PlayerController.All에 누락될 수 있으므로 추가 탐색
+            if (_local == null)
+            {
+                var la = GameModeManager.Instance?.LocalAircraft;
+                if (la != null) _local = la.GetComponent<PlayerController>();
+            }
             if (_local == null) return;
         }
 
@@ -650,8 +656,9 @@ public class ArrestingWireSystem : MonoBehaviour
 
             // 에스코트 어프로치 속도(25 m/s)는 낮아 매 프레임 감지로 충분.
             // ws.prevLocal* 은 플레이어 위치이므로 에스코트 swept 감지에 사용하면 오감지 발생.
-            bool inZone = Mathf.Abs(lp.x) < Cfg.wireWidth * 0.5f &&
-                          lp.y > -1f && lp.y < Cfg.triggerHeight &&
+            // X 범위 체크 제거: 좌우 배치 에스코트는 ±22m까지 X 오프셋 가능,
+            // wireWidth * 0.5f(~7-10m) 기준이면 체결 실패. IsInApproachRun이 1차 게이트.
+            bool inZone = lp.y > -1f && lp.y < Cfg.triggerHeight &&
                           Mathf.Abs(lp.z) < Cfg.triggerDepth * 0.5f;
 
             if (!inZone) continue;

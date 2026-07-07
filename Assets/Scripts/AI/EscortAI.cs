@@ -329,7 +329,17 @@ public class EscortAI : MonoBehaviour
 
     void UpdateEscorting()
     {
-        if (_leader == null || _bot == null) return;
+        if (_bot == null) return;
+
+        // 리더 소멸(플레이어 퇴장·연결 해제) → 착함 대신 순찰 비행으로 전환
+        if (_leader == null)
+        {
+            _bot.PositionOverride  = false;
+            _leaderStopTimer       = 0f;
+            _hasPatrolWaypoint     = false;
+            _phase                 = Phase.FreeFlightZone;
+            return;
+        }
 
         bool    isLeft      = IsLeftSide;
         Vector3 localOffset = _formationOffset;
