@@ -506,7 +506,9 @@ public class ArrestingWireSystem : MonoBehaviour
                 continue;
             }
 
-            if (speed < Cfg.minCatchSpeed)
+            // TrapCoroutine이 이미 감속 중(_arrested)이면 minCatchSpeed 무시 —
+            // 캐리어 존 진입으로 먼저 감속이 시작된 경우에도 와이어가 체결되어야 한다.
+            if (speed < Cfg.minCatchSpeed && !_local.IsArrested)
             {
                 // 속도 미달이어도 이전 위치는 갱신 (swept 감지 오작동 방지)
                 UpdatePrevPos(ws, ws.root.InverseTransformPoint(_local.transform.position));

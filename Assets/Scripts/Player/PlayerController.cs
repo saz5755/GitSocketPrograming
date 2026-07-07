@@ -49,6 +49,7 @@ public class PlayerController : MonoBehaviour
     // ── 어레스팅 와이어 감속 ─────────────────────────────────────────────────
     bool _arrested;
 
+    public bool IsArrested    => _arrested;
     public void BeginArrest() => _arrested = true;
     public void EndArrest()   => _arrested = false;
 
