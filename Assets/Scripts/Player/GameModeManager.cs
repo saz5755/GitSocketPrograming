@@ -148,30 +148,55 @@ public class GameModeManager : MonoBehaviour
             {
                 if (_trapping)
                 {
-                    ShowPrompt(true, "MANUAL TRAP — SKIP DECEL", new Color(1f, 0.75f, 0f, 1f), keyLabel: "F");
+                    ShowPrompt(true, "■  ARRESTED  ■  SKIP DECEL", new Color(1f, 0.75f, 0f, 1f), keyLabel: "F");
                     if (Input.GetKeyDown(KeyCode.F))
                     {
                         StopTrap();
+                        // 공중에서 SKIP 시 항공기를 갑판 Y로 먼저 스냅
+                        if (_pc != null && _activeZone != null)
+                        {
+                            float clearance = ArrestingWireSystem.Instance?.LandingClearance ?? 1.5f;
+                            var p = _pc.transform.position;
+                            p.y = _activeZone.transform.position.y + clearance;
+                            _pc.transform.position = p;
+                        }
                         ExitFlight(_activeZone.transform.position, _activeZone.transform);
                     }
                     return;
                 }
                 float kph     = _pc.CurrentSpeed * 3.6f;
                 bool  waveOff = kph > 360f;
-                ShowPrompt(true,
-                    waveOff ? $"WAVE OFF  {kph:F0} KPH — REDUCE SPEED" : $"AUTO TRAP  {kph:F0} KPH",
-                    waveOff ? new Color(1f, 0.2f, 0.1f, 1f) : new Color(0f, 1f, 0.5f, 1f),
-                    keyLabel: waveOff ? "" : "F");
-                if (!waveOff && Input.GetKeyDown(KeyCode.F))
-                    ExitFlight(_activeZone.transform.position, _activeZone.transform);
+                bool  stopped = kph < 20f;
+                if (waveOff)
+                {
+                    ShowPrompt(true, $"WAVE OFF  {kph:F0} KPH — REDUCE SPEED", new Color(1f, 0.2f, 0.1f, 1f));
+                }
+                else if (stopped)
+                {
+                    ShowPrompt(true, "EXIT AIRCRAFT", new Color(0f, 1f, 0.5f, 1f), keyLabel: "F");
+                    if (Input.GetKeyDown(KeyCode.F))
+                        ExitFlight(_activeZone.transform.position, _activeZone.transform);
+                }
+                else
+                {
+                    ShowPrompt(true, $"AUTO TRAP  {kph:F0} KPH", new Color(0f, 1f, 0.5f, 1f));
+                }
                 return;
             }
 
             if (_activeZone.ZoneType == AircraftZone.Type.Landing)
             {
-                ShowPrompt(true, "EXIT AIRCRAFT", keyLabel: "F");
-                if (Input.GetKeyDown(KeyCode.F))
-                    ExitFlight(_activeZone.transform.position);
+                float kph = _pc != null ? _pc.CurrentSpeed * 3.6f : 999f;
+                if (kph < 20f)
+                {
+                    ShowPrompt(true, "EXIT AIRCRAFT", keyLabel: "F");
+                    if (Input.GetKeyDown(KeyCode.F))
+                        ExitFlight(_activeZone.transform.position);
+                }
+                else
+                {
+                    ShowPrompt(true, $"SLOW DOWN  {kph:F0} KPH", new Color(1f, 0.6f, 0f, 1f));
+                }
                 return;
             }
 
@@ -255,6 +280,9 @@ public class GameModeManager : MonoBehaviour
 
         // PC가 씬에서 already-enabled 상태이면 enabled=true가 no-op → OnEnable 미발동 → OnMoveAck 미구독
         // 강제 disable→enable 사이클로 OnEnable을 반드시 발동시킨다
+        // ExitFlight에서 비활성한 VFX도 함께 복원
+        var vfxOnEnter = _pc.GetComponent<F35VFXController>();
+        if (vfxOnEnter != null) vfxOnEnter.enabled = true;
         _pc.enabled = false;
         _pc.isLocalPlayer = true;
         _pc.enabled = true;
@@ -349,6 +377,10 @@ public class GameModeManager : MonoBehaviour
     {
         if (!IsFlying || _gc == null || _pc == null) return;
         IsFlying = false;
+
+        // VFX 중지 — _pc.enabled=false 이후에도 파티클·불꽃이 남지 않도록
+        var vfx = _pc.GetComponent<F35VFXController>();
+        if (vfx != null) { vfx.SetEngineIdle(false); vfx.enabled = false; }
 
         float yaw = _pc.transform.eulerAngles.y;
 

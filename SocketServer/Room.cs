@@ -90,6 +90,9 @@ public class Room
 
         Console.WriteLine($"[Room] {player.nickname} left room {roomId}");
 
+        // 항공기 풀에서 제거 — 재입장 시 신규 입장자가 구 위치를 받지 않도록
+        RemoveAircraft(player.nickname);
+
         DespawnPacket despawn = new()
         {
             type      = PacketType.DESPAWN,

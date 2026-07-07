@@ -72,6 +72,13 @@ public class PlayerManager : MonoBehaviour
             CreateLocalPlayer(p);
         else
         {
+            // 같은 닉네임의 방치 항공기가 있으면 재입장 시 제거 (이전 세션의 잔류 오브젝트)
+            if (_abandonedAircraft.TryGetValue(p.nickname, out var stale))
+            {
+                _abandonedAircraft.Remove(p.nickname);
+                if (stale != null) Destroy(stale);
+            }
+
             CreateRemoteGroundPlayer(p);
             // 내가 콕핏/비행 중이면 새 입장자에게 현재 상태를 재전송
             GameModeManager.Instance?.BroadcastCurrentState();
@@ -162,6 +169,10 @@ public class PlayerManager : MonoBehaviour
         // 탑승 트리거 추가 — [RequireComponent(PlayerController)] 충족 필요
         if (go.GetComponent<AircraftBoardingTrigger>() == null)
             go.AddComponent<AircraftBoardingTrigger>();
+
+        // 방치 항공기의 파티클·불꽃 VFX 비활성화
+        var abandonedVfx = go.GetComponentInChildren<F35VFXController>();
+        if (abandonedVfx != null) { abandonedVfx.SetEngineIdle(false); abandonedVfx.enabled = false; }
 
         go.AddComponent<PlayerLabel>().SetNickname($"{nickname} [OFFLINE]");
         _abandonedAircraft[nickname] = go;
