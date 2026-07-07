@@ -77,12 +77,13 @@ public class AIManager : MonoBehaviour
         if (!string.IsNullOrEmpty(sc.roomHostNickname))
             _networkHostNickname = sc.roomHostNickname;
 
-        sc.OnAISpawn         += HandleRemoteAISpawn;
-        sc.OnAIDespawn       += HandleRemoteAIDespawn;
-        sc.OnAIMove          += HandleRemoteAIMove;
-        sc.OnHostChange      += HandleHostChange;
-        sc.OnEnterRoomResult += HandleEnterRoomResult;
-        sc.OnSpawn           += HandleRemotePlayerJoin;
+        sc.OnAISpawn          += HandleRemoteAISpawn;
+        sc.OnAIDespawn        += HandleRemoteAIDespawn;
+        sc.OnAIMove           += HandleRemoteAIMove;
+        sc.OnHostChange       += HandleHostChange;
+        sc.OnEnterRoomResult  += HandleEnterRoomResult;
+        sc.OnSpawn            += HandleRemotePlayerJoin;
+        sc.OnAircraftPoolSync += HandleAircraftPoolSync;
     }
 
     void OnDestroy()
@@ -90,12 +91,13 @@ public class AIManager : MonoBehaviour
         if (Instance == this) Instance = null;
         var sc = NetworkManager.Instance?.socketClient;
         if (sc == null) return;
-        sc.OnAISpawn         -= HandleRemoteAISpawn;
-        sc.OnAIDespawn       -= HandleRemoteAIDespawn;
-        sc.OnAIMove          -= HandleRemoteAIMove;
-        sc.OnHostChange      -= HandleHostChange;
-        sc.OnEnterRoomResult -= HandleEnterRoomResult;
-        sc.OnSpawn           -= HandleRemotePlayerJoin;
+        sc.OnAISpawn          -= HandleRemoteAISpawn;
+        sc.OnAIDespawn        -= HandleRemoteAIDespawn;
+        sc.OnAIMove           -= HandleRemoteAIMove;
+        sc.OnHostChange       -= HandleHostChange;
+        sc.OnEnterRoomResult  -= HandleEnterRoomResult;
+        sc.OnSpawn            -= HandleRemotePlayerJoin;
+        sc.OnAircraftPoolSync -= HandleAircraftPoolSync;
     }
 
     // ── 호스트 초기화 (PlayerManager.CreateLocalPlayer에서 호출) ───────────
@@ -152,6 +154,23 @@ public class AIManager : MonoBehaviour
         if (!_isHost || _bots.Count == 0) return;
 
         StartCoroutine(ReSendAISpawnToNewJoiner());
+    }
+
+    // 입장 시 서버 풀에서 AI 봇 항목을 일괄 처리 — 호스트는 이미 관리 중이므로 무시
+    void HandleAircraftPoolSync(AircraftPoolSyncPacket p)
+    {
+        foreach (var entry in p.aircraft)
+        {
+            if (entry.aiType < 0) continue;  // 플레이어 기체 — PlayerManager가 처리
+            HandleRemoteAISpawn(new AISpawnPacket
+            {
+                type     = PacketType.AI_SPAWN,
+                nickname = entry.nickname,
+                posX = entry.posX, posY = entry.posY, posZ = entry.posZ,
+                rotX = entry.rotX, rotY = entry.rotY, rotZ = entry.rotZ,
+                aiType   = entry.aiType
+            });
+        }
     }
 
     System.Collections.IEnumerator ReSendAISpawnToNewJoiner()

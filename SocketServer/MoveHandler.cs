@@ -39,6 +39,19 @@ class MoveHandler
         // isBoardedInCockpit는 TCP COCKPIT_STATE 패킷이 단독으로 관리 — UDP MOVE가 덮어쓰면 안 됨
         session.player.animState = packet.animState;
 
+        // 비행 중 플레이어 항공기를 풀에 등록·갱신 (신규 입장자 동기화용)
+        if (packet.isFlying && session.player.room != null)
+        {
+            session.player.room.UpsertAircraft(new AircraftEntry
+            {
+                nickname = session.player.nickname,
+                posX = packet.posX, posY = packet.posY, posZ = packet.posZ,
+                rotX = packet.rotX, rotY = packet.rotY, rotZ = packet.rotZ,
+                isFlying = true,
+                aiType   = -1
+            });
+        }
+
         // 발신자에게 ACK: 처리 완료 틱 + 서버 저장 위치 에코 (Reconciliation용)
         if (session.udpEndPoint != null)
         {

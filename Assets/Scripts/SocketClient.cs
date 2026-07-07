@@ -59,8 +59,9 @@ public class SocketClient : MonoBehaviour
     public event Action<string>                 OnAIDespawn;
     public event Action<AIMovePacket>           OnAIMove;
     public event Action<HostChangePacket>       OnHostChange;
-    public event Action<AircraftBoardPacket>    OnAircraftBoard;
-    public event Action<AircraftBoardPacket>    OnAircraftLeave;
+    public event Action<AircraftBoardPacket>      OnAircraftBoard;
+    public event Action<AircraftBoardPacket>      OnAircraftLeave;
+    public event Action<AircraftPoolSyncPacket>   OnAircraftPoolSync;
 
     // ── 연결 ──────────────────────────────────────────────────────────────
     public void Connect(string ip = null)
@@ -259,6 +260,13 @@ public class SocketClient : MonoBehaviour
                 var p = JsonConvert.DeserializeObject<AircraftBoardPacket>(json);
                 if (p.nickname != myNickname)
                     UnityMainThreadDispatcher.Instance.Enqueue(() => OnAircraftLeave?.Invoke(p));
+                break;
+            }
+
+            case PacketType.AIRCRAFT_POOL_SYNC:
+            {
+                var p = JsonConvert.DeserializeObject<AircraftPoolSyncPacket>(json);
+                UnityMainThreadDispatcher.Instance.Enqueue(() => OnAircraftPoolSync?.Invoke(p));
                 break;
             }
 

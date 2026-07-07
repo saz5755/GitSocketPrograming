@@ -12,6 +12,11 @@ class AIMoveHandler
         var packet = JsonConvert.DeserializeObject<AIMovePacket>(json);
         if (packet == null) return;
 
+        session.player.room.UpdateAircraftPose(packet.nickname,
+            packet.posX, packet.posY, packet.posZ,
+            packet.rotX, packet.rotY, packet.rotZ,
+            packet.speed, true);
+
         foreach (var player in session.player.room.GetPlayers())
         {
             if (player == session.player) continue;

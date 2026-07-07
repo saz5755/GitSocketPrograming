@@ -8,6 +8,44 @@ public class Room
     List<Player> players = new();
     readonly object locker = new();
 
+    readonly Dictionary<string, AircraftEntry> _aircraftPool = new();
+    readonly object _poolLock = new();
+
+    // ── 항공기 풀 ────────────────────────────────────────────────────────────
+
+    public void UpsertAircraft(AircraftEntry e)
+    {
+        lock (_poolLock) _aircraftPool[e.nickname] = e;
+    }
+
+    public void RemoveAircraft(string nickname)
+    {
+        lock (_poolLock) _aircraftPool.Remove(nickname);
+    }
+
+    // AI_MOVE 수신 시 포지션만 갱신 (엔트리 없으면 무시)
+    public void UpdateAircraftPose(string nickname,
+        float px, float py, float pz,
+        float rx, float ry, float rz,
+        float speed, bool isFlying)
+    {
+        lock (_poolLock)
+        {
+            if (_aircraftPool.TryGetValue(nickname, out var e))
+            {
+                e.posX = px; e.posY = py; e.posZ = pz;
+                e.rotX = rx; e.rotY = ry; e.rotZ = rz;
+                e.speed   = speed;
+                e.isFlying = isFlying;
+            }
+        }
+    }
+
+    public List<AircraftEntry> GetAircraftPool()
+    {
+        lock (_poolLock) return new List<AircraftEntry>(_aircraftPool.Values);
+    }
+
     public int GetPlayerCount()
     {
         lock (locker) { return players.Count; }

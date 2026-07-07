@@ -106,6 +106,17 @@ class EnterRoomHandler
             });
         }
 
+        // 1.9. 항공기 풀 동기화 — AI 봇 + 방치 항공기를 신규 입장자에게 즉시 전송
+        var pool = room.GetAircraftPool();
+        if (pool.Count > 0)
+        {
+            ServerSender.SendPacket(session, new AircraftPoolSyncPacket
+            {
+                type     = PacketType.AIRCRAFT_POOL_SYNC,
+                aircraft = pool
+            });
+        }
+
         // 2. 입장 성공 결과를 SPAWN/MOVE보다 먼저 전송
         //    클라이언트가 hostNickname을 알아야 이후 SPAWN 처리 시 호스트 여부를 정확히 판별할 수 있음
         ServerSender.SendPacket(session, new EnterRoomResultPacket

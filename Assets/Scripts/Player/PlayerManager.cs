@@ -38,8 +38,9 @@ public class PlayerManager : MonoBehaviour
         sc.OnMissileDestroy += HandleMissileDestroy;
         sc.OnMissileMove    += HandleMissileMove;
         sc.OnMissileWarn    += HandleMissileWarn;
-        sc.OnAircraftBoard  += HandleAircraftBoard;
-        sc.OnAircraftLeave  += HandleAircraftLeave;
+        sc.OnAircraftBoard     += HandleAircraftBoard;
+        sc.OnAircraftLeave     += HandleAircraftLeave;
+        sc.OnAircraftPoolSync  += HandleAircraftPoolSync;
     }
 
     void OnDestroy()
@@ -54,8 +55,9 @@ public class PlayerManager : MonoBehaviour
             sc.OnMissileDestroy -= HandleMissileDestroy;
             sc.OnMissileMove    -= HandleMissileMove;
             sc.OnMissileWarn    -= HandleMissileWarn;
-            sc.OnAircraftBoard  -= HandleAircraftBoard;
-            sc.OnAircraftLeave  -= HandleAircraftLeave;
+            sc.OnAircraftBoard    -= HandleAircraftBoard;
+            sc.OnAircraftLeave    -= HandleAircraftLeave;
+            sc.OnAircraftPoolSync -= HandleAircraftPoolSync;
         }
         ClearAll();
         ClearRemoteMissiles();
@@ -364,6 +366,35 @@ public class PlayerManager : MonoBehaviour
         _remoteBoarded.Remove(p.nickname);
 
         Debug.Log($"[PlayerManager] Shared aircraft released by {p.nickname}");
+    }
+
+    // ── 항공기 풀 동기화 (입장 시 서버 → 클라이언트 1회) ───────────────────────
+    void HandleAircraftPoolSync(AircraftPoolSyncPacket p)
+    {
+        // 현재 방에 있는 플레이어 닉네임 집합 (SPAWN 수신 완료 기준)
+        var knownPlayers = new HashSet<string>(_groundChars.Keys);
+        foreach (var k in players.Keys) knownPlayers.Add(k);
+        knownPlayers.Add(GetMyName());
+
+        foreach (var entry in p.aircraft)
+        {
+            if (entry.aiType >= 0)
+            {
+                // AI 봇: AIManager.HandleAircraftPoolSync 가 처리
+                // (PlayerManager는 플레이어 기체만 담당)
+            }
+            else
+            {
+                // 플레이어 기체 — 방에 없는 플레이어의 기체는 방치 항공기로 생성
+                if (!knownPlayers.Contains(entry.nickname) &&
+                    !_abandonedAircraft.ContainsKey(entry.nickname))
+                {
+                    var pos = new Vector3(entry.posX, entry.posY, entry.posZ);
+                    var rot = Quaternion.Euler(entry.rotX, entry.rotY, entry.rotZ);
+                    SpawnAbandonedAircraft(entry.nickname, pos, rot);
+                }
+            }
+        }
     }
 
     // 원격 비행 항공기 뷰 제거
