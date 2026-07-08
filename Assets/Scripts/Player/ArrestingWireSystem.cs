@@ -290,9 +290,19 @@ public class ArrestingWireSystem : MonoBehaviour
         }
         else
         {
+            // 빌드에서 셰이더 스트리핑으로 null 반환 가능 → null 가드 필수
             Shader sh = Shader.Find("Universal Render Pipeline/Unlit")
+                     ?? Shader.Find("Universal Render Pipeline/Particles/Unlit")
                      ?? Shader.Find("Unlit/Color")
-                     ?? Shader.Find("Standard");
+                     ?? Shader.Find("Standard")
+                     ?? Shader.Find("Sprites/Default");
+            if (sh == null)
+            {
+                Debug.LogWarning("[ArrestingWireSystem] 와이어 로프 셰이더를 찾지 못했습니다. " +
+                                 "WireSystemSO.wireRopeMaterial에 머티리얼을 할당하세요.");
+                Destroy(ropeGO);
+                return;
+            }
             mat = new Material(sh);
         }
         mat.color = Cfg.lineColorAvailable;
