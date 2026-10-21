@@ -66,7 +66,8 @@ public class LoginUI : MonoBehaviour
     const float ColW       = 440f;   // 로그인 영역 폭
 
     Transform _canvasRoot;
-    LoginJetFX _jetFx;
+    LoginAuthFX _authFx;
+    RectTransform _heroRT;
     InputField[] _fields;
 
     void BuildUI()
@@ -101,6 +102,7 @@ public class LoginUI : MonoBehaviour
 
         var hero = MakeEmpty(parent, "Hero", Vector2.zero, Vector2.zero);
         Stretch(hero);
+        _heroRT = hero;
 
         // 우측 정렬, 높이에 맞춰 폭 결정 (화면 비율이 달라도 비행기가 잘리지 않도록)
         var tex = UIAssets.LoginBg;
@@ -119,8 +121,6 @@ public class LoginUI : MonoBehaviour
             edge.anchorMin = Vector2.zero; edge.anchorMax = new Vector2(0.55f, 1f);
             edge.offsetMin = edge.offsetMax = Vector2.zero;
 
-            // 인증 중 연출 (윤곽 코팅 스캔 → 후방 점화)
-            _jetFx = imgGO.AddComponent<LoginJetFX>();   // 텍스처/레이어는 첫 Play() 때 지연 생성
         }
         else
         {
@@ -204,6 +204,8 @@ public class LoginUI : MonoBehaviour
         loginBtn = BuildPrimaryButton(form, "로그인", new Vector2(0f, -268f - t.buttonHeightL * 0.5f),
                                       new Vector2(ColW, t.buttonHeightL), t);
         loginBtn.OnClick = OnLoginClick;
+        // 인증 연출: 버튼 스피너 + 3단계 진행 + 배경 후광
+        _authFx = LoginAuthFX.Create(_canvasRoot, _heroRT, form, (RectTransform)loginBtn.transform);
 
         AddLeftText(form, "ENTER 로그인  ·  TAB 다음 입력", new Vector2(0f, -268f - t.buttonHeightL - 22f),
                     new Vector2(ColW, 18f), t.textXS, t.textDisabled, FontStyle.Normal);
@@ -303,7 +305,7 @@ public class LoginUI : MonoBehaviour
     {
         loginBtn.SetLabel("로그인");
         loginBtn.Interactable = true;
-        _jetFx?.Stop();
+        _authFx?.Stop();
     }
 
     // 좌측 기준(앵커 0,0.5) 블록. x: 좌측 여백, yTop: 세로 중심 기준 상단 y, h: 높이
@@ -535,7 +537,7 @@ public class LoginUI : MonoBehaviour
         SavePrefs(ip, id);
         loginBtn.Interactable = false;
         loginBtn.SetLabel("인증 중…");
-        _jetFx?.Play();
+        _authFx?.Play(id, ip);
         SetStatus("서버에 접속하는 중…", false);
 
         if (NetworkManager.Instance?.socketClient?.IsConnected() == true)
@@ -583,6 +585,7 @@ public class LoginUI : MonoBehaviour
         if (packet.success)
         {
             SetStatus("인증 성공 — 로비로 이동 중…", false);
+            _authFx?.Complete();
             StartCoroutine(LoadLobby());
         }
         else
@@ -599,9 +602,9 @@ public class LoginUI : MonoBehaviour
         var op = SceneManager.LoadSceneAsync("LobbyScene");
         if (op != null) op.allowSceneActivation = false;
 
-        // 점화 연출이 충분히 보이도록 최소 시간 대기 (연출이 없으면 즉시)
-        while (_jetFx != null && _jetFx.Playing && _jetFx.Elapsed < 2.4f) yield return null;
-        yield return new WaitForSecondsRealtime(0.15f);
+        // 인증 연출이 충분히 보이도록 최소 시간 대기 (3단계 완료 + ACCESS GRANTED 표시)
+        while (_authFx != null && _authFx.Playing && (_authFx.Elapsed < 2.3f || _authFx.GrantedFor < 0.8f)) yield return null;
+        yield return new WaitForSecondsRealtime(0.1f);
 
         // 암전
         var go = new GameObject("FadeOut");

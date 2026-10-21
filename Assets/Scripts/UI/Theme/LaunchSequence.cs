@@ -150,7 +150,7 @@ public class LaunchSequence : MonoBehaviour
         var ht = hint.AddComponent<Text>();
         ht.font = _font; ht.fontSize = th.textXS; ht.color = new Color(1f, 1f, 1f, 0.4f);
         ht.alignment = TextAnchor.MiddleRight; ht.raycastTarget = false;
-        ht.text = "SPACE / 클릭  건너뛰기";
+        ht.text = "SPACE  건너뛰기";
 
         // 섬광
         var fgo = new GameObject("Flash");
@@ -171,7 +171,7 @@ public class LaunchSequence : MonoBehaviour
         // 건너뛰기
         if (DebugTime < 0f && _t < TFlash - 0.25f && _t > 0.6f &&
             (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Return) ||
-             Input.GetKeyDown(KeyCode.Escape) || Input.GetMouseButtonDown(0)))
+             Input.GetKeyDown(KeyCode.Escape)))   // 마우스 클릭으로는 건너뛰지 않는다
             _t = TFlash - 0.2f;
 
         Evaluate(_t);
