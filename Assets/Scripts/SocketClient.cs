@@ -62,6 +62,7 @@ public class SocketClient : MonoBehaviour
     public event Action<AircraftBoardPacket>      OnAircraftBoard;
     public event Action<AircraftBoardPacket>      OnAircraftLeave;
     public event Action<AircraftPoolSyncPacket>   OnAircraftPoolSync;
+    public event Action<ArrestEventPacket>        OnArrestEvent;
 
     // ── 연결 ──────────────────────────────────────────────────────────────
     public void Connect(string ip = null)
@@ -267,6 +268,14 @@ public class SocketClient : MonoBehaviour
             {
                 var p = JsonConvert.DeserializeObject<AircraftPoolSyncPacket>(json);
                 UnityMainThreadDispatcher.Instance.Enqueue(() => OnAircraftPoolSync?.Invoke(p));
+                break;
+            }
+
+            case PacketType.ARREST_EVENT:
+            {
+                var p = JsonConvert.DeserializeObject<ArrestEventPacket>(json);
+                if (p.nickname != myNickname)
+                    UnityMainThreadDispatcher.Instance.Enqueue(() => OnArrestEvent?.Invoke(p));
                 break;
             }
 
@@ -504,6 +513,14 @@ public class SocketClient : MonoBehaviour
             isBoardedInCockpit = boarded,
             posX = pos.x, posY = pos.y, posZ = pos.z,
             rotX = rot.x, rotY = rot.y, rotZ = rot.z });
+
+    public void SendArrestEvent(int eventType, Vector3 approachDir, Vector3 wirePos)
+        => SendTCP(new ArrestEventPacket {
+            type         = PacketType.ARREST_EVENT,
+            nickname     = myNickname,
+            eventType    = eventType,
+            approachDirX = approachDir.x, approachDirY = approachDir.y, approachDirZ = approachDir.z,
+            wirePosX     = wirePos.x,     wirePosY     = wirePos.y,     wirePosZ     = wirePos.z });
 
     public void SendBoardAircraft(int aircraftId)
         => SendTCP(new AircraftBoardPacket { type = PacketType.BOARD_AIRCRAFT, aircraftId = aircraftId });

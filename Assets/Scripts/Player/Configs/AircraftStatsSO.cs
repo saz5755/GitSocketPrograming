@@ -42,4 +42,40 @@ public class AircraftStatsSO : ScriptableObject
     public float catapultHoldSec = 4f;
     [Tooltip("카타펄트 가속 (m/s²). 180 ≈ 0→72 m/s 약 0.4초")]
     public float catapultAccel = 180f;
+
+    [Header("연료")]
+    [Tooltip("최대 연료 (추상 단위). 10000 ≈ 기본 소비율에서 666초 비행")]
+    public float maxFuel = 10000f;
+    [Tooltip("기본 비행 중 연료 소비율 (/초)")]
+    public float fuelConsumption = 15f;
+    [Tooltip("애프터버너 사용 중 연료 소비율 (/초)")]
+    public float fuelConsumptionAB = 60f;
+    [Tooltip("저연료 경고 임계값 비율 (0~1)")]
+    [Range(0.05f, 0.5f)] public float lowFuelThreshold = 0.2f;
+
+    [Header("애프터버너")]
+    [Tooltip("애프터버너 사용 시 최대속도 배수")]
+    [Range(1.1f, 2.5f)] public float afterburnerMultiplier = 1.5f;
+    [Tooltip("애프터버너 사용 시 가속 배수")]
+    [Range(1f, 3f)]     public float afterburnerAccelMult  = 1.8f;
+
+    [Header("스톨")]
+    [Tooltip("이 속도 미만에서 피치 과도 시 스톨 (m/s)")]
+    public float stallSpeed = 25f;
+    [Tooltip("스톨 판정 피치 각도 (deg). 수평 기준 양수 피치업")]
+    public float stallPitchDeg = 25f;
+    [Tooltip("스톨 중 자동 노우즈다운 각속도 (deg/s)")]
+    public float stallNoseDownRate = 25f;
+    [Tooltip("스톨 중 중력 하강 가속 (m/s²)")]
+    public float stallFallAccel = 9.8f;
+
+    [Header("데미지")]
+    [Tooltip("최대 체력")]
+    public float maxHP = 100f;
+    [Tooltip("HP 이 비율 이하면 엔진 손상 — 최대속도 저하")]
+    [Range(0.1f, 0.6f)] public float engineDamageThreshold = 0.3f;
+    [Tooltip("엔진 손상 시 최대속도 배수")]
+    [Range(0.3f, 0.9f)] public float engineDamageSpeedMult = 0.7f;
+    [Tooltip("HP 이 비율 이하면 중상 — 추가 상태 저하 트리거")]
+    [Range(0.05f, 0.3f)] public float criticalDamageThreshold = 0.15f;
 }

@@ -41,6 +41,16 @@ public class QuestNPC : MonoBehaviour
         SetSpeechVisible(false);
     }
 
+    // Camera.main은 내부적으로 FindObjectWithTag → 매 프레임 호출 비용 큼. Transform만 캐싱.
+    Transform _camT;
+    Transform GetCameraTransform()
+    {
+        if (_camT != null) return _camT;
+        var c = Camera.main;
+        if (c != null) _camT = c.transform;
+        return _camT;
+    }
+
     void Update()
     {
         UpdateMarker();
@@ -52,10 +62,14 @@ public class QuestNPC : MonoBehaviour
         }
 
         // 말풍선이 보이면 카메라를 향하게
-        if (_speechCanvas != null && _speechCanvas.enabled && Camera.main != null)
+        if (_speechCanvas != null && _speechCanvas.enabled)
         {
-            Vector3 dir = Camera.main.transform.position - _speechCanvas.transform.position;
-            _speechCanvas.transform.rotation = Quaternion.LookRotation(-dir);
+            var camT = GetCameraTransform();
+            if (camT != null)
+            {
+                Vector3 dir = camT.position - _speechCanvas.transform.position;
+                _speechCanvas.transform.rotation = Quaternion.LookRotation(-dir);
+            }
         }
     }
 
@@ -96,9 +110,10 @@ public class QuestNPC : MonoBehaviour
         }
 
         // 마커를 항상 카메라 방향으로
-        if (Camera.main != null)
+        var camT = GetCameraTransform();
+        if (camT != null)
         {
-            Vector3 dir = Camera.main.transform.position - _markerCanvas.transform.position;
+            Vector3 dir = camT.position - _markerCanvas.transform.position;
             _markerCanvas.transform.rotation = Quaternion.LookRotation(-dir);
         }
     }

@@ -46,6 +46,10 @@ public class EnemyAI : MonoBehaviour
     Vector3 _patrolCenter;
     Vector3 _patrolWP;
 
+    // 자신을 노리는 활성 미사일 ID 집합 — 비면 통상 Evade, 1개 이상이면 공격적 회피.
+    readonly System.Collections.Generic.HashSet<string> _incomingMissiles = new();
+    float _evadeJitterSeed;
+
     public CombatState State => _state;
 
     public void Initialize(Transform target, string targetNickname)
@@ -56,11 +60,43 @@ public class EnemyAI : MonoBehaviour
         _bot          = GetComponent<AIBotController>();
         _patrolCenter = transform.position;
         _patrolWP     = NextPatrolWP();
+        _evadeJitterSeed = Random.Range(0f, 100f);
         // 선회율을 낮춰 플레이어보다 기동성 열세 (플레이어 기본 ~120 deg/s 대비)
         _bot.SetTurnRate(38f);
         // 첫 발사 타이밍 분산 (여러 적기가 동시 발사 방지)
         _launchTimer = Random.Range(0f, launchCooldown * 0.5f);
+
+        // 미사일 추적 감지 — 자신이 타겟인 미사일 수신 시 회피 기동 트리거
+        var sc = NetworkManager.Instance?.socketClient;
+        if (sc != null)
+        {
+            sc.OnMissileSpawn   += HandleMissileSpawn;
+            sc.OnMissileDestroy += HandleMissileDestroy;
+        }
     }
+
+    void OnDestroy()
+    {
+        var sc = NetworkManager.Instance?.socketClient;
+        if (sc != null)
+        {
+            sc.OnMissileSpawn   -= HandleMissileSpawn;
+            sc.OnMissileDestroy -= HandleMissileDestroy;
+        }
+    }
+
+    void HandleMissileSpawn(MissileSpawnPacket p)
+    {
+        if (_bot == null) return;
+        if (p.targetNickname == _bot.Nickname) _incomingMissiles.Add(p.missileId);
+    }
+
+    void HandleMissileDestroy(MissileDestroyPacket p)
+    {
+        _incomingMissiles.Remove(p.missileId);
+    }
+
+    public bool IsUnderMissileAttack => _incomingMissiles.Count > 0;
 
     // ── Update ────────────────────────────────────────────────────────────
 
@@ -70,6 +106,12 @@ public class EnemyAI : MonoBehaviour
 
         _stateTimer  += Time.deltaTime;
         _launchTimer -= Time.deltaTime;
+
+        // 미사일 추적 중이면 Patrol/Approach/Intercept 상태를 끊고 Evade로 즉시 전환
+        if (IsUnderMissileAttack && _state != CombatState.Evade && _state != CombatState.LaunchReady)
+        {
+            Transition(CombatState.Evade);
+        }
 
         if (_target == null) { DoPatrol(); return; }
 
@@ -146,10 +188,25 @@ public class EnemyAI : MonoBehaviour
 
     void DoEvade()
     {
-        // 단순 직선 이탈 — 지그재그 제거로 탄 리드가 쉬워짐
+        // 미사일 추적 중이면 공격적 지그재그 — 평시 Evade는 단순 직선 이탈 (기존 동작)
         Vector3 away = (transform.position - _target.position).normalized;
-        Vector3 dest = transform.position + away * 350f;
-        FlyTo(dest, DynSpeed);
+
+        if (IsUnderMissileAttack)
+        {
+            // 2초 주기 sin 횡방향 + 상하 피치로 lead 어렵게. seed로 봇마다 패턴 분산.
+            float t          = Time.time + _evadeJitterSeed;
+            Vector3 lateral  = Vector3.Cross(Vector3.up, away).normalized * Mathf.Sin(t * 3.1f) * 180f;
+            Vector3 vertical = Vector3.up * Mathf.Sin(t * 2.3f) * 90f;
+            Vector3 dest     = transform.position + away * 300f + lateral + vertical;
+            FlyTo(dest, DynSpeed);
+
+            // 미사일 추적 지속되면 Evade 유지 (타임아웃 없음) — _incomingMissiles 비면 자연 종료
+            return;
+        }
+
+        // 평시: 단순 직선 이탈
+        Vector3 destCalm = transform.position + away * 350f;
+        FlyTo(destCalm, DynSpeed);
 
         if (_stateTimer >= 3.5f)
         {

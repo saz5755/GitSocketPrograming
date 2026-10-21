@@ -3788,12 +3788,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9d45d73b92eb1df4dbfc0954aac75f85, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CountermeasureSystem
-  maxFlares: 30
-  maxChaff: 30
-  flareCooldown: 0.35
-  chaffCooldown: 0.35
-  flareLifetime: 4
-  chaffLifetime: 6
   _vfxAdditive: {fileID: 2100000, guid: c387eaee230ace24c88c560ed606d199, type: 2}
   _vfxAlpha: {fileID: 2100000, guid: 61751cc2b4e625b469721cdb429668c4, type: 2}
 --- !u!114 &504464693

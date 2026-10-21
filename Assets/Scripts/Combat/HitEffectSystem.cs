@@ -6,6 +6,8 @@ public class HitEffectSystem : MonoBehaviour
 
     [SerializeField] AudioClip explosionClip;
 
+    // 데미지 값은 GameplayConfigSO (Resources/GameplayConfig.asset)에서 중앙 관리.
+
     [Header("VFX 프리팹/머티리얼 (미할당 시 Resources 폴백)")]
     [Tooltip("미사일 피격 폭발 프리팹")]
     [SerializeField] GameObject _explosionPrefab;
@@ -23,7 +25,7 @@ public class HitEffectSystem : MonoBehaviour
         _audio   = gameObject.AddComponent<AudioSource>();
     }
 
-    void Start() => _cam = FindFirstObjectByType<FlightCamera>();
+    void Start() => _cam = FindAnyObjectByType<FlightCamera>();
 
     // 미사일 피격 (강한 폭발 이펙트)
     public void TriggerHit(Vector3 worldPos, bool hitLocalPlayer)
@@ -36,6 +38,8 @@ public class HitEffectSystem : MonoBehaviour
         if (hitLocalPlayer) _cam?.TriggerShake(0.38f, 0.75f);
 
         FlightAudioSystem.NotifyExplosion(worldPos, hitLocalPlayer);
+
+        if (hitLocalPlayer) ApplyLocalDamage(GameplayConfigSO.Instance.missileDamage);
     }
 
     // 기총 피격 (작은 스파크 이펙트)
@@ -47,6 +51,21 @@ public class HitEffectSystem : MonoBehaviour
             _audio.PlayOneShot(MakeBulletImpactClip(), hitLocalPlayer ? 0.55f : 0.3f);
 
         if (hitLocalPlayer) _cam?.TriggerShake(0.10f, 0.18f);
+
+        if (hitLocalPlayer) ApplyLocalDamage(GameplayConfigSO.Instance.bulletDamage);
+    }
+
+    // 로컬 플레이어 PC를 찾아 데미지 적용. 비행 중일 때만 유효 (지상 캐릭터는 무시).
+    static void ApplyLocalDamage(float amount)
+    {
+        foreach (var pc in PlayerController.All)
+        {
+            if (pc != null && pc.isLocalPlayer && pc.IsFlying)
+            {
+                pc.TakeDamage(amount);
+                break;
+            }
+        }
     }
 
     static AudioClip MakeBulletImpactClip()

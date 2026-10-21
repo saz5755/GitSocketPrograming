@@ -16,6 +16,7 @@ public class AircraftBoardingTrigger : MonoBehaviour
     PlayerController _pc;
     Canvas           _worldCanvas;
     bool             _playerInRange;
+    Transform        _camT; // Camera.main 캐싱
 
     public PlayerController Aircraft    => _pc;
     // 다른 플레이어가 콕핏 탑승 중이면 true — PlayerManager가 설정
@@ -82,10 +83,18 @@ public class AircraftBoardingTrigger : MonoBehaviour
         if (!inRange &&  _playerInRange) Leave(gm);
 
         // Canvas +Z가 카메라 반대 방향을 향해야 정면(비미러)이 보임
-        if (_playerInRange && _worldCanvas != null && Camera.main != null)
+        if (_playerInRange && _worldCanvas != null)
         {
-            Vector3 toCamera = Camera.main.transform.position - _worldCanvas.transform.position;
-            _worldCanvas.transform.rotation = Quaternion.LookRotation(-toCamera);
+            if (_camT == null)
+            {
+                var c = Camera.main;
+                if (c != null) _camT = c.transform;
+            }
+            if (_camT != null)
+            {
+                Vector3 toCamera = _camT.position - _worldCanvas.transform.position;
+                _worldCanvas.transform.rotation = Quaternion.LookRotation(-toCamera);
+            }
         }
     }
 

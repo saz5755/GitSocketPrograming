@@ -52,6 +52,7 @@ public class EscortAI : MonoBehaviour
     PlayerController  _leaderPC;      // leader.GetComponent<PlayerController>() 캐시 — 매 프레임 호출 제거
     float             _launchTimer;
     float             _freeFlightTimer;
+    Vector3           _launchStartPos; // Launching 시작 위치 — Carrier 미할당 시 clearance 판정 폴백
 
     // 착함 상태
     Transform _carrier;
@@ -108,7 +109,7 @@ public class EscortAI : MonoBehaviour
     void Start()
     {
         if (_cachedCarrier == null)
-            _cachedCarrier = Object.FindFirstObjectByType<CarrierController>();
+            _cachedCarrier = Object.FindAnyObjectByType<CarrierController>();
     }
 
     // ── 외부 API ──────────────────────────────────────────────────────────────
@@ -131,7 +132,7 @@ public class EscortAI : MonoBehaviour
         _speedJitter          = Random.Range(-Cfg.speedJitterRange, Cfg.speedJitterRange);
         _smoothFormationRot   = transform.rotation;
         _phase                = spawnedOnDeck ? Phase.OnDeck : Phase.Escorting;
-        _cachedCarrier    = Object.FindFirstObjectByType<CarrierController>();
+        _cachedCarrier    = Object.FindAnyObjectByType<CarrierController>();
 
         // 모델 최하단 ~ 피벗 거리 계산 — 착함 시 바퀴 갑판 관통 방지
         float minY = float.MaxValue;
@@ -163,6 +164,7 @@ public class EscortAI : MonoBehaviour
             transform.SetParent(null, worldPositionStays: true);
 
         _launchTimer              = 0f;
+        _launchStartPos           = transform.position;  // clearance 판정 기준점
         _landingRequested         = false;
         _bot.PositionOverride     = false;
         _phase                    = Phase.Launching;
@@ -318,7 +320,21 @@ public class EscortAI : MonoBehaviour
         Vector3 farAhead = transform.position + launchRot * Vector3.forward * 3000f;
         _bot.SetTarget(farAhead, launchRot, Cfg.launchSpeed);
 
-        if (_launchTimer >= Cfg.launchDuration)
+        // 종료 조건: launchDuration 경과 AND clearance 거리 벗어남.
+        // 측면 비행하는 리더로 즉시 꺾여 항모 갑판을 가로지르는 현상 방지.
+        // 기준점: CarrierController가 있으면 항모 중심, 없으면 발진 시작 위치.
+        // 폴백: launchDuration * 3 초과 시 강제 전환 (무한 대기 방지).
+        if (_launchTimer < Cfg.launchDuration) return;
+
+        Vector3 refPos = _cachedCarrier != null
+            ? _cachedCarrier.transform.position
+            : _launchStartPos;
+        Vector3 toRef = transform.position - refPos;
+        toRef.y = 0f;
+        float minSqr = Cfg.carrierClearanceDistance * Cfg.carrierClearanceDistance;
+        bool clearedCarrier = toRef.sqrMagnitude >= minSqr;
+
+        if (clearedCarrier || _launchTimer >= Cfg.launchDuration * 3f)
         {
             // PositionOverride는 발진 시작 시 이미 false — 유지
             _phase = Phase.Escorting;
@@ -525,7 +541,7 @@ public class EscortAI : MonoBehaviour
         if (_carrier == null)
         {
             _carrier = _cachedCarrier?.transform
-                    ?? Object.FindFirstObjectByType<CarrierController>()?.transform;
+                    ?? Object.FindAnyObjectByType<CarrierController>()?.transform;
             if (_carrier == null && !_hasApproachInfo)
             { _phase = Phase.Escorting; return; }
         }
@@ -609,7 +625,7 @@ public class EscortAI : MonoBehaviour
 
             if (_carrier == null)
                 _carrier = _cachedCarrier?.transform
-                        ?? Object.FindFirstObjectByType<CarrierController>()?.transform;
+                        ?? Object.FindAnyObjectByType<CarrierController>()?.transform;
             if (_carrier != null)
                 transform.SetParent(_carrier, worldPositionStays: true);
 

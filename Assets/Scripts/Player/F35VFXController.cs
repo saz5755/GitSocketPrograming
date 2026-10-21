@@ -499,7 +499,11 @@ public class F35VFXController : MonoBehaviour
 
         if (_catapultBoostTimer > 0f) _catapultBoostTimer -= dt;
         bool catapultBoosting    = _catapultBoostTimer > 0f && playerController.CurrentSpeed > catapultCfg.minBoostSpeed;
-        bool isAfterburnerActive = catapultBoosting || (playerController.CurrentSpeed > catapultCfg.afterburnerMinSpeed && Input.GetKey(KeyCode.W));
+        // Shift 홀드 애프터버너 (연료 있을 때)가 켜지면 VFX 강제 활성.
+        // 폴백: 기존 로직 (고속 + W 홀드).
+        bool isAfterburnerActive = catapultBoosting
+            || playerController.AfterburnerActive
+            || (playerController.CurrentSpeed > catapultCfg.afterburnerMinSpeed && Input.GetKey(KeyCode.W));
         _afterburnerAssembly?.SetActive(isAfterburnerActive, dt);
     }
 }

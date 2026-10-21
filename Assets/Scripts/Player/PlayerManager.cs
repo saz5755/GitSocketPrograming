@@ -117,6 +117,14 @@ public class PlayerManager : MonoBehaviour
             }
         }
 
+        // 점령 해제 — LEAVE_AIRCRAFT 없이 퇴장 시 트리거가 영구 Occupied로 남아
+        // 다른 플레이어의 F키 탑승이 차단되는 문제 방지
+        if (_occupiedAircraft.TryGetValue(p.nickname, out var leftTrigger))
+        {
+            if (leftTrigger != null) leftTrigger.IsOccupied = false;
+            _occupiedAircraft.Remove(p.nickname);
+        }
+
         // 비행 중 퇴장: 마지막 위치에 방치 항공기 생성
         if (p.wasFlying && (p.posX != 0f || p.posY != 0f || p.posZ != 0f))
         {
@@ -178,7 +186,7 @@ public class PlayerManager : MonoBehaviour
         _abandonedAircraft[nickname] = go;
 
         // 항모가 있으면 갑판으로 자동 착함 → 지상 플레이어가 F키 탑승 가능
-        var carrier = Object.FindFirstObjectByType<CarrierController>();
+        var carrier = Object.FindAnyObjectByType<CarrierController>();
         if (carrier != null)
             StartCoroutine(AutoLandAbandoned(go, carrier.transform));
 
@@ -190,7 +198,7 @@ public class PlayerManager : MonoBehaviour
     {
         // 갑판 착함 목표 — EscortSlot 위치 우선, 없으면 항모 중심에서 추정
         Vector3 deckTarget;
-        var slot = Object.FindFirstObjectByType<EscortSlot>();
+        var slot = Object.FindAnyObjectByType<EscortSlot>();
         if (slot != null)
         {
             deckTarget = slot.transform.position;
@@ -807,7 +815,7 @@ public class PlayerManager : MonoBehaviour
             }
         }
         // 씬에 이미 있는 렌더러 재질을 차용 (Hidden 셰이더 제외)
-        foreach (var r in Object.FindObjectsByType<Renderer>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+        foreach (var r in Object.FindObjectsByType<Renderer>(FindObjectsInactive.Exclude))
         {
             if (r.sharedMaterial?.shader != null &&
                 !r.sharedMaterial.shader.name.StartsWith("Hidden"))

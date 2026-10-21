@@ -8,13 +8,9 @@ public class CountermeasureSystem : MonoBehaviour
     KeyCode flareKey = KeyCode.X;
     KeyCode chaffKey = KeyCode.Z;
 
-    [Header("Stock")]
-    [SerializeField] int   maxFlares       = 30;
-    [SerializeField] int   maxChaff        = 30;
-    [SerializeField] float flareCooldown   = 0.35f;
-    [SerializeField] float chaffCooldown   = 0.35f;
-    [SerializeField] float flareLifetime   = 4.0f;
-    [SerializeField] float chaffLifetime   = 6.0f;
+    // 모든 수치는 GameplayConfigSO (Resources/GameplayConfig.asset)에서 중앙 관리.
+    // 재고, 쿨다운, 수명, 자동 발사 간격/burst, 분산 등 모두 Config에서 조정.
+    public float AutoFlareInterval => GameplayConfigSO.Instance.autoFlareInterval;
 
     [Header("VFX Materials (미할당 시 Resources 폴백)")]
     [SerializeField] Material _vfxAdditive;
@@ -37,7 +33,13 @@ public class CountermeasureSystem : MonoBehaviour
     float            _flareCd;
     float            _chaffCd;
 
-    void Start()  { FlareRemaining = maxFlares; ChaffRemaining = maxChaff; FindLocal(); }
+    void Start()
+    {
+        var cfg = GameplayConfigSO.Instance;
+        FlareRemaining = cfg.flareStockMax;
+        ChaffRemaining = cfg.chaffStockMax;
+        FindLocal();
+    }
 
     void FindLocal()
     {
@@ -60,20 +62,57 @@ public class CountermeasureSystem : MonoBehaviour
             Deploy(CountermeasureType.Chaff);
     }
 
+    /// <summary>자동 기동(배럴롤 등)에서 호출. 쿨다운/재고 체크 포함, 가능하면 발사.</summary>
+    public bool TryDeployFlare()
+    {
+        if (FlareRemaining <= 0 || _flareCd > 0f) return false;
+        Deploy(CountermeasureType.Flare);
+        return true;
+    }
+
+    /// <summary>
+    /// 자동 발사 burst — GameplayConfig.autoFlareBurst 만큼 연속 발사.
+    /// 쿨다운 체크 생략 — Q/E 홀드 자동 발사율은 autoFlareInterval만으로 결정.
+    /// (수동 X 발사는 여전히 쿨다운 적용. Deploy()가 _flareCd를 리셋하므로
+    ///  자동 발사 직후 수동 X는 짧게 지연됨 — 매크로/수동 조합 방지)
+    /// </summary>
+    public int TryDeployAutoBurst()
+    {
+        if (FlareRemaining <= 0) return 0;
+        int burst = GameplayConfigSO.Instance.autoFlareBurst;
+        int fired = 0;
+        for (int i = 0; i < burst && FlareRemaining > 0; i++)
+        {
+            Deploy(CountermeasureType.Flare);
+            fired++;
+        }
+        return fired;
+    }
+
     void Deploy(CountermeasureType type)
     {
-        bool  isFlare  = type == CountermeasureType.Flare;
-        float lifetime = isFlare ? flareLifetime : chaffLifetime;
+        var cfg       = GameplayConfigSO.Instance;
+        bool  isFlare = type == CountermeasureType.Flare;
+        float lifetime = isFlare ? cfg.flareLifetime : cfg.chaffLifetime;
 
-        if (isFlare) { FlareRemaining--; _flareCd = flareCooldown; }
-        else         { ChaffRemaining--; _chaffCd = chaffCooldown; }
+        if (isFlare) { FlareRemaining--; _flareCd = cfg.flareCooldown; }
+        else         { ChaffRemaining--; _chaffCd = cfg.chaffCooldown; }
 
-        // 항공기 후방으로 디코이 발사
+        // 항공기 후방으로 디코이 발사 — 플레어는 Config에서 분산 조정 (커튼 전개)
+        float posScatter    = isFlare ? cfg.flareScatterPos  : 0.6f;
+        float velScatter    = isFlare ? cfg.flareScatterVel  : 4f;
+        float lateralKickMag = cfg.flareLateralKick;
+
         Vector3 spawnPos = _local.transform.position
                          - _local.transform.forward * 2.5f
-                         + Random.insideUnitSphere * 0.6f;
+                         + Random.insideUnitSphere * posScatter;
+        Vector3 lateralKick = isFlare
+            ? (_local.transform.right * Random.Range(-lateralKickMag, lateralKickMag)
+              + _local.transform.up * Random.Range(-lateralKickMag * 0.67f, lateralKickMag * 0.67f))
+            : Vector3.zero;
         Vector3 velocity = -_local.transform.forward * (_local.CurrentSpeed * 0.4f)
-                         + Random.insideUnitSphere * 4f;
+                         + lateralKick
+                         + Random.insideUnitSphere * velScatter;
 
         var go = new GameObject($"{type}Decoy");
         go.transform.position = spawnPos;

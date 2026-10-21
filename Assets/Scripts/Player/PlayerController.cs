@@ -68,8 +68,73 @@ public class PlayerController : MonoBehaviour
         _catapultHoldTimer = 0f;
     }
 
+    // ── 연료 ───────────────────────────────────────────────────────────────────
+    float _currentFuel = -1f; // -1: 미초기화 (첫 Update에서 maxFuel로 초기화)
+    public float CurrentFuel => _currentFuel < 0f ? Cfg.maxFuel : _currentFuel;
+    public float MaxFuel     => Cfg.maxFuel;
+    public bool  IsFuelLow   => CurrentFuel <= Cfg.maxFuel * Cfg.lowFuelThreshold;
+    public bool  IsFuelEmpty => CurrentFuel <= 0.01f;
+    public void  Refuel()    { _currentFuel = Cfg.maxFuel; }
+
+    // ── 애프터버너 ──────────────────────────────────────────────────────────────
+    bool _afterburner;
+    public bool AfterburnerActive => _afterburner && !IsFuelEmpty;
+
+    // ── 스톨 ─────────────────────────────────────────────────────────────────
+    bool _stallWarning;
+    bool _isStalling;
+    public bool StallWarning => _stallWarning;
+    public bool IsStalling   => _isStalling;
+
+    // ── 데미지 ─────────────────────────────────────────────────────────────────
+    float _currentHP = -1f;
+    public float CurrentHP => _currentHP < 0f ? Cfg.maxHP : _currentHP;
+    public float MaxHP     => Cfg.maxHP;
+    public bool  IsEngineDamaged  => CurrentHP <= Cfg.maxHP * Cfg.engineDamageThreshold;
+    public bool  IsCriticalDamage => CurrentHP <= Cfg.maxHP * Cfg.criticalDamageThreshold;
+    public bool  IsDestroyed      => CurrentHP <= 0.01f;
+
+    /// <summary>로컬 플레이어 피격 시 호출. 네트워크는 피격자 측에서 로컬 계산.</summary>
+    public void TakeDamage(float amount)
+    {
+        if (_currentHP < 0f) _currentHP = Cfg.maxHP;
+        _currentHP = Mathf.Max(0f, _currentHP - amount);
+    }
+
+    public void Repair() { _currentHP = Cfg.maxHP; }
+
+    // ── 자동 기동: 배럴롤 + Immelmann (GameplayConfigSO 중앙 관리) ───────────
+    // 모든 수치는 Assets/Resources/GameplayConfig.asset에서 조정.
+    // Config 미할당 시 하드코딩 기본값 사용 (SO.Instance가 자동 폴백).
+    GameplayConfigSO GCfg => GameplayConfigSO.Instance;
+
+    const int CobraInactive = -1;
+    // 배럴롤 방향: 0=정지, +1=좌(Q 홀드), -1=우(E 홀드)
+    int   _barrelRollDir;
+    float _barrelFlareTimer;
+    int   _cobraPhase = CobraInactive;
+    float _cobraPhaseTimer;
+
+    public bool IsBarrelRolling => _barrelRollDir != 0;
+
+    public bool IsCobraActive       => _cobraPhase != CobraInactive;
+    public bool IsCobraRising       => _cobraPhase == 0 || _cobraPhase == 1;
+    public bool IsImmelmannRollover => _cobraPhase == 2;
+
+    // 자동 기동용 CountermeasureSystem 참조.
+    // CMS는 FlightHUD의 GameObject에 AddComponent되므로 PlayerController와 다른 오브젝트.
+    // → 씬에서 FindAnyObjectByType으로 획득 (로컬 플레이어 전용이라 한 개만 존재).
+    CountermeasureSystem _cms;
+    CountermeasureSystem GetCMS()
+    {
+        if (_cms == null) _cms = FindAnyObjectByType<CountermeasureSystem>();
+        return _cms;
+    }
+    void TryAutoFlare() => GetCMS()?.TryDeployAutoBurst();
+
     const int MaxHistory = 64;
     readonly Queue<TickRecord>  _inputHistory = new();
+    readonly Queue<TickRecord>  _reconScratch = new();   // HandleMoveAck 재사용 — 매 ACK마다 new 할당 방지
     readonly RaycastHit[]       _groundHits   = new RaycastHit[8];
 
     void Awake()
@@ -183,30 +248,155 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
+        // ── 자동 기동 입력 처리 ────────────────────────────────────────────
+        // 다른 자동/강제 상태 중이 아니고 비행 중일 때만 자동 기동 시작 가능.
+        bool canStartManeuver = GameModeManager.Instance != null && GameModeManager.Instance.IsFlying;
+
+        // Q/E 홀드: Q=왼쪽 배럴롤, E=오른쪽 배럴롤 + 플레어 자동 발사
+        // 코브라 중이 아닐 때만 활성 (상호 배타). 두 키 동시 홀드 시 Q 우선.
+        int newBarrelDir = 0;
+        if (canStartManeuver && _cobraPhase == CobraInactive)
+        {
+            if      (Input.GetKey(KeyCode.Q)) newBarrelDir = +1;  // 좌
+            else if (Input.GetKey(KeyCode.E)) newBarrelDir = -1;  // 우
+        }
+        if (newBarrelDir != 0 && _barrelRollDir == 0) _barrelFlareTimer = 0f; // 홀드 시작 시 즉시 첫 플레어
+        _barrelRollDir = newBarrelDir;
+
+        // B 입력: 홀드 중 재입력이면 Phase 2로, 비활성이면 Phase 0 시작
+        if (Input.GetKeyDown(KeyCode.B) && canStartManeuver && _barrelRollDir == 0)
+        {
+            if (_cobraPhase == 1)           // 수직 유지 중 재입력 → Immelmann flip
+            {
+                _cobraPhase      = 2;
+                _cobraPhaseTimer = 0f;
+            }
+            else if (_cobraPhase == CobraInactive)
+            {
+                _cobraPhase      = 0;       // 급 피치업 시작
+                _cobraPhaseTimer = 0f;
+            }
+        }
+
+        // ── 2단계 Immelmann: Phase 0 피치업 → Phase 1 수직유지(대기) → Phase 2 flip ──
+        if (_cobraPhase != CobraInactive)
+        {
+            _cobraPhaseTimer += dt;
+            switch (_cobraPhase)
+            {
+                case 0: // 급 피치업
+                    transform.Rotate(-GCfg.cobraPitchRate * dt, 0f, 0f, Space.Self);
+                    currentSpeed = Mathf.MoveTowards(currentSpeed, 25f, 120f * dt);
+                    if (_cobraPhaseTimer >= GCfg.cobraPhase0Duration)
+                        { _cobraPhase = 1; _cobraPhaseTimer = 0f; }
+                    break;
+                case 1: // 수직 자세 유지 + B 재입력 대기 (타임아웃)
+                    currentSpeed = Mathf.MoveTowards(currentSpeed, 15f, 60f * dt);
+                    if (_cobraPhaseTimer >= GCfg.cobraHoldTimeout)
+                        { _cobraPhase = CobraInactive; _cobraPhaseTimer = 0f; }
+                    break;
+                case 2: // Immelmann flip: half-loop + half-roll 동시 → 반대 방향 수평
+                    transform.Rotate(-GCfg.immelmannLoopRate * dt, 0f, -GCfg.immelmannRollRate * dt, Space.Self);
+                    currentSpeed = Mathf.MoveTowards(currentSpeed, 60f, 80f * dt);
+                    if (_cobraPhaseTimer >= GCfg.immelmannPhase2Duration)
+                        { _cobraPhase = CobraInactive; _cobraPhaseTimer = 0f; }
+                    break;
+            }
+            transform.position += transform.forward * currentSpeed * dt;
+
+            SendMoveTick(dt, true);
+            return;
+        }
+
+        // ── 연료 초기화 (lazy) ────────────────────────────────────────────────
+        if (_currentFuel < 0f) _currentFuel = Cfg.maxFuel;
+        if (_currentHP   < 0f) _currentHP   = Cfg.maxHP;
+
+        // ── 애프터버너 입력 (Shift 홀드), 연료 있어야 작동 ───────────────────
+        bool abRequested = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+        _afterburner = abRequested && !IsFuelEmpty && GameModeManager.Instance != null && GameModeManager.Instance.IsFlying;
+
         float throttle = 0f;
         if (Input.GetKey(KeyCode.W))      throttle =  1f;
         else if (Input.GetKey(KeyCode.S)) throttle = -1f;
 
-        if (throttle > 0f)
-            currentSpeed = Mathf.MoveTowards(currentSpeed, Cfg.maxSpeed, Cfg.acceleration * dt);
+        // ── 최대속도·가속: 엔진 손상·AB 반영 ────────────────────────────────
+        float maxSpeedEff = Cfg.maxSpeed;
+        if (IsEngineDamaged) maxSpeedEff *= Cfg.engineDamageSpeedMult;
+        float accelEff = Cfg.acceleration;
+        if (AfterburnerActive)
+        {
+            maxSpeedEff *= Cfg.afterburnerMultiplier;
+            accelEff    *= Cfg.afterburnerAccelMult;
+        }
+
+        // 연료 고갈: 추력 없음, drag만 작용
+        bool noThrust = IsFuelEmpty || IsDestroyed;
+
+        if (noThrust)
+            currentSpeed = Mathf.MoveTowards(currentSpeed, 0f, Cfg.drag * dt);
+        else if (throttle > 0f)
+            currentSpeed = Mathf.MoveTowards(currentSpeed, maxSpeedEff, accelEff * dt);
         else if (throttle < 0f)
             currentSpeed = Mathf.MoveTowards(currentSpeed, 0f, Cfg.acceleration * dt);
         else
             currentSpeed = Mathf.MoveTowards(currentSpeed, 0f, Cfg.drag * dt);
 
+        // ── 연료 소비 (비행 중에만) ──────────────────────────────────────────
+        bool flying = GameModeManager.Instance != null && GameModeManager.Instance.IsFlying;
+        if (flying && !IsFuelEmpty)
+        {
+            float consume = AfterburnerActive ? Cfg.fuelConsumptionAB : Cfg.fuelConsumption;
+            _currentFuel = Mathf.Max(0f, _currentFuel - consume * dt);
+        }
+
         bool freeLook = Input.GetMouseButton(1);
         float pitch = freeLook ? 0f : -Input.GetAxis("Mouse Y") * Cfg.pitchSensitivity * dt;
         float yaw   = freeLook ? 0f :  Input.GetAxis("Mouse X") * Cfg.yawSensitivity   * dt;
 
+        // 수동 롤: A=좌, D=우 (Q/E는 자동 배럴롤 전용으로 분리)
         float roll = 0f;
-        if (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.Q)) roll =  Cfg.rollSpeed * dt;
-        if (Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.E)) roll = -Cfg.rollSpeed * dt;
+        if (Input.GetKey(KeyCode.A)) roll =  Cfg.rollSpeed * dt;
+        if (Input.GetKey(KeyCode.D)) roll = -Cfg.rollSpeed * dt;
+
+        // 자동 배럴롤: Q(+1)=좌, E(-1)=우. 사용자 A/D와 덧붙음 (반대 입력으로 자전 느려짐)
+        // 플레어는 아래 Rotate 이후 Interval 간격으로 자동 발사
+        if (_barrelRollDir != 0) roll += _barrelRollDir * GCfg.barrelRollRate * dt;
+
+        // ── 스톨 체크: 저속 + 과도 피치업 → 자동 노우즈다운 + 중력 하강 ──────
+        // 피치각 (수평 기준 노우즈 각도, +값=상승)
+        float pitchAngle = -NormalizeAngle(transform.eulerAngles.x);
+        _stallWarning = flying && currentSpeed < Cfg.stallSpeed * 1.5f && pitchAngle > Cfg.stallPitchDeg * 0.6f;
+        _isStalling   = flying && currentSpeed < Cfg.stallSpeed       && pitchAngle > Cfg.stallPitchDeg;
+        if (_isStalling)
+        {
+            // 자동 노우즈다운 (양력 손실) — 플레이어 입력 pitch는 유지하되 추가로 아래로 꺾음
+            pitch -= Cfg.stallNoseDownRate * dt;
+        }
 
         transform.Rotate(pitch, yaw, roll, Space.Self);
         transform.position += transform.forward * currentSpeed * dt;
+
+        // 스톨 중: 중력 하강 추가 적용
+        if (_isStalling)
+        {
+            transform.position += Vector3.down * Cfg.stallFallAccel * dt;
+        }
+
         if (currentSpeed > 0.1f) ConstrainToSurface();
 
         if (anim != null) anim.SetBool(s_hashMove, currentSpeed > 0.5f);
+
+        // Q/E 홀드 중 플레어 자동 발사: GameplayConfig 간격/burst 사용
+        if (_barrelRollDir != 0)
+        {
+            _barrelFlareTimer -= dt;
+            if (_barrelFlareTimer <= 0f)
+            {
+                TryAutoFlare();
+                _barrelFlareTimer = GCfg.autoFlareInterval;
+            }
+        }
 
         moveSendTimer += dt;
         if (moveSendTimer >= Cfg.sendInterval)
@@ -266,7 +456,7 @@ public class PlayerController : MonoBehaviour
 
         float reconSpeed = currentSpeed;
         bool  found      = false;
-        var   remaining  = new Queue<TickRecord>();
+        _reconScratch.Clear();
 
         while (_inputHistory.Count > 0)
         {
@@ -282,13 +472,13 @@ public class PlayerController : MonoBehaviour
             }
             else if (r.tick > ack.tick)
             {
-                remaining.Enqueue(r);
+                _reconScratch.Enqueue(r);
             }
         }
 
         if (!found)
         {
-            while (remaining.Count > 0) _inputHistory.Enqueue(remaining.Dequeue());
+            while (_reconScratch.Count > 0) _inputHistory.Enqueue(_reconScratch.Dequeue());
             return;
         }
 
@@ -296,7 +486,7 @@ public class PlayerController : MonoBehaviour
         var   rot = Quaternion.Euler(ack.rotX, ack.rotY, ack.rotZ);
         float spd = reconSpeed;
 
-        foreach (var r in remaining)
+        foreach (var r in _reconScratch)
         {
             if (r.throttle > 0.5f)
                 spd = Mathf.MoveTowards(spd, Cfg.maxSpeed, Cfg.acceleration * r.dt);
@@ -310,6 +500,7 @@ public class PlayerController : MonoBehaviour
 
             _inputHistory.Enqueue(r);
         }
+        _reconScratch.Clear();
 
         transform.SetPositionAndRotation(pos, rot);
         currentSpeed = spd;
@@ -380,4 +571,29 @@ public class PlayerController : MonoBehaviour
 
     /// <summary>카타펄트 사출 등 외부에서 초기 속도를 설정.</summary>
     public void SetInitialSpeed(float speedMS) => currentSpeed = speedMS;
+
+    // 자동 기동(배럴롤/코브라)에서 MOVE 패킷을 분산해 보내기 위한 헬퍼.
+    // 일반 경로에서는 inline으로 보냄 — 중복 피하려 자동 기동 블록에서만 사용.
+    void SendMoveTick(float dt, bool isMove)
+    {
+        moveSendTimer += dt;
+        if (moveSendTimer < Cfg.sendInterval) return;
+        moveSendTimer -= Cfg.sendInterval;
+        localTick = NetworkManager.Instance.socketClient.GetNextTick();
+        Vector3 euler = transform.eulerAngles;
+        NetworkManager.Instance.socketClient.SendMove(
+            transform.position.x, transform.position.y, transform.position.z,
+            euler.x, euler.y, euler.z,
+            isMove,
+            GameModeManager.Instance != null && GameModeManager.Instance.IsFlying,
+            localTick);
+    }
+
+    // Unity의 eulerAngles는 [0, 360] 범위 → [-180, 180]으로 정규화.
+    static float NormalizeAngle(float deg)
+    {
+        deg %= 360f;
+        if (deg > 180f) deg -= 360f;
+        return deg;
+    }
 }

@@ -196,7 +196,7 @@ public class AIManager : MonoBehaviour
         _localPlayerAircraft  = leader;  // null 허용 — 이륙 시 SetLocalPlayerAircraft()로 업데이트
         _escortLandingStarted = false;
 
-        var carrier = FindFirstObjectByType<CarrierController>();
+        var carrier = FindAnyObjectByType<CarrierController>();
         _cachedCarrier = carrier;
 
         var slots = CollectEscortSlots();
@@ -247,7 +247,7 @@ public class AIManager : MonoBehaviour
         }
         if (list.Count == 0)
         {
-            list.AddRange(FindObjectsByType<EscortSlot>(FindObjectsInactive.Exclude, FindObjectsSortMode.None));
+            list.AddRange(FindObjectsByType<EscortSlot>(FindObjectsInactive.Exclude));
         }
         // 하이어라키 순서 유지 (sibling index 오름차순)
         list.Sort((a, b) => a.transform.GetSiblingIndex().CompareTo(b.transform.GetSiblingIndex()));
@@ -293,7 +293,7 @@ public class AIManager : MonoBehaviour
         _isHost = true;
         // 로컬 플레이어 조회
         PlayerController localPlayer = null;
-        foreach (var pc in FindObjectsByType<PlayerController>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+        foreach (var pc in FindObjectsByType<PlayerController>(FindObjectsInactive.Exclude))
         {
             if (pc.isLocalPlayer) { localPlayer = pc; break; }
         }
@@ -305,7 +305,7 @@ public class AIManager : MonoBehaviour
         }
 
         _localPlayerAircraft  = localPlayer;
-        _cachedCarrier        = FindFirstObjectByType<CarrierController>();
+        _cachedCarrier        = FindAnyObjectByType<CarrierController>();
         _escortLandingStarted = false;
         _hasArrestInfo        = false;
 
@@ -458,6 +458,12 @@ public class AIManager : MonoBehaviour
     // GameModeManager.ExitFlight에서 착함 트리거 판단용
     public bool HasArrestInfo => _hasArrestInfo;
 
+    // 외부(ArrestingWireSystem, GameModeManager)에서 호스트 여부 판정용
+    public bool IsHost => _isHost;
+
+    // 와이어 체결 경로 정보 조회 (게스트가 호스트에게 전달)
+    public (Vector3 approachDir, Vector3 wirePos) GetArrestInfo() => (_arrestedApproachDir, _arrestedWirePos);
+
     // 플레이어 F키 하차(ExitFlight) 시 호출 — 저장된 경로로 에스코트 순차 착함 시작.
     // 와이어 체결 정보가 있을 때만 동작하며, 폴백 코루틴이 이미 실행 중이더라도 덮어씀.
     public void BeginEscortLandingAfterDismount()
@@ -467,7 +473,7 @@ public class AIManager : MonoBehaviour
         // arrest info가 있을 때는 기존 착함 코루틴을 취소하고 올바른 경로로 재시작한다.
         if (_landingCoroutine != null) { StopCoroutine(_landingCoroutine); _landingCoroutine = null; }
         _escortLandingStarted = true;
-        var carrierTr = _cachedCarrier?.transform ?? FindFirstObjectByType<CarrierController>()?.transform;
+        var carrierTr = _cachedCarrier?.transform ?? FindAnyObjectByType<CarrierController>()?.transform;
         Debug.Log($"[AIManager] BeginEscortLandingAfterDismount: carrier={(carrierTr != null ? carrierTr.name : "null")}  dir={_arrestedApproachDir}  wirePos={_arrestedWirePos}");
         _landingCoroutine = StartCoroutine(EscortLandingCoroutine(carrierTr, _arrestedApproachDir, _arrestedWirePos, true));
     }

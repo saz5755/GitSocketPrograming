@@ -27,6 +27,9 @@ public class QuestInteractable : MonoBehaviour
         SetMarkerVisible(false);
     }
 
+    // Camera.main은 내부적으로 FindObjectWithTag → 매 프레임 호출 비용 큼. Transform만 캐싱.
+    Transform _camT;
+
     void Update()
     {
         if (_markerCanvas == null) return;
@@ -42,9 +45,14 @@ public class QuestInteractable : MonoBehaviour
             bool focused = qm.FocusedInteractable == this;
             _markerText.color = focused ? C_FOCUS : C_IDLE;
 
-            if (Camera.main != null)
+            if (_camT == null)
             {
-                Vector3 dir = Camera.main.transform.position - _markerCanvas.transform.position;
+                var c = Camera.main;
+                if (c != null) _camT = c.transform;
+            }
+            if (_camT != null)
+            {
+                Vector3 dir = _camT.position - _markerCanvas.transform.position;
                 _markerCanvas.transform.rotation = Quaternion.LookRotation(-dir);
             }
         }

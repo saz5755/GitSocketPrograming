@@ -292,12 +292,24 @@ public class FlightHUD : MonoBehaviour
     {
         foreach (var pc in PlayerController.All)
             if (pc != null && pc.isLocalPlayer) { localPlayer = pc; break; }
-        flightCamera = FindFirstObjectByType<FlightCamera>();
+        flightCamera = FindAnyObjectByType<FlightCamera>();
     }
+
+    // 지상 모드에서 매 프레임 FindFirstObjectByType 호출을 쿨다운 (0.5s)
+    float _findRefsCooldown;
 
     void Update()
     {
-        if (localPlayer == null || flightCamera == null) { FindRefs(); return; }
+        if (localPlayer == null || flightCamera == null)
+        {
+            _findRefsCooldown -= Time.deltaTime;
+            if (_findRefsCooldown <= 0f)
+            {
+                FindRefs();
+                _findRefsCooldown = 0.5f;
+            }
+            return;
+        }
         if (GameModeManager.Instance == null || !GameModeManager.Instance.IsFlying) return;
 
         bool cockpit = flightCamera.IsCockpit;
@@ -604,7 +616,7 @@ public class FlightHUD : MonoBehaviour
 
     ILSBeacon FindNearestILS(Vector3 pos)
     {
-        var       beacons = FindObjectsByType<ILSBeacon>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        var       beacons = FindObjectsByType<ILSBeacon>(FindObjectsInactive.Exclude);
         ILSBeacon nearest = null;
         float     minDist = float.MaxValue;
         foreach (var b in beacons)
@@ -1118,25 +1130,55 @@ public class FlightHUD : MonoBehaviour
         if(aoaText!=null) aoaText.text=$"AOA  {(aoa>=0?"+":"")}{aoa:F1}°";
         if(gText  !=null){gText.text=$"G  {smoothG:F1}";gText.color=smoothG>7f?CRIT:smoothG>4f?WARN:HG;}
 
-        bool stallWarn=kph<80f&&localPlayer.CurrentSpeed>1f;
-        bool gWarn    =smoothG>7f;
-        if(warnText!=null){warnText.text=gWarn?"  G-LOCK WARNING":stallWarn?"  STALL":"";warnText.color=gWarn?CRIT:WARN;}
+        // 비행 상태 플래그 — PlayerController가 실제 fuel/stall/damage 상태 소유
+        bool stallWarn    = localPlayer.StallWarning;
+        bool stallActive  = localPlayer.IsStalling;
+        bool abActive     = localPlayer.AfterburnerActive;
+        bool fuelLow      = localPlayer.IsFuelLow;
+        bool fuelEmpty    = localPlayer.IsFuelEmpty;
+        bool engineDmg    = localPlayer.IsEngineDamaged;
+        bool critDmg      = localPlayer.IsCriticalDamage;
+        bool gWarn        = smoothG > 7f;
 
-        missionTime+=dt;
-        fuelLevel-=(FUEL_RATE/60f)*dt*(0.25f+thr*0.75f);
-        fuelLevel=Mathf.Max(0f,fuelLevel);
-        float n1=28f+thr*72f;
+        // 통합 경고 메시지 — 우선순위: 자동기동 > destroyed > critical > ...
+        if (warnText != null)
+        {
+            string msg = ""; Color col = WARN;
+            if      (localPlayer.IsBarrelRolling)        { msg = "  ◉ BARREL ROLL + FLARE (Q/E)"; col = ExhGlow; }
+            else if (localPlayer.IsImmelmannRollover)    { msg = "  ◉ IMMELMANN FLIP";      col = ExhGlow; }
+            else if (localPlayer.IsCobraRising)          { msg = "  ◉ ZOOM UP   [B TO FLIP]"; col = ExhGlow; }
+            else if (localPlayer.IsDestroyed) { msg = "  DESTROYED";       col = CRIT; }
+            else if (critDmg)                 { msg = "  CRITICAL DAMAGE"; col = CRIT; }
+            else if (gWarn)                   { msg = "  G-LOCK WARNING";  col = CRIT; }
+            else if (stallActive)             { msg = "  STALL";           col = CRIT; }
+            else if (fuelEmpty)               { msg = "  FUEL EMPTY";      col = CRIT; }
+            else if (stallWarn)               { msg = "  STALL WARN";      col = WARN; }
+            else if (fuelLow)                 { msg = "  BINGO FUEL";      col = WARN; }
+            else if (engineDmg)               { msg = "  ENGINE DAMAGE";   col = WARN; }
+            else if (abActive)                { msg = "  AFTERBURNER";     col = ExhGlow; }
+            warnText.text  = msg;
+            warnText.color = col;
+        }
+
+        missionTime += dt;
+        // PlayerController가 실제 연료 소유 — HUD는 비율만 표시
+        fuelLevel = localPlayer.MaxFuel > 0.01f
+            ? (localPlayer.CurrentFuel / localPlayer.MaxFuel) * 100f
+            : 0f;
+
+        // N1 (엔진 RPM): AB 활성 시 100%+, 손상 시 90% 캡
+        float n1 = 28f + thr * 72f;
+        if (abActive) n1 = Mathf.Max(n1, 102f);
+        if (engineDmg) n1 = Mathf.Min(n1, 85f);
 
         if(n1Text  !=null) n1Text.text  =$"{n1:F0}%";
-        if(n1Fill  !=null) n1Fill.sizeDelta  =new Vector2(88f*n1/100f,8f);
+        if(n1Fill  !=null) n1Fill.sizeDelta  =new Vector2(88f*Mathf.Min(n1,100f)/100f,8f);
         if(fuelText!=null) fuelText.text=$"{fuelLevel:F1}%";
         if(fuelFill!=null) fuelFill.sizeDelta=new Vector2(88f*fuelLevel/100f,8f);
         int ts=(int)missionTime;
         if(clockText!=null) clockText.text=$"{ts/3600:D2}:{ts/60%60:D2}:{ts%60:D2}";
-        if(fuelText !=null) fuelText.color=fuelLevel<15f?WARN:HG;
-        if(n1Text   !=null) n1Text.color =n1>95f?WARN:HG;
-        if(fuelLevel<10f&&warnText!=null&&!gWarn&&!stallWarn)
-        {warnText.text="  BINGO FUEL";warnText.color=WARN;}
+        if(fuelText !=null) fuelText.color = fuelEmpty ? CRIT : fuelLow ? WARN : HG;
+        if(n1Text   !=null) n1Text.color   = abActive ? ExhGlow : engineDmg ? WARN : (n1>95f?WARN:HG);
 
         UpdateTargetingHUD();
     }

@@ -1,6 +1,6 @@
 using UnityEngine;
 
-public class Snapshot
+public struct Snapshot
 {
     public Vector3 position;
     public Quaternion rotation;

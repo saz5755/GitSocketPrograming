@@ -243,10 +243,17 @@ public class AircraftZone : MonoBehaviour
 /// <summary>월드 스페이스 라벨을 항상 카메라 방향으로 회전.</summary>
 public class ZoneLabelBillboard : MonoBehaviour
 {
+    Transform _camT;
+
     void LateUpdate()
     {
-        if (Camera.main == null) return;
-        transform.LookAt(Camera.main.transform);
+        if (_camT == null)
+        {
+            var c = Camera.main;
+            if (c == null) return;
+            _camT = c.transform;
+        }
+        transform.LookAt(_camT);
         transform.Rotate(0f, 180f, 0f);
     }
 }

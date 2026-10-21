@@ -114,7 +114,7 @@ public class MFDController : MonoBehaviour
         if (_dataTimer >= DataInterval)
         {
             _dataTimer = 0f;
-            if (_gunSystem == null) _gunSystem = FindFirstObjectByType<GunSystem>();
+            if (_gunSystem == null) _gunSystem = FindAnyObjectByType<GunSystem>();
             UpdateWeapons();
             UpdateFlightData();
         }

@@ -5,32 +5,20 @@ using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 /// <summary>
-/// 로그인 씬에 빈 GameObject 하나 만들고 이 컴포넌트를 붙이면 됩니다.
-/// GameManager / NetworkManager / UnityMainThreadDispatcher 가 없으면 자동 생성합니다.
+/// 로그인 씬 UI — Premium Military Flight Simulator 디자인.
+/// 코드만으로 블루 그라데이션 하늘 + 글래스 로그인 패널 + 대형 KF-21 타이포 구현.
+/// 모든 색상/간격은 UITheme (Resources/UITheme.asset)에서 중앙 관리.
 /// </summary>
 public class LoginUI : MonoBehaviour
 {
-    // ── 색상 팔레트 (군용 비행 시뮬레이션 스타일) ─────────────────────────
-    static readonly Color C_BG       = new Color(0.039f, 0.051f, 0.075f);   // #0A0D13
-    static readonly Color C_PANEL    = new Color(0.059f, 0.082f, 0.122f);   // #0F1520
-    static readonly Color C_ACCENT   = new Color(0.00f,  0.78f,  0.33f);    // #00C755
-    static readonly Color C_ACCENT2  = new Color(0.00f,  0.45f,  0.20f);    // #007333
-    static readonly Color C_TEXT     = new Color(0.91f,  0.93f,  0.94f);    // #E8ECEF
-    static readonly Color C_DIM      = new Color(0.36f,  0.47f,  0.56f);    // #5C788F
-    static readonly Color C_WARN     = new Color(1.00f,  0.32f,  0.26f);    // #FF5242
-    static readonly Color C_INPUT_BG = new Color(0.024f, 0.035f, 0.055f);   // #06090E
-    static readonly Color C_BORDER   = new Color(0.10f,  0.20f,  0.30f);    // #1A3348
-
     Font uiFont;
 
-    // UI 레퍼런스
     InputField ipField;
     InputField idField;
     InputField pwField;
     Text       statusText;
-    Button     loginBtn;
+    UIThemedButton loginBtn;
 
-    // ── 초기화 ───────────────────────────────────────────────────────────
     void Awake()
     {
         EnsureManagers();
@@ -45,7 +33,7 @@ public class LoginUI : MonoBehaviour
 
     void OnDestroy()
     {
-        SocketClient sc = NetworkManager.Instance?.socketClient;
+        var sc = NetworkManager.Instance?.socketClient;
         if (sc != null) sc.OnLoginResult -= HandleLoginResult;
     }
 
@@ -57,7 +45,7 @@ public class LoginUI : MonoBehaviour
             new GameObject("[NetworkManager]").AddComponent<NetworkManager>();
         if (UnityMainThreadDispatcher.Instance == null)
             new GameObject("[Dispatcher]").AddComponent<UnityMainThreadDispatcher>();
-        if (FindFirstObjectByType<EventSystem>() == null)
+        if (FindAnyObjectByType<EventSystem>() == null)
         {
             var es = new GameObject("EventSystem");
             es.AddComponent<EventSystem>();
@@ -67,138 +55,370 @@ public class LoginUI : MonoBehaviour
 
     void SubscribeEvents()
     {
-        SocketClient sc = NetworkManager.Instance?.socketClient;
+        var sc = NetworkManager.Instance?.socketClient;
         if (sc != null) sc.OnLoginResult += HandleLoginResult;
     }
 
     // ── UI 빌드 ──────────────────────────────────────────────────────────
     void BuildUI()
     {
-        // ── Canvas ───────────────────────────────────────────────────────
+        var t = UITheme.Instance;
+
         var canvasGO = new GameObject("LoginCanvas");
         var canvas   = canvasGO.AddComponent<Canvas>();
         canvas.renderMode   = RenderMode.ScreenSpaceOverlay;
         canvas.sortingOrder = 0;
-
         var scaler = canvasGO.AddComponent<CanvasScaler>();
         scaler.uiScaleMode         = CanvasScaler.ScaleMode.ScaleWithScreenSize;
         scaler.referenceResolution = new Vector2(1920, 1080);
         scaler.matchWidthOrHeight  = 0.5f;
         canvasGO.AddComponent<GraphicRaycaster>();
 
-        // ── 전체화면 배경 ─────────────────────────────────────────────────
-        var bg = MakeImage(canvasGO.transform, "BG", Vector2.zero, Vector2.zero, C_BG);
-        bg.anchorMin = Vector2.zero;
-        bg.anchorMax = Vector2.one;
-        bg.offsetMin = bg.offsetMax = Vector2.zero;
-
-        // ── 장식용 가로줄 ──────────────────────────────────────────────────
-        for (int i = 0; i < 8; i++)
-        {
-            float y = -540f + i * 155f;
-            var line = MakeImage(canvasGO.transform, $"GridH{i}", new Vector2(0, y), new Vector2(0, 1),
-                new Color(C_ACCENT.r, C_ACCENT.g, C_ACCENT.b, 0.04f));
-            line.anchorMin = new Vector2(0, 0.5f);
-            line.anchorMax = new Vector2(1, 0.5f);
-            line.anchoredPosition = new Vector2(0, y);
-            line.sizeDelta        = new Vector2(0, 1);
-        }
-
-        // ── 로그인 패널 ───────────────────────────────────────────────────
-        var panel = MakeImage(canvasGO.transform, "Panel",
-            new Vector2(0, 10), new Vector2(440, 580), C_PANEL);
-        panel.anchorMin = panel.anchorMax = new Vector2(0.5f, 0.5f);
-
-        // 패널 상단 초록선
-        var topBar = MakeImage(panel.transform, "TopBar",
-            new Vector2(0, 290), new Vector2(440, 3), C_ACCENT);
-        topBar.anchorMin = topBar.anchorMax = new Vector2(0.5f, 0.5f);
-
-        // 패널 왼쪽 수직 장식선
-        var leftBar = MakeImage(panel.transform, "LeftBar",
-            new Vector2(-218, 0), new Vector2(3, 580), C_ACCENT2);
-        leftBar.anchorMin = leftBar.anchorMax = new Vector2(0.5f, 0.5f);
-
-        // ── 타이틀 섹션 ───────────────────────────────────────────────────
-        MakeText(panel.transform, "F·22  TACTICAL  SIMULATOR",
-            new Vector2(10, 218), new Vector2(400, 40),
-            26, FontStyle.Bold, C_ACCENT, TextAnchor.MiddleCenter);
-
-        MakeText(panel.transform, "ONLINE OPERATIONS CENTER",
-            new Vector2(10, 183), new Vector2(400, 28),
-            13, FontStyle.Normal, C_DIM, TextAnchor.MiddleCenter);
-
-        MakeText(panel.transform, "▌ TOP SECRET  //  LEVEL 5  //  SECURE CHANNEL ▐",
-            new Vector2(10, 152), new Vector2(400, 22),
-            10, FontStyle.Normal,
-            new Color(C_ACCENT.r, C_ACCENT.g, C_ACCENT.b, 0.55f),
-            TextAnchor.MiddleCenter);
-
-        // 구분선
-        MakeImage(panel.transform, "Div1",
-            new Vector2(0, 128), new Vector2(380, 1),
-            new Color(C_BORDER.r, C_BORDER.g, C_BORDER.b, 0.8f))
-            .anchorMin = new Vector2(0.5f, 0.5f);
-
-        // ── 폼 레이블 + 입력 ──────────────────────────────────────────────
-        MakeFieldLabel(panel.transform, "SERVER ADDRESS", new Vector2(0, 100));
-        ipField = MakeInputField(panel.transform, "172.30.201.117",
-            new Vector2(0, 72), new Vector2(380, 38));
-        if (GameManager.Instance != null)
-            ipField.text = GameManager.Instance.serverIP;
-
-        MakeFieldLabel(panel.transform, "CALL SIGN (ID)", new Vector2(0, 36));
-        idField = MakeInputField(panel.transform, "Enter pilot ID",
-            new Vector2(0, 8), new Vector2(380, 38));
-
-        MakeFieldLabel(panel.transform, "ACCESS CODE", new Vector2(0, -28));
-        pwField = MakeInputField(panel.transform, "Enter access code",
-            new Vector2(0, -56), new Vector2(380, 38), isPassword: true);
-
-        // 패스워드 필드 Enter → 로그인
-        pwField.onSubmit.AddListener(_ => OnLoginClick());
-        idField.onSubmit.AddListener(_ => EventSystem.current?.SetSelectedGameObject(pwField.gameObject));
-
-        // ── 로그인 버튼 ───────────────────────────────────────────────────
-        loginBtn = MakeButton(panel.transform, "▶  AUTHENTICATE",
-            new Vector2(0, -115), new Vector2(380, 44), C_ACCENT);
-        loginBtn.onClick.AddListener(OnLoginClick);
-
-        // ── 상태 메시지 ───────────────────────────────────────────────────
-        statusText = MakeText(panel.transform, "Ready to connect...",
-            new Vector2(0, -162), new Vector2(380, 28),
-            12, FontStyle.Normal, C_DIM, TextAnchor.MiddleCenter);
-
-        // 하단 구분선 + 빌드 정보
-        MakeImage(panel.transform, "Div2",
-            new Vector2(0, -202), new Vector2(380, 1),
-            new Color(C_BORDER.r, C_BORDER.g, C_BORDER.b, 0.5f))
-            .anchorMin = new Vector2(0.5f, 0.5f);
-
-        MakeText(panel.transform, "BUILD 2025.1  |  ENCRYPTED  |  © TACTICAL SYSTEMS",
-            new Vector2(0, -220), new Vector2(380, 22),
-            9, FontStyle.Normal,
-            new Color(C_DIM.r, C_DIM.g, C_DIM.b, 0.5f),
-            TextAnchor.MiddleCenter);
+        BuildSkyBackground(canvasGO.transform, t);
+        BuildBigTypography(canvasGO.transform, t);
+        BuildLoginCard(canvasGO.transform, t);
+        BuildTopBar(canvasGO.transform, t);
+        BuildFooter(canvasGO.transform, t);
     }
 
-    // ── 이벤트 처리 ──────────────────────────────────────────────────────
+    // ── 1. 블루 그라데이션 하늘 배경 (Procedural Texture) ─────────────────
+    void BuildSkyBackground(Transform parent, UITheme t)
+    {
+        // 전체 그라데이션: 하단 진한 네이비 → 상단 밝은 블루
+        var sky = MakeImage(parent, "SkyGradient", Vector2.zero, Vector2.zero, Color.white);
+        sky.anchorMin = Vector2.zero; sky.anchorMax = Vector2.one;
+        sky.offsetMin = sky.offsetMax = Vector2.zero;
+
+        var skyImg = sky.GetComponent<Image>();
+        skyImg.sprite = CreateVerticalGradient(
+            bottom: HexC("#030810"),
+            mid:    HexC("#0A1B2D"),
+            top:    HexC("#1A3B5F"));
+        skyImg.type = Image.Type.Simple;
+        skyImg.preserveAspect = false;
+
+        // 수평 블루 글로우 (수평선 느낌)
+        var horizonGlow = MakeImage(parent, "HorizonGlow", new Vector2(0f, -40f), new Vector2(0f, 200f),
+            new Color(t.primaryBlue.r, t.primaryBlue.g, t.primaryBlue.b, 0.15f));
+        horizonGlow.anchorMin = new Vector2(0f, 0.4f);
+        horizonGlow.anchorMax = new Vector2(1f, 0.4f);
+        horizonGlow.pivot     = new Vector2(0.5f, 0.5f);
+
+        // 상단 Accent 라인
+        var topLine = MakeImage(parent, "TopLine", new Vector2(0f, -1f), new Vector2(0f, 1.5f),
+            new Color(t.accentCyan.r, t.accentCyan.g, t.accentCyan.b, 0.4f));
+        topLine.anchorMin = new Vector2(0f, 1f);
+        topLine.anchorMax = new Vector2(1f, 1f);
+        topLine.pivot     = new Vector2(0.5f, 1f);
+
+        // 미세 격자 — 큰 간격으로 (장식)
+        for (int i = 0; i < 6; i++)
+        {
+            float y = -200f + i * 160f;
+            var line = MakeImage(parent, $"GridH{i}", new Vector2(0f, y), new Vector2(0f, 1f),
+                new Color(1f, 1f, 1f, 0.025f));
+            line.anchorMin = new Vector2(0f, 0.5f);
+            line.anchorMax = new Vector2(1f, 0.5f);
+        }
+
+        // 중앙 비네트 (중앙에서 바깥으로 어두워지는 느낌 흉내)
+        var vignetteL = MakeImage(parent, "VignetteL", Vector2.zero, Vector2.zero,
+            new Color(0f, 0f, 0f, 0.3f));
+        vignetteL.anchorMin = new Vector2(0f, 0f);
+        vignetteL.anchorMax = new Vector2(0.2f, 1f);
+        vignetteL.offsetMin = vignetteL.offsetMax = Vector2.zero;
+
+        var vignetteR = MakeImage(parent, "VignetteR", Vector2.zero, Vector2.zero,
+            new Color(0f, 0f, 0f, 0.3f));
+        vignetteR.anchorMin = new Vector2(0.8f, 0f);
+        vignetteR.anchorMax = new Vector2(1f, 1f);
+        vignetteR.offsetMin = vignetteR.offsetMax = Vector2.zero;
+
+        // 상·하 비네트
+        var topDark = MakeImage(parent, "TopDark", Vector2.zero, Vector2.zero,
+            new Color(0f, 0f, 0f, 0.4f));
+        topDark.anchorMin = new Vector2(0f, 0.85f);
+        topDark.anchorMax = new Vector2(1f, 1f);
+        topDark.offsetMin = topDark.offsetMax = Vector2.zero;
+
+        var botDark = MakeImage(parent, "BotDark", Vector2.zero, Vector2.zero,
+            new Color(0f, 0f, 0f, 0.5f));
+        botDark.anchorMin = new Vector2(0f, 0f);
+        botDark.anchorMax = new Vector2(1f, 0.18f);
+        botDark.offsetMin = botDark.offsetMax = Vector2.zero;
+    }
+
+    // ── 2. 대형 KF-21 타이포 (중앙 배경) ─────────────────────────────────
+    void BuildBigTypography(Transform parent, UITheme t)
+    {
+        // 매우 큰 "KF-21" 반투명 타이포 — 배경 장식
+        var bigGO = new GameObject("BigTitle");
+        bigGO.transform.SetParent(parent, false);
+        var brt = bigGO.AddComponent<RectTransform>();
+        brt.anchorMin = brt.anchorMax = new Vector2(0.5f, 0.5f);
+        brt.anchoredPosition = new Vector2(220f, 100f);
+        brt.sizeDelta = new Vector2(1400f, 400f);
+        var bigTx = bigGO.AddComponent<Text>();
+        bigTx.font = uiFont; bigTx.fontSize = 340;
+        bigTx.alignment = TextAnchor.MiddleCenter;
+        bigTx.fontStyle = FontStyle.Bold;
+        bigTx.color = new Color(1f, 1f, 1f, 0.05f);
+        bigTx.text = "KF-21";
+        bigTx.raycastTarget = false;
+
+        // 서브 타이포
+        var subBigGO = new GameObject("BigSubtitle");
+        subBigGO.transform.SetParent(parent, false);
+        var srt = subBigGO.AddComponent<RectTransform>();
+        srt.anchorMin = srt.anchorMax = new Vector2(0.5f, 0.5f);
+        srt.anchoredPosition = new Vector2(220f, -140f);
+        srt.sizeDelta = new Vector2(1200f, 60f);
+        var subTx = subBigGO.AddComponent<Text>();
+        subTx.font = uiFont; subTx.fontSize = 42;
+        subTx.alignment = TextAnchor.MiddleCenter;
+        subTx.fontStyle = FontStyle.Normal;
+        subTx.color = new Color(t.accentCyan.r, t.accentCyan.g, t.accentCyan.b, 0.4f);
+        subTx.text = "B O R A M A E";
+        subTx.raycastTarget = false;
+
+        // 양쪽 세로 라인 (큰 타이포 좌우 장식)
+        var leftV = MakeImage(parent, "BigV_L", new Vector2(-180f, 100f), new Vector2(1.5f, 300f),
+            new Color(t.accentCyan.r, t.accentCyan.g, t.accentCyan.b, 0.3f));
+        leftV.anchorMin = leftV.anchorMax = new Vector2(0.5f, 0.5f);
+
+        var rightV = MakeImage(parent, "BigV_R", new Vector2(620f, 100f), new Vector2(1.5f, 300f),
+            new Color(t.accentCyan.r, t.accentCyan.g, t.accentCyan.b, 0.3f));
+        rightV.anchorMin = rightV.anchorMax = new Vector2(0.5f, 0.5f);
+
+        bigGO.AddComponent<UIFadeIn>().Configure(0.1f, t.heroTransition, 0f);
+    }
+
+    // ── 3. 중앙 로그인 카드 ───────────────────────────────────────────────
+    void BuildLoginCard(Transform parent, UITheme t)
+    {
+        float cardW = 440f, cardH = 580f;
+        var card = MakeImage(parent, "LoginCard", new Vector2(-460f, 0f), new Vector2(cardW, cardH),
+            new Color(t.panelBG.r, t.panelBG.g, t.panelBG.b, 0.92f));
+        card.anchorMin = card.anchorMax = new Vector2(0.5f, 0.5f);
+        AddOutline(card.gameObject, new Color(t.border.r, t.border.g, t.border.b, 0.8f), 1.5f);
+
+        // 상단 Accent bar
+        var accentBar = MakeImage(card, "AccentBar",
+            new Vector2(0f, cardH * 0.5f - 2f), new Vector2(cardW, 3f), t.accentCyan);
+        accentBar.anchorMin = accentBar.anchorMax = new Vector2(0.5f, 0.5f);
+
+        // 좌측 세로 Accent bar
+        var leftBar = MakeImage(card, "LeftBar",
+            new Vector2(-cardW * 0.5f + 2f, 0f), new Vector2(3f, cardH),
+            new Color(t.accentCyan.r, t.accentCyan.g, t.accentCyan.b, 0.6f));
+        leftBar.anchorMin = leftBar.anchorMax = new Vector2(0.5f, 0.5f);
+
+        // 상단 라벨 (SIGN IN)
+        AddTextCentered(card, "SIGN IN", new Vector2(0f, cardH * 0.5f - 44f),
+            new Vector2(cardW - 60f, 20f), t.textXS, t.accentCyan, FontStyle.Bold);
+
+        // 큰 타이틀
+        AddTextCentered(card, "KF-21", new Vector2(0f, cardH * 0.5f - 100f),
+            new Vector2(cardW - 60f, 60f), t.titleL, t.textPrimary, FontStyle.Bold);
+
+        // 서브
+        AddTextCentered(card, "BORAMAE  •  FLIGHT COMBAT SIMULATION",
+            new Vector2(0f, cardH * 0.5f - 140f), new Vector2(cardW - 60f, 18f),
+            t.textXS, t.textSecondary, FontStyle.Normal);
+
+        // 구분선
+        var divider = MakeImage(card, "Divider",
+            new Vector2(0f, cardH * 0.5f - 174f), new Vector2(cardW - 60f, 1f),
+            new Color(t.border.r, t.border.g, t.border.b, 0.6f));
+        divider.anchorMin = divider.anchorMax = new Vector2(0.5f, 0.5f);
+
+        // 입력 필드 3개
+        float fieldY = cardH * 0.5f - 220f;
+        ipField = BuildField(card, "SERVER IP",   "172.30.201.117", fieldY,        cardW - 60f, false, t);
+        idField = BuildField(card, "CALL SIGN",   "",               fieldY -  80f, cardW - 60f, false, t);
+        pwField = BuildField(card, "ACCESS CODE", "",               fieldY - 160f, cardW - 60f, true,  t);
+
+        // 상태 메시지
+        statusText = AddTextCentered(card, "", new Vector2(0f, fieldY - 220f),
+            new Vector2(cardW - 60f, 22f), t.textS, t.textSecondary, FontStyle.Normal);
+
+        // AUTHENTICATE 버튼
+        loginBtn = BuildPrimaryButton(card, "AUTHENTICATE",
+            new Vector2(0f, fieldY - 275f), new Vector2(cardW - 60f, t.buttonHeightL), t);
+        loginBtn.OnClick = OnLoginClick;
+
+        // 하단 안내
+        AddTextCentered(card, "ENTER 키로 바로 로그인",
+            new Vector2(0f, -cardH * 0.5f + 28f), new Vector2(cardW, 18f),
+            t.textXS, t.textDisabled, FontStyle.Normal);
+
+        card.gameObject.AddComponent<UIFadeIn>().Configure(0.2f, t.heroTransition, 24f);
+    }
+
+    void BuildTopBar(Transform parent, UITheme t)
+    {
+        var bar = MakeEmpty(parent, "TopBar", Vector2.zero, new Vector2(0f, 70f));
+        bar.anchorMin = new Vector2(0f, 1f);
+        bar.anchorMax = new Vector2(1f, 1f);
+        bar.pivot     = new Vector2(0.5f, 1f);
+        bar.offsetMin = new Vector2(0f, -70f);
+        bar.offsetMax = new Vector2(0f, 0f);
+
+        // 좌측 뱃지
+        var badge = MakeImage(bar, "Badge", new Vector2(40f, 0f), new Vector2(170f, 40f),
+            new Color(t.panelBG.r, t.panelBG.g, t.panelBG.b, 0.7f));
+        badge.anchorMin = new Vector2(0f, 0.5f);
+        badge.anchorMax = new Vector2(0f, 0.5f);
+        badge.pivot     = new Vector2(0f, 0.5f);
+        AddOutline(badge.gameObject, t.borderAccent, 1f);
+        AddTextFill(badge, "KF-21  •  AUTH", t.textS, t.accentCyan, FontStyle.Bold);
+
+        // 우측 상태 표시
+        var status = MakeImage(bar, "StatusChip", new Vector2(-40f, 0f), new Vector2(160f, 32f),
+            new Color(t.success.r, t.success.g, t.success.b, 0.12f));
+        status.anchorMin = new Vector2(1f, 0.5f);
+        status.anchorMax = new Vector2(1f, 0.5f);
+        status.pivot     = new Vector2(1f, 0.5f);
+        AddOutline(status.gameObject, new Color(t.success.r, t.success.g, t.success.b, 0.6f), 1f);
+        AddTextFill(status, "● SERVER ONLINE", t.textXS, t.success, FontStyle.Bold);
+
+        bar.gameObject.AddComponent<UIFadeIn>().Configure(0.05f, t.panelTransition, 6f);
+    }
+
+    void BuildFooter(Transform parent, UITheme t)
+    {
+        var leftGO = new GameObject("FooterLeft");
+        leftGO.transform.SetParent(parent, false);
+        var lrt = leftGO.AddComponent<RectTransform>();
+        lrt.anchorMin = new Vector2(0f, 0f);
+        lrt.anchorMax = new Vector2(0f, 0f);
+        lrt.pivot     = new Vector2(0f, 0f);
+        lrt.anchoredPosition = new Vector2(40f, 24f);
+        lrt.sizeDelta = new Vector2(400f, 18f);
+        var lt = leftGO.AddComponent<Text>();
+        lt.font = uiFont; lt.fontSize = t.textXS;
+        lt.color = t.textDisabled; lt.alignment = TextAnchor.MiddleLeft;
+        lt.text = "VERSION 0.9.0  •  BUILD 20261020";
+        lt.raycastTarget = false;
+
+        var rightGO = new GameObject("FooterRight");
+        rightGO.transform.SetParent(parent, false);
+        var rrt = rightGO.AddComponent<RectTransform>();
+        rrt.anchorMin = new Vector2(1f, 0f);
+        rrt.anchorMax = new Vector2(1f, 0f);
+        rrt.pivot     = new Vector2(1f, 0f);
+        rrt.anchoredPosition = new Vector2(-40f, 24f);
+        rrt.sizeDelta = new Vector2(400f, 18f);
+        var rt = rightGO.AddComponent<Text>();
+        rt.font = uiFont; rt.fontSize = t.textXS;
+        rt.color = t.textDisabled; rt.alignment = TextAnchor.MiddleRight;
+        rt.text = "© 2026 KF-21 FLIGHT COMBAT SIMULATION";
+        rt.raycastTarget = false;
+
+        leftGO.AddComponent<UIFadeIn>().Configure(0.3f, t.panelTransition, 0f);
+        rightGO.AddComponent<UIFadeIn>().Configure(0.3f, t.panelTransition, 0f);
+    }
+
+    // ── 공통 빌더 ───────────────────────────────────────────────────────
+    InputField BuildField(RectTransform parent, string label, string initialValue,
+                           float y, float width, bool password, UITheme t)
+    {
+        // 레이블
+        var lblGO = new GameObject(label + "_Lbl");
+        lblGO.transform.SetParent(parent, false);
+        var lrt = lblGO.AddComponent<RectTransform>();
+        lrt.anchorMin = lrt.anchorMax = new Vector2(0.5f, 0.5f);
+        lrt.anchoredPosition = new Vector2(-width * 0.5f, y + 24f);
+        lrt.sizeDelta = new Vector2(width, 16f);
+        lrt.pivot = new Vector2(0f, 0.5f);
+        var lbl = lblGO.AddComponent<Text>();
+        lbl.font = uiFont; lbl.fontSize = t.textXS;
+        lbl.color = t.textSecondary; lbl.alignment = TextAnchor.MiddleLeft;
+        lbl.fontStyle = FontStyle.Bold;
+        lbl.text = label;
+        lbl.raycastTarget = false;
+
+        // 필드 배경
+        var bg = MakeImage(parent, label + "_BG", new Vector2(0f, y - 4f), new Vector2(width, 44f),
+            new Color(0f, 0f, 0f, 0.5f));
+        bg.anchorMin = bg.anchorMax = new Vector2(0.5f, 0.5f);
+        AddOutline(bg.gameObject, t.border, 1f);
+
+        var fieldGO = new GameObject(label);
+        fieldGO.transform.SetParent(bg.transform, false);
+        var frt = fieldGO.AddComponent<RectTransform>();
+        frt.anchorMin = Vector2.zero; frt.anchorMax = Vector2.one;
+        frt.offsetMin = new Vector2(14f, 0f); frt.offsetMax = new Vector2(-14f, 0f);
+
+        var inputField = fieldGO.AddComponent<InputField>();
+
+        var textGO = new GameObject("Text");
+        textGO.transform.SetParent(fieldGO.transform, false);
+        var trt = textGO.AddComponent<RectTransform>();
+        trt.anchorMin = Vector2.zero; trt.anchorMax = Vector2.one;
+        trt.offsetMin = trt.offsetMax = Vector2.zero;
+        var txt = textGO.AddComponent<Text>();
+        txt.font = uiFont; txt.fontSize = t.textM;
+        txt.color = t.textPrimary; txt.alignment = TextAnchor.MiddleLeft;
+        txt.supportRichText = false;
+
+        var placeGO = new GameObject("Placeholder");
+        placeGO.transform.SetParent(fieldGO.transform, false);
+        var prt = placeGO.AddComponent<RectTransform>();
+        prt.anchorMin = Vector2.zero; prt.anchorMax = Vector2.one;
+        prt.offsetMin = prt.offsetMax = Vector2.zero;
+        var ptxt = placeGO.AddComponent<Text>();
+        ptxt.font = uiFont; ptxt.fontSize = t.textM;
+        ptxt.color = t.textDisabled;
+        ptxt.fontStyle = FontStyle.Italic;
+        ptxt.alignment = TextAnchor.MiddleLeft;
+        ptxt.text = password ? "••••••••" : (string.IsNullOrEmpty(initialValue) ? "입력하세요" : "");
+
+        inputField.textComponent = txt;
+        inputField.placeholder   = ptxt;
+        inputField.text          = initialValue;
+        inputField.contentType   = password ? InputField.ContentType.Password : InputField.ContentType.Standard;
+
+        return inputField;
+    }
+
+    UIThemedButton BuildPrimaryButton(RectTransform parent, string label,
+                                       Vector2 pos, Vector2 size, UITheme t)
+    {
+        var btnGO = new GameObject("Btn_" + label);
+        btnGO.transform.SetParent(parent, false);
+        var rt = btnGO.AddComponent<RectTransform>();
+        rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
+        rt.anchoredPosition = pos;
+        rt.sizeDelta        = size;
+
+        btnGO.AddComponent<Image>();
+        var outline = btnGO.AddComponent<Outline>();
+        outline.effectDistance = new Vector2(1.5f, 1.5f);
+
+        AddTextFill(rt, label, t.textL, t.textPrimary, FontStyle.Bold);
+
+        var btn = btnGO.AddComponent<UIThemedButton>();
+        btn.ButtonStyle = UIThemedButton.Style.Primary;
+        return btn;
+    }
+
+    // ── 로그인 처리 ──────────────────────────────────────────────────────
     void OnLoginClick()
     {
         string ip = ipField.text.Trim();
         string id = idField.text.Trim();
         string pw = pwField.text.Trim();
 
-        if (string.IsNullOrEmpty(id)) { SetStatus("CALL SIGN required", true); return; }
-        if (string.IsNullOrEmpty(pw)) { SetStatus("ACCESS CODE required", true); return; }
+        if (string.IsNullOrEmpty(id)) { SetStatus("CALL SIGN이 필요합니다", true); return; }
+        if (string.IsNullOrEmpty(pw)) { SetStatus("ACCESS CODE가 필요합니다", true); return; }
 
         if (!string.IsNullOrEmpty(ip) && GameManager.Instance != null)
             GameManager.Instance.serverIP = ip;
 
-        loginBtn.interactable = false;
-        SetStatus("Authenticating...", false);
+        loginBtn.Interactable = false;
+        SetStatus("인증 중…", false);
 
-        // 이미 연결 중이면 재연결을 위해 먼저 끊기
         if (NetworkManager.Instance?.socketClient?.IsConnected() == true)
             NetworkManager.Instance.socketClient.Disconnect();
 
@@ -208,22 +428,28 @@ public class LoginUI : MonoBehaviour
         }
         catch (System.Exception e)
         {
-            SetStatus($"Connection failed: {e.Message}", true);
-            loginBtn.interactable = true;
+            SetStatus($"접속 실패: {e.Message}", true);
+            loginBtn.Interactable = true;
         }
+    }
+
+    void Update()
+    {
+        if (Input.GetKeyDown(KeyCode.Return) && loginBtn != null && loginBtn.Interactable)
+            OnLoginClick();
     }
 
     void HandleLoginResult(LoginResultPacket packet)
     {
         if (packet.success)
         {
-            SetStatus("Authentication successful. Loading...", false);
+            SetStatus("인증 성공 — 로비로 이동 중…", false);
             StartCoroutine(LoadLobby());
         }
         else
         {
-            SetStatus($"ACCESS DENIED  — {packet.message}", true);
-            loginBtn.interactable = true;
+            SetStatus($"접속 거부 — {packet.message}", true);
+            loginBtn.Interactable = true;
         }
     }
 
@@ -236,8 +462,9 @@ public class LoginUI : MonoBehaviour
     void SetStatus(string msg, bool warn)
     {
         if (statusText == null) return;
+        var t = UITheme.Instance;
         statusText.text  = msg;
-        statusText.color = warn ? C_WARN : C_DIM;
+        statusText.color = warn ? t.error : t.textSecondary;
     }
 
     // ── UI 헬퍼 ──────────────────────────────────────────────────────────
@@ -245,125 +472,99 @@ public class LoginUI : MonoBehaviour
     {
         var go = new GameObject(name);
         go.transform.SetParent(parent, false);
-        var rt  = go.AddComponent<RectTransform>();
+        var rt = go.AddComponent<RectTransform>();
+        rt.anchoredPosition = pos; rt.sizeDelta = size;
         var img = go.AddComponent<Image>();
-        img.color = color;
-        img.raycastTarget = false;
-        rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
-        rt.anchoredPosition = pos;
-        rt.sizeDelta        = size;
+        img.color = color; img.raycastTarget = false;
         return rt;
     }
 
-    Text MakeText(Transform parent, string content, Vector2 pos, Vector2 size,
-                  int fontSize, FontStyle style, Color color, TextAnchor anchor)
+    RectTransform MakeImage(RectTransform parent, string name, Vector2 pos, Vector2 size, Color color)
+        => MakeImage((Transform)parent, name, pos, size, color);
+
+    RectTransform MakeEmpty(Transform parent, string name, Vector2 pos, Vector2 size)
     {
-        var go = new GameObject("T_" + content[..Mathf.Min(content.Length, 12)]);
+        var go = new GameObject(name);
         go.transform.SetParent(parent, false);
-        var rt  = go.AddComponent<RectTransform>();
-        rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
-        rt.anchoredPosition = pos;
-        rt.sizeDelta        = size;
-        var txt = go.AddComponent<Text>();
-        txt.text      = content;
-        txt.font      = uiFont;
-        txt.fontSize  = fontSize;
-        txt.fontStyle = style;
-        txt.color     = color;
-        txt.alignment = anchor;
-        txt.raycastTarget = false;
-        return txt;
+        var rt = go.AddComponent<RectTransform>();
+        rt.anchoredPosition = pos; rt.sizeDelta = size;
+        return rt;
     }
 
-    void MakeFieldLabel(Transform parent, string label, Vector2 pos)
+    Text AddTextCentered(Transform parent, string content, Vector2 pos, Vector2 size,
+                          int sz, Color color, FontStyle style)
     {
-        MakeText(parent, label, pos, new Vector2(380, 22),
-            10, FontStyle.Bold, C_ACCENT, TextAnchor.MiddleLeft);
-    }
-
-    InputField MakeInputField(Transform parent, string placeholder, Vector2 pos, Vector2 size,
-                               bool isPassword = false)
-    {
-        var go = new GameObject("Input_" + placeholder[..Mathf.Min(placeholder.Length, 8)]);
+        var go = new GameObject("Text");
         go.transform.SetParent(parent, false);
         var rt = go.AddComponent<RectTransform>();
         rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
-        rt.anchoredPosition = pos;
-        rt.sizeDelta        = size;
-
-        var img = go.AddComponent<Image>();
-        img.color = C_INPUT_BG;
-
-        var ol = go.AddComponent<Outline>();
-        ol.effectColor    = C_BORDER;
-        ol.effectDistance = new Vector2(1, -1);
-
-        var field = go.AddComponent<InputField>();
-        if (isPassword) field.contentType = InputField.ContentType.Password;
-
-        // Placeholder
-        var phGO  = new GameObject("Placeholder");
-        phGO.transform.SetParent(go.transform, false);
-        var phTxt = phGO.AddComponent<Text>();
-        phTxt.text      = placeholder;
-        phTxt.font      = uiFont;
-        phTxt.fontSize  = 14;
-        phTxt.color     = new Color(C_DIM.r, C_DIM.g, C_DIM.b, 0.7f);
-        phTxt.fontStyle = FontStyle.Italic;
-        var phRT = phTxt.rectTransform;
-        phRT.anchorMin = Vector2.zero; phRT.anchorMax = Vector2.one;
-        phRT.offsetMin = new Vector2(12, 2); phRT.offsetMax = new Vector2(-12, -2);
-
-        // Text
-        var txtGO  = new GameObject("Text");
-        txtGO.transform.SetParent(go.transform, false);
-        var txt = txtGO.AddComponent<Text>();
-        txt.font      = uiFont;
-        txt.fontSize  = 14;
-        txt.color     = C_TEXT;
-        var txtRT = txt.rectTransform;
-        txtRT.anchorMin = Vector2.zero; txtRT.anchorMax = Vector2.one;
-        txtRT.offsetMin = new Vector2(12, 2); txtRT.offsetMax = new Vector2(-12, -2);
-
-        field.textComponent = txt;
-        field.placeholder   = phTxt;
-        return field;
+        rt.anchoredPosition = pos; rt.sizeDelta = size;
+        var tx = go.AddComponent<Text>();
+        tx.font = uiFont; tx.fontSize = sz;
+        tx.color = color; tx.alignment = TextAnchor.MiddleCenter;
+        tx.fontStyle = style; tx.text = content;
+        tx.raycastTarget = false;
+        return tx;
     }
 
-    Button MakeButton(Transform parent, string label, Vector2 pos, Vector2 size, Color color)
+    Text AddTextFill(Transform parent, string content, int sz, Color color, FontStyle style)
     {
-        var go = new GameObject("Btn_" + label);
+        var go = new GameObject("Text");
         go.transform.SetParent(parent, false);
-        var rt  = go.AddComponent<RectTransform>();
-        rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
-        rt.anchoredPosition = pos;
-        rt.sizeDelta        = size;
+        var rt = go.AddComponent<RectTransform>();
+        rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
+        rt.offsetMin = rt.offsetMax = Vector2.zero;
+        var tx = go.AddComponent<Text>();
+        tx.font = uiFont; tx.fontSize = sz;
+        tx.color = color; tx.alignment = TextAnchor.MiddleCenter;
+        tx.fontStyle = style; tx.text = content;
+        tx.raycastTarget = false;
+        return tx;
+    }
 
-        var img = go.AddComponent<Image>();
-        img.color = color;
+    void AddOutline(GameObject target, Color col, float width)
+    {
+        var o = target.AddComponent<Outline>();
+        o.effectColor = col;
+        o.effectDistance = new Vector2(width, width);
+    }
 
-        var btn = go.AddComponent<Button>();
-        btn.targetGraphic = img;
-        var cb = btn.colors;
-        cb.normalColor      = color;
-        cb.highlightedColor = new Color(color.r * 1.25f, color.g * 1.25f, color.b * 1.25f);
-        cb.pressedColor     = new Color(color.r * 0.65f, color.g * 0.65f, color.b * 0.65f);
-        cb.colorMultiplier  = 1f;
-        btn.colors = cb;
+    // ── Procedural Vertical Gradient (3단: 하단→중간→상단) ────────────────
+    static Sprite _cachedGradient;
+    Sprite CreateVerticalGradient(Color bottom, Color mid, Color top)
+    {
+        if (_cachedGradient != null) return _cachedGradient;
+        const int H = 256;
+        var tex = new Texture2D(2, H, TextureFormat.RGBA32, false, false);
+        tex.wrapMode = TextureWrapMode.Clamp;
+        tex.filterMode = FilterMode.Bilinear;
+        for (int y = 0; y < H; y++)
+        {
+            float u = y / (float)(H - 1);
+            Color c;
+            if (u < 0.5f)
+            {
+                float a = u / 0.5f;
+                a = a * a * (3f - 2f * a); // smoothstep
+                c = Color.Lerp(bottom, mid, a);
+            }
+            else
+            {
+                float a = (u - 0.5f) / 0.5f;
+                a = a * a * (3f - 2f * a);
+                c = Color.Lerp(mid, top, a);
+            }
+            tex.SetPixel(0, y, c);
+            tex.SetPixel(1, y, c);
+        }
+        tex.Apply();
+        _cachedGradient = Sprite.Create(tex, new Rect(0, 0, 2, H), new Vector2(0.5f, 0.5f));
+        return _cachedGradient;
+    }
 
-        var txtGO = new GameObject("Label");
-        txtGO.transform.SetParent(go.transform, false);
-        var txt = txtGO.AddComponent<Text>();
-        txt.text      = label;
-        txt.font      = uiFont;
-        txt.fontSize  = 15;
-        txt.fontStyle = FontStyle.Bold;
-        txt.alignment = TextAnchor.MiddleCenter;
-        txt.color     = new Color(0.04f, 0.08f, 0.04f);
-        var tRT = txt.rectTransform;
-        tRT.anchorMin = Vector2.zero; tRT.anchorMax = Vector2.one;
-        tRT.offsetMin = tRT.offsetMax = Vector2.zero;
-
-        return btn;
+    static Color HexC(string hex)
+    {
+        if (ColorUtility.TryParseHtmlString(hex, out var c)) return c;
+        return Color.magenta;
     }
 }

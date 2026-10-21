@@ -5,28 +5,16 @@ using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
+/// <summary>
+/// 로비 씬 UI — Premium Military Flight Simulator 디자인.
+/// UITheme 기반 통일된 색상/스타일 적용.
+/// </summary>
 public class LobbyUI : MonoBehaviour
 {
-    // ── 색상 팔레트 ─────────────────────────────────────────────────────────
-    static readonly Color C_BG       = new Color(0.031f, 0.043f, 0.063f);
-    static readonly Color C_PANEL    = new Color(0.047f, 0.063f, 0.094f);
-    static readonly Color C_PANEL2   = new Color(0.055f, 0.075f, 0.110f);
-    static readonly Color C_ROW      = new Color(0.059f, 0.082f, 0.122f);
-    static readonly Color C_ACCENT   = new Color(0.00f,  0.78f,  0.33f);
-    static readonly Color C_ACCENT2  = new Color(0.00f,  0.36f,  0.15f);
-    static readonly Color C_TEXT     = new Color(0.91f,  0.93f,  0.94f);
-    static readonly Color C_DIM      = new Color(0.36f,  0.47f,  0.56f);
-    static readonly Color C_WARN     = new Color(1.00f,  0.65f,  0.20f);
-    static readonly Color C_DANGER   = new Color(0.80f,  0.22f,  0.18f);
-    static readonly Color C_BORDER   = new Color(0.12f,  0.22f,  0.32f);
-    static readonly Color C_ACTIVE   = new Color(0.20f,  0.90f,  0.35f);
-    static readonly Color C_STANDBY  = new Color(0.55f,  0.60f,  0.65f);
-
     Font uiFont;
     Transform roomListContent;
     Text statusText;
     Text pilotLabel;
-    Text onlineLabel;
     GameObject _createModal;
     InputField _roomNameInput;
 
@@ -45,7 +33,7 @@ public class LobbyUI : MonoBehaviour
 
     void OnDestroy()
     {
-        SocketClient sc = NetworkManager.Instance?.socketClient;
+        var sc = NetworkManager.Instance?.socketClient;
         if (sc == null) return;
         sc.OnRoomList         -= HandleRoomList;
         sc.OnCreateRoomResult -= HandleCreateRoomResult;
@@ -59,7 +47,7 @@ public class LobbyUI : MonoBehaviour
             new GameObject("[NetworkManager]").AddComponent<NetworkManager>();
         if (UnityMainThreadDispatcher.Instance == null)
             new GameObject("[Dispatcher]").AddComponent<UnityMainThreadDispatcher>();
-        if (FindFirstObjectByType<EventSystem>() == null)
+        if (FindAnyObjectByType<EventSystem>() == null)
         {
             var es = new GameObject("EventSystem");
             es.AddComponent<EventSystem>();
@@ -69,29 +57,30 @@ public class LobbyUI : MonoBehaviour
 
     void SubscribeEvents()
     {
-        SocketClient sc = NetworkManager.Instance?.socketClient;
+        var sc = NetworkManager.Instance?.socketClient;
         if (sc == null) return;
-        sc.OnRoomList          += HandleRoomList;
-        sc.OnCreateRoomResult  += HandleCreateRoomResult;
+        sc.OnRoomList         += HandleRoomList;
+        sc.OnCreateRoomResult += HandleCreateRoomResult;
     }
 
     IEnumerator RequestRoomList()
     {
         if (NetworkManager.Instance == null || !NetworkManager.Instance.IsConnected())
         {
-            SetStatus("Not connected — returning to login", true);
+            SetStatus("서버 미연결 — 로그인으로 복귀", true);
             yield return new WaitForSeconds(1.5f);
             SceneManager.LoadScene("LoginScene");
             yield break;
         }
-        SetStatus("Requesting combat zone data...", false);
+        SetStatus("전투 구역 데이터 수신 중...", false);
         NetworkManager.Instance.socketClient.RequestRoomList();
     }
 
-    // ── UI 빌드 ──────────────────────────────────────────────────────────────
+    // ── UI 빌드 ──────────────────────────────────────────────────────────
     void BuildUI()
     {
-        // Canvas
+        var t = UITheme.Instance;
+
         var canvasGO = new GameObject("LobbyCanvas");
         var canvas   = canvasGO.AddComponent<Canvas>();
         canvas.renderMode   = RenderMode.ScreenSpaceOverlay;
@@ -104,172 +93,238 @@ public class LobbyUI : MonoBehaviour
 
         var root = canvasGO.transform;
 
-        // ── 전체 배경 ─────────────────────────────────────────────────────────
-        Fill(root, "BG", C_BG);
-
-        // 배경 그리드 라인 (장식)
-        for (int i = 0; i < 7; i++)
-        {
-            float y = -480f + i * 160f;
-            var hLine = NewRect("GridH" + i, root, new Vector2(0, y), new Vector2(0, 1));
-            SetAnchors(hLine, new Vector2(0, 0.5f), new Vector2(1, 0.5f));
-            AddImg(hLine, new Color(C_ACCENT.r, C_ACCENT.g, C_ACCENT.b, 0.035f));
-        }
-
-        // ── 상단 헤더 바 (전체 폭) ────────────────────────────────────────────
-        var topBar = NewRect("TopBar", root, Vector2.zero, new Vector2(0, 72));
-        SetAnchors(topBar, new Vector2(0, 1), new Vector2(1, 1));
-        topBar.offsetMin = new Vector2(0, -72);
-        topBar.offsetMax = Vector2.zero;
-        AddImg(topBar, C_PANEL);
-
-        // 상단 강조선
-        var topAccent = NewRect("TopAccent", topBar, new Vector2(0, 0), new Vector2(0, 3));
-        SetAnchors(topAccent, new Vector2(0, 1), new Vector2(1, 1));
-        AddImg(topAccent, C_ACCENT);
-
-        // 파일럿 정보
-        pilotLabel = MakeText(topBar, "PILOT  —",
-            new Vector2(208, 0), new Vector2(360, 0),
-            14, FontStyle.Bold, C_ACCENT, TextAnchor.MiddleLeft,
-            new Vector2(0, 0), new Vector2(0, 1));
-
-        // 타이틀
-        MakeText(topBar, "F · 22   TACTICAL  OPERATIONS  CENTER",
-            new Vector2(0, 0), new Vector2(700, 0),
-            18, FontStyle.Bold, C_TEXT, TextAnchor.MiddleCenter,
-            new Vector2(0.5f, 0), new Vector2(0.5f, 1));
-
-        // 연결 상태
-        onlineLabel = MakeText(topBar, "◉  SECURE LINK ACTIVE",
-            new Vector2(-178, 0), new Vector2(300, 0),
-            12, FontStyle.Bold, C_ACTIVE, TextAnchor.MiddleRight,
-            new Vector2(1, 0), new Vector2(1, 1));
-
-        // ── 하단 액션 바 (전체 폭) ────────────────────────────────────────────
-        var botBar = NewRect("BotBar", root, Vector2.zero, new Vector2(0, 68));
-        SetAnchors(botBar, new Vector2(0, 0), new Vector2(1, 0));
-        botBar.offsetMin = Vector2.zero;
-        botBar.offsetMax = new Vector2(0, 68);
-        AddImg(botBar, C_PANEL);
-
-        // 하단 강조선
-        var botAccent = NewRect("BotAccent", botBar, new Vector2(0, 0), new Vector2(0, 2));
-        SetAnchors(botAccent, new Vector2(0, 1), new Vector2(1, 1));
-        AddImg(botAccent, new Color(C_ACCENT.r, C_ACCENT.g, C_ACCENT.b, 0.4f));
-
-        // REFRESH 버튼
-        var refreshBtn = MakeButton(botBar, "↻   REFRESH",
-            new Vector2(28, 0), new Vector2(160, 44), C_ACCENT2,
-            new Vector2(0, 0.5f), new Vector2(0, 0.5f));
-        var rcb = refreshBtn.colors;
-        rcb.normalColor = C_ACCENT2; rcb.highlightedColor = C_ACCENT;
-        rcb.pressedColor = new Color(C_ACCENT.r*0.5f, C_ACCENT.g*0.5f, C_ACCENT.b*0.5f);
-        refreshBtn.colors = rcb;
-        SetBtnTextColor(refreshBtn, C_TEXT);
-        refreshBtn.onClick.AddListener(() =>
-        {
-            SetStatus("Refreshing zone data...", false);
-            NetworkManager.Instance?.socketClient.RequestRoomList();
-        });
-
-        // 상태 텍스트 (하단 중앙)
-        statusText = MakeText(botBar, "Loading...",
-            new Vector2(0, 0), new Vector2(600, 0),
-            12, FontStyle.Normal, C_DIM, TextAnchor.MiddleCenter,
-            new Vector2(0.5f, 0), new Vector2(0.5f, 1));
-
-        // CREATE ROOM 버튼
-        var createBtn = MakeButton(botBar, "+   CREATE ROOM",
-            new Vector2(-240, 0), new Vector2(190, 44), new Color(0.10f, 0.28f, 0.55f),
-            new Vector2(1, 0.5f), new Vector2(1, 0.5f));
-        SetBtnTextColor(createBtn, C_TEXT);
-        var cbc = createBtn.colors;
-        cbc.highlightedColor = new Color(0.20f, 0.45f, 0.80f);
-        cbc.pressedColor     = new Color(0.06f, 0.16f, 0.35f);
-        createBtn.colors = cbc;
-        createBtn.onClick.AddListener(OnCreateRoomClick);
-
-        // DISCONNECT 버튼
-        var logoutBtn = MakeButton(botBar, "⬡   DISCONNECT",
-            new Vector2(-28, 0), new Vector2(190, 44), C_DANGER,
-            new Vector2(1, 0.5f), new Vector2(1, 0.5f));
-        SetBtnTextColor(logoutBtn, C_TEXT);
-        logoutBtn.onClick.AddListener(OnLogoutClick);
-
-        // ── 중앙 컨텐츠 패널 ──────────────────────────────────────────────────
-        // 중앙 고정 크기 패널로 왼쪽 정렬 문제 해결
-        var mainPanel = NewRect("MainPanel", root, new Vector2(0, -2), new Vector2(1440, 880));
-        mainPanel.anchorMin = mainPanel.anchorMax = new Vector2(0.5f, 0.5f);
-        mainPanel.pivot = new Vector2(0.5f, 0.5f);
-        AddImg(mainPanel, new Color(0, 0, 0, 0));
-
-        // 섹션 헤더
-        var sectionHeader = NewRect("SectionHeader", mainPanel, new Vector2(0, 398), new Vector2(1440, 52));
-        sectionHeader.anchorMin = sectionHeader.anchorMax = new Vector2(0.5f, 0.5f);
-        var sHdrImg = sectionHeader.gameObject.AddComponent<Image>();
-        sHdrImg.color = C_PANEL2;
-
-        // 섹션 왼쪽 강조 바
-        var sHdrAccent = NewRect("SHdrAccent", sectionHeader, new Vector2(0, 0), new Vector2(4, 0));
-        SetAnchors(sHdrAccent, new Vector2(0, 0), new Vector2(0, 1));
-        AddImg(sHdrAccent, C_ACCENT);
-
-        MakeText(sectionHeader, "▸  COMBAT ZONE SELECTION",
-            new Vector2(320, 0), new Vector2(600, 0),
-            16, FontStyle.Bold, C_ACCENT, TextAnchor.MiddleLeft,
-            new Vector2(0, 0), new Vector2(0, 1));
-
-        var timeText = MakeText(sectionHeader, "UTC 00:00:00",
-            new Vector2(-120, 0), new Vector2(200, 0),
-            11, FontStyle.Normal, new Color(C_DIM.r, C_DIM.g, C_DIM.b, 0.7f),
-            TextAnchor.MiddleRight, new Vector2(1, 0), new Vector2(1, 1));
-        StartCoroutine(UpdateClock(timeText));
-
-        // 테이블 헤더 행
-        var tblHeader = NewRect("TblHeader", mainPanel, new Vector2(0, 358), new Vector2(1440, 36));
-        tblHeader.anchorMin = tblHeader.anchorMax = new Vector2(0.5f, 0.5f);
-        AddImg(tblHeader, new Color(0, 0, 0, 0.4f));
-        BuildTableHeader(tblHeader);
-
-        // 구분선
-        var divider = NewRect("Divider", mainPanel, new Vector2(0, 339), new Vector2(1400, 1));
-        divider.anchorMin = divider.anchorMax = new Vector2(0.5f, 0.5f);
-        AddImg(divider, new Color(C_BORDER.r, C_BORDER.g, C_BORDER.b, 0.8f));
-
-        // 룸 리스트 컨테이너 (수직 배치)
-        var listGO = new GameObject("RoomList");
-        listGO.transform.SetParent(mainPanel, false);
-        var listRT = listGO.AddComponent<RectTransform>();
-        listRT.anchorMin = new Vector2(0, 0.5f);
-        listRT.anchorMax = new Vector2(1, 0.5f);
-        listRT.pivot     = new Vector2(0.5f, 1);
-        listRT.anchoredPosition = new Vector2(0, 330);
-        listRT.sizeDelta = new Vector2(0, 600);
-        var vlg = listGO.AddComponent<VerticalLayoutGroup>();
-        vlg.spacing              = 8;
-        vlg.childAlignment       = TextAnchor.UpperCenter;
-        vlg.childForceExpandWidth  = true;
-        vlg.childForceExpandHeight = false;
-        var csf = listGO.AddComponent<ContentSizeFitter>();
-        csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-        roomListContent = listGO.transform;
-
-        // 파일럿 정보 갱신
-        if (GameManager.Instance != null && !string.IsNullOrEmpty(GameManager.Instance.myNickname))
-            pilotLabel.text = $"PILOT  {GameManager.Instance.myNickname.ToUpper()}";
+        BuildBackground(root, t);
+        BuildTopBar(root, t);
+        BuildBottomBar(root, t);
+        BuildMainPanel(root, t);
     }
 
-    void BuildTableHeader(RectTransform parent)
+    // ── 1. 그라데이션 배경 ────────────────────────────────────────────────
+    void BuildBackground(Transform root, UITheme t)
     {
-        (string label, float xStart, float xEnd)[] cols = {
+        var bg = MakeRect("BG", root, Vector2.zero, Vector2.zero);
+        bg.anchorMin = Vector2.zero; bg.anchorMax = Vector2.one;
+        bg.offsetMin = bg.offsetMax = Vector2.zero;
+        var bgImg = bg.gameObject.AddComponent<Image>();
+        bgImg.sprite = CreateVerticalGradient(HexC("#030810"), HexC("#0A1B2D"), HexC("#0D2440"));
+        bgImg.type = Image.Type.Simple;
+        bgImg.preserveAspect = false;
+        bgImg.raycastTarget = false;
+
+        // 수평 그리드 라인
+        for (int i = 0; i < 8; i++)
+        {
+            float y = -480f + i * 137f;
+            var ln = MakeRect($"Grid{i}", root, new Vector2(0, y), new Vector2(0, 1));
+            ln.anchorMin = new Vector2(0, 0.5f); ln.anchorMax = new Vector2(1, 0.5f);
+            ln.offsetMin = ln.offsetMax = Vector2.zero;
+            AddImg(ln, new Color(t.accentCyan.r, t.accentCyan.g, t.accentCyan.b, 0.03f));
+        }
+
+        // 상단 강조선
+        var topLine = MakeRect("TopLine", root, Vector2.zero, new Vector2(0, 2));
+        topLine.anchorMin = new Vector2(0, 1); topLine.anchorMax = new Vector2(1, 1);
+        topLine.pivot = new Vector2(0.5f, 1);
+        topLine.offsetMin = new Vector2(0, -2); topLine.offsetMax = Vector2.zero;
+        AddImg(topLine, new Color(t.accentCyan.r, t.accentCyan.g, t.accentCyan.b, 0.5f));
+    }
+
+    // ── 2. 상단 헤더 바 ───────────────────────────────────────────────────
+    void BuildTopBar(Transform root, UITheme t)
+    {
+        var bar = MakeRect("TopBar", root, Vector2.zero, Vector2.zero);
+        bar.anchorMin = new Vector2(0, 1); bar.anchorMax = new Vector2(1, 1);
+        bar.pivot = new Vector2(0.5f, 1);
+        bar.offsetMin = new Vector2(0, -72); bar.offsetMax = Vector2.zero;
+        AddImg(bar, new Color(t.panelBG.r, t.panelBG.g, t.panelBG.b, 0.95f));
+
+        // 하단 경계선
+        var divider = MakeRect("BarDivider", bar, Vector2.zero, Vector2.zero);
+        divider.anchorMin = new Vector2(0, 0); divider.anchorMax = new Vector2(1, 0);
+        divider.offsetMin = new Vector2(0, -1); divider.offsetMax = Vector2.zero;
+        AddImg(divider, new Color(t.accentCyan.r, t.accentCyan.g, t.accentCyan.b, 0.4f));
+
+        // 좌측 뱃지
+        var badge = MakeRect("Badge", bar, new Vector2(40, 0), new Vector2(220, 40));
+        badge.anchorMin = new Vector2(0, 0.5f); badge.anchorMax = new Vector2(0, 0.5f);
+        badge.pivot = new Vector2(0, 0.5f);
+        AddImg(badge, new Color(t.primaryBG.r, t.primaryBG.g, t.primaryBG.b, 0.7f));
+        AddOutline(badge.gameObject, t.borderAccent, 1f);
+        AddTextFill(badge, "KF-21  •  OPERATIONS", t.textS, t.accentCyan, FontStyle.Bold);
+
+        // 중앙 타이틀
+        var titleGO = MakeRect("Title", bar, Vector2.zero, Vector2.zero);
+        titleGO.anchorMin = new Vector2(0.5f, 0); titleGO.anchorMax = new Vector2(0.5f, 1);
+        titleGO.offsetMin = new Vector2(-400, 0); titleGO.offsetMax = new Vector2(400, 0);
+        AddTextFill(titleGO, "TACTICAL  COMBAT  CENTER", t.textL, t.textPrimary, FontStyle.Bold);
+
+        // 파일럿 레이블 (중앙 아래)
+        var pilotGO = MakeRect("PilotLabel", bar, new Vector2(0, -6), Vector2.zero);
+        pilotGO.anchorMin = new Vector2(0.5f, 0); pilotGO.anchorMax = new Vector2(0.5f, 0);
+        pilotGO.pivot = new Vector2(0.5f, 0);
+        pilotGO.offsetMin = new Vector2(-200, 0); pilotGO.offsetMax = new Vector2(200, 20);
+        pilotLabel = AddTextFill(pilotGO, "PILOT  —", t.textXS, t.textSecondary, FontStyle.Normal);
+
+        // 우측 상태 칩
+        var statusChip = MakeRect("StatusChip", bar, new Vector2(-40, 0), new Vector2(180, 32));
+        statusChip.anchorMin = new Vector2(1, 0.5f); statusChip.anchorMax = new Vector2(1, 0.5f);
+        statusChip.pivot = new Vector2(1, 0.5f);
+        AddImg(statusChip, new Color(t.success.r, t.success.g, t.success.b, 0.12f));
+        AddOutline(statusChip.gameObject, new Color(t.success.r, t.success.g, t.success.b, 0.5f), 1f);
+        AddTextFill(statusChip, "◉  SECURE LINK", t.textXS, t.success, FontStyle.Bold);
+
+        // 우측 UTC 시계
+        var clockGO = MakeRect("Clock", bar, new Vector2(-240, 0), new Vector2(140, 0));
+        clockGO.anchorMin = new Vector2(1, 0); clockGO.anchorMax = new Vector2(1, 1);
+        clockGO.pivot = new Vector2(1, 0.5f);
+        var clockTxt = AddTextFill(clockGO, "UTC 00:00:00", t.textXS,
+            new Color(t.textSecondary.r, t.textSecondary.g, t.textSecondary.b, 0.7f), FontStyle.Normal);
+        StartCoroutine(UpdateClock(clockTxt));
+
+        // 파일럿 닉네임 설정
+        if (GameManager.Instance != null && !string.IsNullOrEmpty(GameManager.Instance.myNickname))
+            pilotLabel.text = $"PILOT  {GameManager.Instance.myNickname.ToUpper()}";
+
+        bar.gameObject.AddComponent<UIFadeIn>().Configure(0f, t.panelTransition, 8f);
+    }
+
+    // ── 3. 하단 액션 바 ───────────────────────────────────────────────────
+    void BuildBottomBar(Transform root, UITheme t)
+    {
+        var bar = MakeRect("BottomBar", root, Vector2.zero, Vector2.zero);
+        bar.anchorMin = new Vector2(0, 0); bar.anchorMax = new Vector2(1, 0);
+        bar.pivot = new Vector2(0.5f, 0);
+        bar.offsetMin = Vector2.zero; bar.offsetMax = new Vector2(0, 68);
+        AddImg(bar, new Color(t.panelBG.r, t.panelBG.g, t.panelBG.b, 0.95f));
+
+        // 상단 경계선
+        var divider = MakeRect("BarDivider", bar, Vector2.zero, Vector2.zero);
+        divider.anchorMin = new Vector2(0, 1); divider.anchorMax = new Vector2(1, 1);
+        divider.offsetMin = Vector2.zero; divider.offsetMax = new Vector2(0, 1);
+        AddImg(divider, new Color(t.border.r, t.border.g, t.border.b, 0.8f));
+
+        // REFRESH 버튼
+        BuildThemedBtn(bar, "↻  REFRESH", new Vector2(108, 0), new Vector2(180, 44),
+            new Vector2(0, 0.5f), new Vector2(0, 0.5f),
+            UIThemedButton.Style.Outline,
+            () =>
+            {
+                SetStatus("구역 데이터 새로고침...", false);
+                NetworkManager.Instance?.socketClient.RequestRoomList();
+            });
+
+        // 상태 텍스트
+        var statGO = MakeRect("Status", bar, Vector2.zero, Vector2.zero);
+        statGO.anchorMin = new Vector2(0.5f, 0); statGO.anchorMax = new Vector2(0.5f, 1);
+        statGO.offsetMin = new Vector2(-350, 0); statGO.offsetMax = new Vector2(350, 0);
+        statusText = AddTextFill(statGO, "로딩 중...", t.textXS, t.textSecondary, FontStyle.Normal);
+
+        // CREATE ZONE 버튼 (오른쪽에서 두 번째)
+        BuildThemedBtn(bar, "+  CREATE ZONE", new Vector2(-305, 0), new Vector2(190, 44),
+            new Vector2(1, 0.5f), new Vector2(1, 0.5f),
+            UIThemedButton.Style.Secondary,
+            OnCreateRoomClick);
+
+        // DISCONNECT 버튼 (오른쪽 끝, 15px 패딩)
+        BuildThemedBtn(bar, "⬡  DISCONNECT", new Vector2(-105, 0), new Vector2(180, 44),
+            new Vector2(1, 0.5f), new Vector2(1, 0.5f),
+            UIThemedButton.Style.Ghost,
+            OnLogoutClick);
+
+        bar.gameObject.AddComponent<UIFadeIn>().Configure(0.1f, t.panelTransition, 0f);
+    }
+
+    // ── 4. 메인 패널 (룸 리스트) ──────────────────────────────────────────
+    void BuildMainPanel(Transform root, UITheme t)
+    {
+        // 72 top + 68 bottom 제외한 영역
+        var panel = MakeRect("MainPanel", root, Vector2.zero, Vector2.zero);
+        panel.anchorMin = new Vector2(0, 0); panel.anchorMax = new Vector2(1, 1);
+        panel.offsetMin = new Vector2(0, 68); panel.offsetMax = new Vector2(0, -72);
+
+        // 섹션 헤더
+        var sHdr = MakeRect("SectionHdr", panel, Vector2.zero, Vector2.zero);
+        sHdr.anchorMin = new Vector2(0, 1); sHdr.anchorMax = new Vector2(1, 1);
+        sHdr.pivot = new Vector2(0.5f, 1);
+        sHdr.offsetMin = new Vector2(40, -56); sHdr.offsetMax = new Vector2(-40, 0);
+        AddImg(sHdr, new Color(t.secondaryBG.r, t.secondaryBG.g, t.secondaryBG.b, 0.9f));
+        AddOutline(sHdr.gameObject, new Color(t.border.r, t.border.g, t.border.b, 0.5f), 1f);
+
+        // 섹션 왼쪽 강조 바
+        var accent = MakeRect("Accent", sHdr, Vector2.zero, Vector2.zero);
+        accent.anchorMin = new Vector2(0, 0); accent.anchorMax = new Vector2(0, 1);
+        accent.offsetMin = Vector2.zero; accent.offsetMax = new Vector2(3, 0);
+        AddImg(accent, t.accentCyan);
+
+        AddTextFill(sHdr, "▸  COMBAT ZONE SELECTION",
+            t.textM, t.accentCyan, FontStyle.Bold);
+
+        // 테이블 헤더
+        var tblHdr = MakeRect("TblHdr", panel, Vector2.zero, Vector2.zero);
+        tblHdr.anchorMin = new Vector2(0, 1); tblHdr.anchorMax = new Vector2(1, 1);
+        tblHdr.pivot = new Vector2(0.5f, 1);
+        tblHdr.offsetMin = new Vector2(40, -92); tblHdr.offsetMax = new Vector2(-40, -56);
+        AddImg(tblHdr, new Color(0, 0, 0, 0.35f));
+        BuildTableHeader(tblHdr, t);
+
+        // 구분선
+        var div = MakeRect("Div", panel, Vector2.zero, Vector2.zero);
+        div.anchorMin = new Vector2(0, 1); div.anchorMax = new Vector2(1, 1);
+        div.pivot = new Vector2(0.5f, 1);
+        div.offsetMin = new Vector2(40, -93); div.offsetMax = new Vector2(-40, -92);
+        AddImg(div, new Color(t.border.r, t.border.g, t.border.b, 0.7f));
+
+        // 스크롤 뷰 영역
+        var scrollGO = new GameObject("ScrollView");
+        scrollGO.transform.SetParent(panel, false);
+        var scrollRT = scrollGO.AddComponent<RectTransform>();
+        scrollRT.anchorMin = new Vector2(0, 0); scrollRT.anchorMax = new Vector2(1, 1);
+        scrollRT.offsetMin = new Vector2(40, 0); scrollRT.offsetMax = new Vector2(-40, -93);
+        var scroll = scrollGO.AddComponent<ScrollRect>();
+        scroll.horizontal = false;
+
+        var viewportGO = new GameObject("Viewport");
+        viewportGO.transform.SetParent(scrollGO.transform, false);
+        var vpRT = viewportGO.AddComponent<RectTransform>();
+        vpRT.anchorMin = Vector2.zero; vpRT.anchorMax = Vector2.one;
+        vpRT.offsetMin = vpRT.offsetMax = Vector2.zero;
+        viewportGO.AddComponent<Image>().color = new Color(0, 0, 0, 0);
+        viewportGO.AddComponent<Mask>().showMaskGraphic = false;
+
+        var contentGO = new GameObject("Content");
+        contentGO.transform.SetParent(viewportGO.transform, false);
+        var contentRT = contentGO.AddComponent<RectTransform>();
+        contentRT.anchorMin = new Vector2(0, 1); contentRT.anchorMax = new Vector2(1, 1);
+        contentRT.pivot = new Vector2(0.5f, 1);
+        contentRT.offsetMin = contentRT.offsetMax = Vector2.zero;
+        var vlg = contentGO.AddComponent<VerticalLayoutGroup>();
+        vlg.spacing = 6;
+        vlg.childAlignment = TextAnchor.UpperCenter;
+        vlg.childForceExpandWidth = true;
+        vlg.childForceExpandHeight = false;
+        var csf = contentGO.AddComponent<ContentSizeFitter>();
+        csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+        scroll.viewport = vpRT;
+        scroll.content  = contentRT;
+        scroll.movementType = ScrollRect.MovementType.Elastic;
+
+        roomListContent = contentGO.transform;
+
+        panel.gameObject.AddComponent<UIFadeIn>().Configure(0.15f, t.panelTransition, 12f);
+    }
+
+    void BuildTableHeader(RectTransform parent, UITheme t)
+    {
+        (string label, float xs, float xe)[] cols =
+        {
             ("ZONE",        0.00f, 0.10f),
             ("DESIGNATION", 0.10f, 0.45f),
-            ("STATUS",      0.45f, 0.65f),
-            ("PILOTS",      0.65f, 0.80f),
-            ("",            0.80f, 1.00f),
+            ("STATUS",      0.45f, 0.62f),
+            ("PILOTS",      0.62f, 0.78f),
+            ("ACTION",      0.78f, 1.00f),
         };
-
+        Color hdrColor = new Color(t.accentCyan.r, t.accentCyan.g, t.accentCyan.b, 0.55f);
         foreach (var (label, xs, xe) in cols)
         {
             if (string.IsNullOrEmpty(label)) continue;
@@ -279,220 +334,254 @@ public class LobbyUI : MonoBehaviour
             rt.anchorMin = new Vector2(xs, 0); rt.anchorMax = new Vector2(xe, 1);
             rt.offsetMin = new Vector2(16, 0); rt.offsetMax = Vector2.zero;
             var txt = go.AddComponent<Text>();
-            txt.text = label; txt.font = uiFont; txt.fontSize = 10;
-            txt.fontStyle = FontStyle.Bold;
-            txt.color = new Color(C_ACCENT.r, C_ACCENT.g, C_ACCENT.b, 0.6f);
-            txt.alignment = TextAnchor.MiddleLeft;
+            txt.text = label; txt.font = uiFont; txt.fontSize = t.textXS;
+            txt.fontStyle = FontStyle.Bold; txt.color = hdrColor;
+            txt.alignment = TextAnchor.MiddleLeft; txt.raycastTarget = false;
         }
     }
 
-    // ── 룸 목록 갱신 ──────────────────────────────────────────────────────────
+    // ── 룸 목록 갱신 ───────────────────────────────────────────────────────
     void HandleRoomList(List<RoomInfo> rooms)
     {
         foreach (Transform child in roomListContent)
             Destroy(child.gameObject);
 
         if (rooms == null || rooms.Count == 0)
-        { SetStatus("No combat zones available.", false); return; }
+        { SetStatus("전투 구역 없음.", false); return; }
 
         foreach (var room in rooms) BuildRoomRow(room);
-        SetStatus($"{rooms.Count} zone(s) available  ·  select a zone to deploy", false);
+        SetStatus($"{rooms.Count}개 구역 사용 가능  ·  구역을 선택하여 출격", false);
     }
 
     void BuildRoomRow(RoomInfo room)
     {
+        var t = UITheme.Instance;
+        bool active = room.playerCount > 0;
+        bool isFull = room.playerCount >= room.maxPlayers;
+
         var row = new GameObject($"Row_{room.roomId}");
         row.transform.SetParent(roomListContent, false);
-        var rowRT = row.AddComponent<LayoutElement>();
-        rowRT.preferredHeight = 72;
-
-        var rowRT2 = row.AddComponent<RectTransform>();
+        var le = row.AddComponent<LayoutElement>();
+        le.preferredHeight = 68;
+        row.AddComponent<RectTransform>();
         var rowImg = row.AddComponent<Image>();
-        rowImg.color = C_ROW;
+        rowImg.color = new Color(t.secondaryBG.r, t.secondaryBG.g, t.secondaryBG.b, 0.85f);
 
-        // 왼쪽 상태 색상 바
-        bool active = room.playerCount > 0;
-        var bar = NewRect("Bar", row.transform, Vector2.zero, new Vector2(5, 0));
-        SetAnchors(bar, new Vector2(0, 0), new Vector2(0, 1));
-        AddImg(bar, active ? C_ACTIVE : C_STANDBY);
+        // 좌측 상태 바
+        var bar = MakeRect("Bar", row.transform, Vector2.zero, Vector2.zero);
+        bar.anchorMin = new Vector2(0, 0); bar.anchorMax = new Vector2(0, 1);
+        bar.offsetMin = Vector2.zero; bar.offsetMax = new Vector2(4, 0);
+        Color barColor = active ? t.success : t.textDisabled;
+        AddImg(bar, barColor);
 
         // ZONE 번호
-        var zTxt = MakeText(row.transform, $"ZONE\n{room.roomId:D2}",
-            Vector2.zero, Vector2.zero, 16, FontStyle.Bold, C_TEXT, TextAnchor.MiddleCenter,
-            new Vector2(0.00f, 0), new Vector2(0.10f, 1));
-        zTxt.lineSpacing = 0.9f;
+        var zGO = MakeRect("Zone", row.transform, Vector2.zero, Vector2.zero);
+        zGO.anchorMin = new Vector2(0.00f, 0); zGO.anchorMax = new Vector2(0.10f, 1);
+        zGO.offsetMin = zGO.offsetMax = Vector2.zero;
+        var zTxt = AddTextFill(zGO, $"ZONE\n{room.roomId:D2}", t.textS, t.textPrimary, FontStyle.Bold);
+        zTxt.alignment = TextAnchor.MiddleCenter; zTxt.lineSpacing = 0.85f;
 
         // 룸 이름
-        MakeText(row.transform, room.roomName.ToUpper(),
-            new Vector2(16, 4), Vector2.zero, 15, FontStyle.Bold, C_TEXT, TextAnchor.UpperLeft,
-            new Vector2(0.10f, 0), new Vector2(0.45f, 1));
+        var nameGO = MakeRect("Name", row.transform, new Vector2(16, 5), Vector2.zero);
+        nameGO.anchorMin = new Vector2(0.10f, 0.4f); nameGO.anchorMax = new Vector2(0.45f, 1);
+        nameGO.offsetMin = new Vector2(16, 0); nameGO.offsetMax = Vector2.zero;
+        AddTextFill(nameGO, room.roomName.ToUpper(), t.textM, t.textPrimary, FontStyle.Bold)
+            .alignment = TextAnchor.MiddleLeft;
 
-        string coordStr = $"GRID REF: {(room.roomId * 17 + 41):D3}-{(room.roomId * 31 + 77):D3}";
-        MakeText(row.transform, coordStr,
-            new Vector2(16, -6), Vector2.zero, 10, FontStyle.Normal,
-            new Color(C_DIM.r, C_DIM.g, C_DIM.b, 0.7f), TextAnchor.LowerLeft,
-            new Vector2(0.10f, 0), new Vector2(0.45f, 1));
+        var coordGO = MakeRect("Coord", row.transform, Vector2.zero, Vector2.zero);
+        coordGO.anchorMin = new Vector2(0.10f, 0); coordGO.anchorMax = new Vector2(0.45f, 0.4f);
+        coordGO.offsetMin = new Vector2(16, 0); coordGO.offsetMax = Vector2.zero;
+        AddTextFill(coordGO, $"GRID: {room.roomId * 17 + 41:D3}-{room.roomId * 31 + 77:D3}",
+            t.textXS, t.textSecondary, FontStyle.Normal)
+            .alignment = TextAnchor.MiddleLeft;
 
-        // 상태 표시
-        Color statusColor = active ? C_ACTIVE : C_STANDBY;
-        string statusStr  = active ? "● ACTIVE" : "○ STANDBY";
-        MakeText(row.transform, statusStr,
-            new Vector2(16, 0), Vector2.zero, 13, FontStyle.Bold, statusColor,
-            TextAnchor.MiddleLeft, new Vector2(0.45f, 0), new Vector2(0.65f, 1));
+        // 상태
+        var statGO = MakeRect("Stat", row.transform, Vector2.zero, Vector2.zero);
+        statGO.anchorMin = new Vector2(0.45f, 0); statGO.anchorMax = new Vector2(0.62f, 1);
+        statGO.offsetMin = new Vector2(16, 0); statGO.offsetMax = Vector2.zero;
+        Color statColor = active ? t.success : t.textDisabled;
+        AddTextFill(statGO, active ? "● ACTIVE" : "○ STANDBY", t.textS, statColor, FontStyle.Bold)
+            .alignment = TextAnchor.MiddleLeft;
 
         // 파일럿 수
-        bool isFull = room.playerCount >= room.maxPlayers;
-        Color pilotColor = isFull ? C_WARN : C_TEXT;
-        MakeText(row.transform, $"{room.playerCount} / {room.maxPlayers}  PILOTS",
-            new Vector2(16, 0), Vector2.zero, 13, FontStyle.Bold, pilotColor,
-            TextAnchor.MiddleLeft, new Vector2(0.65f, 0), new Vector2(0.80f, 1));
+        var pilotGO = MakeRect("Pilots", row.transform, Vector2.zero, Vector2.zero);
+        pilotGO.anchorMin = new Vector2(0.62f, 0); pilotGO.anchorMax = new Vector2(0.78f, 1);
+        pilotGO.offsetMin = new Vector2(16, 0); pilotGO.offsetMax = Vector2.zero;
+        Color pilotColor = isFull ? t.warning : t.textPrimary;
+        AddTextFill(pilotGO, $"{room.playerCount} / {room.maxPlayers}", t.textM, pilotColor, FontStyle.Bold)
+            .alignment = TextAnchor.MiddleLeft;
 
         // JOIN 버튼
-        int rid = room.roomId;
-        var btnArea = NewRect("BtnArea", row.transform, Vector2.zero, new Vector2(-40, 0));
-        SetAnchors(btnArea, new Vector2(0.80f, 0.15f), new Vector2(1.00f, 0.85f));
-        var joinBtn = btnArea.gameObject.AddComponent<Button>();
-        var btnImg  = btnArea.gameObject.AddComponent<Image>();
-        Color btnColor = isFull ? C_STANDBY * 0.5f : C_ACCENT;
-        btnImg.color = btnColor;
-        joinBtn.targetGraphic = btnImg;
-        var cb = joinBtn.colors;
-        cb.normalColor      = btnColor;
-        cb.highlightedColor = isFull ? btnColor : new Color(0.2f, 1f, 0.5f);
-        cb.pressedColor     = btnColor * 0.6f;
-        cb.colorMultiplier  = 1f;
-        joinBtn.colors = cb;
-        joinBtn.interactable = !isFull;
+        var btnArea = MakeRect("BtnArea", row.transform, Vector2.zero, Vector2.zero);
+        btnArea.anchorMin = new Vector2(0.78f, 0.15f); btnArea.anchorMax = new Vector2(1.00f, 0.85f);
+        btnArea.offsetMin = new Vector2(16, 0); btnArea.offsetMax = new Vector2(-16, 0);
 
-        var btnTxtGO = new GameObject("BtnTxt");
-        btnTxtGO.transform.SetParent(btnArea, false);
-        var btnTxt = btnTxtGO.AddComponent<Text>();
-        btnTxt.text = isFull ? "FULL" : "ENTER  ►";
-        btnTxt.font = uiFont; btnTxt.fontSize = 14;
-        btnTxt.fontStyle = FontStyle.Bold;
-        btnTxt.color = isFull ? C_DIM : new Color(0.02f, 0.06f, 0.02f);
-        btnTxt.alignment = TextAnchor.MiddleCenter;
-        var bRT = btnTxt.rectTransform;
-        bRT.anchorMin = Vector2.zero; bRT.anchorMax = Vector2.one;
-        bRT.offsetMin = bRT.offsetMax = Vector2.zero;
-        joinBtn.onClick.AddListener(() => OnJoinRoom(rid));
+        if (!isFull)
+        {
+            var btnGO = new GameObject("JoinBtn");
+            btnGO.transform.SetParent(btnArea, false);
+            var brt = btnGO.AddComponent<RectTransform>();
+            brt.anchorMin = Vector2.zero; brt.anchorMax = Vector2.one;
+            brt.offsetMin = brt.offsetMax = Vector2.zero;
+            btnGO.AddComponent<Image>();
+            btnGO.AddComponent<Outline>().effectDistance = new Vector2(1, 1);
+            var lbl = new GameObject("L");
+            lbl.transform.SetParent(btnGO.transform, false);
+            var lrt = lbl.AddComponent<RectTransform>();
+            lrt.anchorMin = Vector2.zero; lrt.anchorMax = Vector2.one;
+            lrt.offsetMin = lrt.offsetMax = Vector2.zero;
+            lbl.AddComponent<Text>().text = "ENTER  ►";
+            lbl.GetComponent<Text>().font = uiFont;
+            lbl.GetComponent<Text>().fontSize = t.textS;
+            lbl.GetComponent<Text>().fontStyle = FontStyle.Bold;
+            lbl.GetComponent<Text>().alignment = TextAnchor.MiddleCenter;
+            lbl.GetComponent<Text>().color = t.textPrimary;
+            int rid = room.roomId;
+            var themed = btnGO.AddComponent<UIThemedButton>();
+            themed.ButtonStyle = UIThemedButton.Style.Primary;
+            themed.OnClick = () => OnJoinRoom(rid);
+        }
+        else
+        {
+            var fullGO = MakeRect("Full", btnArea, Vector2.zero, Vector2.zero);
+            fullGO.anchorMin = Vector2.zero; fullGO.anchorMax = Vector2.one;
+            fullGO.offsetMin = fullGO.offsetMax = Vector2.zero;
+            AddTextFill(fullGO, "FULL", t.textS, t.textDisabled, FontStyle.Bold)
+                .alignment = TextAnchor.MiddleCenter;
+        }
 
-        // 행 구분선
-        var rowDiv = NewRect("RowDiv", row.transform, new Vector2(0, 0), new Vector2(0, 1));
-        SetAnchors(rowDiv, new Vector2(0, 0), new Vector2(1, 0));
-        AddImg(rowDiv, new Color(C_BORDER.r, C_BORDER.g, C_BORDER.b, 0.5f));
+        // 행 하단 구분선
+        var rowDiv = MakeRect("RowDiv", row.transform, Vector2.zero, Vector2.zero);
+        rowDiv.anchorMin = new Vector2(0, 0); rowDiv.anchorMax = new Vector2(1, 0);
+        rowDiv.offsetMin = Vector2.zero; rowDiv.offsetMax = new Vector2(0, 1);
+        AddImg(rowDiv, new Color(t.border.r, t.border.g, t.border.b, 0.4f));
 
-        // 호버 효과
+        // 호버
         var trigger = row.AddComponent<EventTrigger>();
-        AddEvt(trigger, EventTriggerType.PointerEnter,
-            _ => rowImg.color = new Color(C_ROW.r + 0.02f, C_ROW.g + 0.03f, C_ROW.b + 0.04f));
-        AddEvt(trigger, EventTriggerType.PointerExit,
-            _ => rowImg.color = C_ROW);
+        Color baseColor = rowImg.color;
+        Color hoverColor = new Color(baseColor.r + 0.02f, baseColor.g + 0.04f, baseColor.b + 0.06f, baseColor.a);
+        AddEvt(trigger, EventTriggerType.PointerEnter, _ => rowImg.color = hoverColor);
+        AddEvt(trigger, EventTriggerType.PointerExit,  _ => rowImg.color = baseColor);
     }
 
-    // ── CREATE ROOM 모달 ──────────────────────────────────────────────────────
+    // ── CREATE ZONE 모달 ──────────────────────────────────────────────────
     void OnCreateRoomClick()
     {
         if (_createModal != null) return;
+        var t = UITheme.Instance;
 
-        // 반투명 오버레이 (전체 화면)
         var canvasGO = GameObject.Find("LobbyCanvas");
         var overlay  = new GameObject("CreateRoomModal");
         overlay.transform.SetParent(canvasGO?.transform ?? transform, false);
         var ort = overlay.AddComponent<RectTransform>();
         ort.anchorMin = Vector2.zero; ort.anchorMax = Vector2.one;
         ort.offsetMin = ort.offsetMax = Vector2.zero;
-        var obg = overlay.AddComponent<Image>();
-        obg.color         = new Color(0, 0, 0, 0.70f);
-        obg.raycastTarget = true;
+        overlay.AddComponent<Image>().color = new Color(0, 0, 0, 0.72f);
         _createModal = overlay;
 
-        // 중앙 패널
-        var panel = NewRect("Panel", overlay.transform, Vector2.zero, new Vector2(520, 280));
+        var panel = MakeRect("Panel", overlay.transform, Vector2.zero, new Vector2(540, 300));
         panel.anchorMin = panel.anchorMax = new Vector2(0.5f, 0.5f);
-        var pImg = panel.gameObject.AddComponent<Image>();
-        pImg.color = new Color(0.047f, 0.063f, 0.094f);
+        AddImg(panel, new Color(t.panelBG.r, t.panelBG.g, t.panelBG.b, 0.97f));
+        AddOutline(panel.gameObject, t.border, 1.5f);
 
-        // 상단 강조선
-        var accent = NewRect("Accent", panel, new Vector2(0, 0), new Vector2(0, 3));
-        SetAnchors(accent, new Vector2(0, 1), new Vector2(1, 1));
-        AddImg(accent, C_ACCENT);
+        // 상단 cyan 바
+        var accent = MakeRect("Accent", panel, Vector2.zero, Vector2.zero);
+        accent.anchorMin = new Vector2(0, 1); accent.anchorMax = new Vector2(1, 1);
+        accent.offsetMin = new Vector2(0, -3); accent.offsetMax = Vector2.zero;
+        AddImg(accent, t.accentCyan);
+
+        // 좌측 cyan 바
+        var lbar = MakeRect("LBar", panel, Vector2.zero, Vector2.zero);
+        lbar.anchorMin = new Vector2(0, 0); lbar.anchorMax = new Vector2(0, 1);
+        lbar.offsetMin = Vector2.zero; lbar.offsetMax = new Vector2(3, 0);
+        AddImg(lbar, new Color(t.accentCyan.r, t.accentCyan.g, t.accentCyan.b, 0.6f));
 
         // 타이틀
-        MakeText(panel, "CREATE COMBAT ZONE",
-            new Vector2(0, -24), new Vector2(500, 40),
-            18, FontStyle.Bold, C_ACCENT, TextAnchor.MiddleCenter,
-            new Vector2(0.5f, 1), new Vector2(0.5f, 1));
+        var titleGO = MakeRect("Title", panel, new Vector2(0, -32), new Vector2(500, 36));
+        titleGO.anchorMin = titleGO.anchorMax = new Vector2(0.5f, 1);
+        AddTextFill(titleGO, "CREATE COMBAT ZONE", t.titleM, t.accentCyan, FontStyle.Bold);
 
-        // 룸 이름 레이블
-        MakeText(panel, "ZONE DESIGNATION",
-            new Vector2(-180, 10), new Vector2(200, 28),
-            11, FontStyle.Bold, C_DIM, TextAnchor.MiddleLeft,
-            new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f));
+        // 레이블
+        var lblGO = MakeRect("Lbl", panel, new Vector2(-180, 12), new Vector2(220, 20));
+        lblGO.anchorMin = lblGO.anchorMax = new Vector2(0.5f, 0.5f);
+        lblGO.pivot = new Vector2(0, 0.5f);
+        AddTextFill(lblGO, "ZONE DESIGNATION", t.textXS, t.textSecondary, FontStyle.Bold);
 
-        // 룸 이름 InputField
+        // InputField
         var inputGO = new GameObject("RoomNameInput");
         inputGO.transform.SetParent(panel, false);
         var inputRT = inputGO.AddComponent<RectTransform>();
         inputRT.anchorMin = inputRT.anchorMax = new Vector2(0.5f, 0.5f);
-        inputRT.anchoredPosition = new Vector2(0, -25);
-        inputRT.sizeDelta        = new Vector2(440, 44);
+        inputRT.anchoredPosition = new Vector2(0, -22);
+        inputRT.sizeDelta        = new Vector2(460, 46);
+        AddImg(inputRT, new Color(0f, 0f, 0f, 0.5f));
+        AddOutline(inputGO, t.border, 1f);
 
-        var inputBg = inputGO.AddComponent<Image>();
-        inputBg.color = new Color(0.08f, 0.12f, 0.18f);
+        var txtGO = new GameObject("Text");
+        txtGO.transform.SetParent(inputGO.transform, false);
+        var trt = txtGO.AddComponent<RectTransform>();
+        trt.anchorMin = Vector2.zero; trt.anchorMax = Vector2.one;
+        trt.offsetMin = new Vector2(12, 0); trt.offsetMax = new Vector2(-12, 0);
+        var tc = txtGO.AddComponent<Text>();
+        tc.font = uiFont; tc.fontSize = t.textM; tc.color = t.textPrimary;
+        tc.alignment = TextAnchor.MiddleLeft; tc.supportRichText = false;
 
-        // InputField 텍스트
-        var textGO = new GameObject("Text");
-        textGO.transform.SetParent(inputGO.transform, false);
-        var textRT = textGO.AddComponent<RectTransform>();
-        textRT.anchorMin = Vector2.zero; textRT.anchorMax = Vector2.one;
-        textRT.offsetMin = new Vector2(10, 4); textRT.offsetMax = new Vector2(-10, -4);
-        var textComp = textGO.AddComponent<Text>();
-        textComp.font      = uiFont;
-        textComp.fontSize  = 15;
-        textComp.color     = C_TEXT;
-        textComp.alignment = TextAnchor.MiddleLeft;
-
-        // Placeholder
         var phGO = new GameObject("Placeholder");
         phGO.transform.SetParent(inputGO.transform, false);
-        var phRT = phGO.AddComponent<RectTransform>();
-        phRT.anchorMin = Vector2.zero; phRT.anchorMax = Vector2.one;
-        phRT.offsetMin = new Vector2(10, 4); phRT.offsetMax = new Vector2(-10, -4);
-        var phTxt = phGO.AddComponent<Text>();
-        phTxt.text      = "Enter zone name...";
-        phTxt.font      = uiFont;
-        phTxt.fontSize  = 14;
-        phTxt.color     = C_DIM;
-        phTxt.fontStyle = FontStyle.Italic;
-        phTxt.alignment = TextAnchor.MiddleLeft;
+        var prt = phGO.AddComponent<RectTransform>();
+        prt.anchorMin = Vector2.zero; prt.anchorMax = Vector2.one;
+        prt.offsetMin = new Vector2(12, 0); prt.offsetMax = new Vector2(-12, 0);
+        var ph = phGO.AddComponent<Text>();
+        ph.font = uiFont; ph.fontSize = t.textM; ph.color = t.textDisabled;
+        ph.fontStyle = FontStyle.Italic; ph.alignment = TextAnchor.MiddleLeft;
+        ph.text = "구역 이름 입력...";
 
-        _roomNameInput            = inputGO.AddComponent<InputField>();
-        _roomNameInput.textComponent  = textComp;
-        _roomNameInput.placeholder    = phTxt;
+        _roomNameInput = inputGO.AddComponent<InputField>();
+        _roomNameInput.textComponent  = tc;
+        _roomNameInput.placeholder    = ph;
         _roomNameInput.characterLimit = 24;
-        _roomNameInput.text           = "";
 
-        // CONFIRM 버튼
-        var confirmBtn = MakeButton(panel, "DEPLOY  ►",
-            new Vector2(-120, -100), new Vector2(180, 44), C_ACCENT,
-            new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f));
-        SetBtnTextColor(confirmBtn, new Color(0.02f, 0.06f, 0.02f));
-        confirmBtn.onClick.AddListener(() =>
-        {
-            string name = _roomNameInput?.text?.Trim() ?? "";
-            if (string.IsNullOrEmpty(name)) name = $"{GameManager.Instance?.myNickname ?? "Unknown"}'s Zone";
-            SetStatus("Creating combat zone...", false);
-            NetworkManager.Instance?.socketClient.SendCreateRoom(name, 8);
-            CloseCreateModal();
-        });
+        // 버튼 행
+        BuildModalBtn(panel, "DEPLOY  ►", new Vector2(-120, -104), new Vector2(190, 46),
+            UIThemedButton.Style.Primary, () =>
+            {
+                string name = _roomNameInput?.text?.Trim() ?? "";
+                if (string.IsNullOrEmpty(name))
+                    name = $"{GameManager.Instance?.myNickname ?? "Unknown"}'s Zone";
+                SetStatus("전투 구역 생성 중...", false);
+                NetworkManager.Instance?.socketClient.SendCreateRoom(name, 8);
+                CloseCreateModal();
+            });
 
-        // CANCEL 버튼
-        var cancelBtn = MakeButton(panel, "CANCEL",
-            new Vector2(100, -100), new Vector2(140, 44), new Color(0.20f, 0.22f, 0.24f),
-            new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f));
-        SetBtnTextColor(cancelBtn, C_DIM);
-        cancelBtn.onClick.AddListener(CloseCreateModal);
+        BuildModalBtn(panel, "CANCEL", new Vector2(100, -104), new Vector2(150, 46),
+            UIThemedButton.Style.Ghost, CloseCreateModal);
+
+        overlay.AddComponent<UIFadeIn>().Configure(0f, t.panelTransition, 0f);
+    }
+
+    void BuildModalBtn(RectTransform parent, string label, Vector2 pos, Vector2 size,
+                       UIThemedButton.Style style, System.Action onClick)
+    {
+        var t = UITheme.Instance;
+        var go = new GameObject("Btn_" + label);
+        go.transform.SetParent(parent, false);
+        var rt = go.AddComponent<RectTransform>();
+        rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
+        rt.anchoredPosition = pos; rt.sizeDelta = size;
+        go.AddComponent<Image>();
+        go.AddComponent<Outline>().effectDistance = new Vector2(1, 1);
+        var lbl = new GameObject("L");
+        lbl.transform.SetParent(go.transform, false);
+        var lrt = lbl.AddComponent<RectTransform>();
+        lrt.anchorMin = Vector2.zero; lrt.anchorMax = Vector2.one;
+        lrt.offsetMin = lrt.offsetMax = Vector2.zero;
+        var ltx = lbl.AddComponent<Text>();
+        ltx.text = label; ltx.font = uiFont; ltx.fontSize = t.textM;
+        ltx.fontStyle = FontStyle.Bold; ltx.alignment = TextAnchor.MiddleCenter;
+        ltx.color = t.textPrimary;
+        var btn = go.AddComponent<UIThemedButton>();
+        btn.ButtonStyle = style;
+        btn.OnClick = onClick;
     }
 
     void CloseCreateModal()
@@ -506,20 +595,20 @@ public class LobbyUI : MonoBehaviour
         if (p.success)
         {
             if (GameManager.Instance != null) GameManager.Instance.currentRoomId = p.roomId;
-            SetStatus($"Zone created: {p.roomName}  —  Deploying...", false);
+            SetStatus($"구역 생성 완료: {p.roomName}  —  출격 중...", false);
             StartCoroutine(LoadGame());
         }
         else
         {
-            SetStatus($"Failed to create zone: {p.errorMessage}", true);
+            SetStatus($"구역 생성 실패: {p.errorMessage}", true);
         }
     }
 
-    // ── 액션 ──────────────────────────────────────────────────────────────────
+    // ── 액션 ─────────────────────────────────────────────────────────────
     void OnJoinRoom(int roomId)
     {
         if (GameManager.Instance != null) GameManager.Instance.currentRoomId = roomId;
-        SetStatus($"Deploying to Zone {roomId:D2}...", false);
+        SetStatus($"Zone {roomId:D2} 출격 중...", false);
         StartCoroutine(LoadGame());
     }
 
@@ -532,7 +621,7 @@ public class LobbyUI : MonoBehaviour
     void OnLogoutClick()
     {
         NetworkManager.Instance?.socketClient.Disconnect();
-        SetStatus("Disconnecting...", false);
+        SetStatus("연결 해제 중...", false);
         StartCoroutine(ReturnToLogin());
     }
 
@@ -545,123 +634,126 @@ public class LobbyUI : MonoBehaviour
     void SetStatus(string msg, bool warn)
     {
         if (statusText == null) return;
+        var t = UITheme.Instance;
         statusText.text  = msg;
-        statusText.color = warn ? C_WARN : C_DIM;
+        statusText.color = warn ? t.error : t.textSecondary;
     }
 
-    IEnumerator UpdateClock(Text t)
+    IEnumerator UpdateClock(Text txt)
     {
-        while (t != null)
+        while (txt != null)
         {
-            System.DateTime utc = System.DateTime.UtcNow;
-            t.text = $"UTC {utc:HH:mm:ss}";
+            txt.text = $"UTC {System.DateTime.UtcNow:HH:mm:ss}";
             yield return new WaitForSeconds(1f);
         }
     }
 
-    // ── UI 헬퍼 ───────────────────────────────────────────────────────────────
-    void Fill(Transform parent, string name, Color color)
-    {
-        var go = new GameObject(name);
-        go.transform.SetParent(parent, false);
-        var rt = go.AddComponent<RectTransform>();
-        rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
-        rt.offsetMin = rt.offsetMax = Vector2.zero;
-        var img = go.AddComponent<Image>();
-        img.color = color;
-        img.raycastTarget = false;
-    }
-
-    RectTransform NewRect(string name, Transform parent, Vector2 pos, Vector2 size)
+    // ── 헬퍼 ─────────────────────────────────────────────────────────────
+    RectTransform MakeRect(string name, Transform parent, Vector2 pos, Vector2 size)
     {
         var go = new GameObject(name);
         go.transform.SetParent(parent, false);
         var rt = go.AddComponent<RectTransform>();
         rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
-        rt.anchoredPosition = pos;
-        rt.sizeDelta        = size;
+        rt.anchoredPosition = pos; rt.sizeDelta = size;
         return rt;
     }
 
-    void SetAnchors(RectTransform rt, Vector2 min, Vector2 max)
-    {
-        rt.anchorMin = min; rt.anchorMax = max;
-        rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero;
-    }
-
-    Image AddImg(RectTransform rt, Color color)
-        => AddImg(rt.gameObject, color);
-
-    Image AddImg(Transform t, Color color)
-        => AddImg(t.gameObject, color);
-
+    Image AddImg(RectTransform rt, Color color) => AddImg(rt.gameObject, color);
     Image AddImg(GameObject go, Color color)
     {
         var img = go.AddComponent<Image>();
-        img.color = color;
-        img.raycastTarget = false;
+        img.color = color; img.raycastTarget = false;
         return img;
     }
 
-    Text MakeText(Transform parent, string content, Vector2 pos, Vector2 size,
-                  int fs, FontStyle style, Color color, TextAnchor anchor,
-                  Vector2 ancMin, Vector2 ancMax)
+    Text AddTextFill(RectTransform parent, string content, int sz, Color color, FontStyle style)
     {
-        var go = new GameObject("T_" + content[..Mathf.Min(content.Length, 10)]);
+        var go = new GameObject("T");
         go.transform.SetParent(parent, false);
-        var rt  = go.AddComponent<RectTransform>();
-        rt.anchorMin = ancMin; rt.anchorMax = ancMax;
-        rt.anchoredPosition = pos;
-        rt.sizeDelta = size;
-        var txt = go.AddComponent<Text>();
-        txt.text = content; txt.font = uiFont; txt.fontSize = fs;
-        txt.fontStyle = style; txt.color = color; txt.alignment = anchor;
-        txt.raycastTarget = false;
-        return txt;
+        var rt = go.AddComponent<RectTransform>();
+        rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
+        rt.offsetMin = rt.offsetMax = Vector2.zero;
+        var tx = go.AddComponent<Text>();
+        tx.font = uiFont; tx.fontSize = sz; tx.color = color;
+        tx.fontStyle = style; tx.text = content;
+        tx.alignment = TextAnchor.MiddleCenter;
+        tx.raycastTarget = false;
+        return tx;
     }
 
-    Button MakeButton(Transform parent, string label, Vector2 pos, Vector2 size, Color color,
-                      Vector2 ancMin, Vector2 ancMax)
+    void AddOutline(GameObject go, Color col, float w)
     {
+        var o = go.AddComponent<Outline>();
+        o.effectColor = col; o.effectDistance = new Vector2(w, w);
+    }
+
+    void BuildThemedBtn(RectTransform parent, string label, Vector2 pos, Vector2 size,
+                        Vector2 ancMin, Vector2 ancMax,
+                        UIThemedButton.Style style, System.Action onClick)
+    {
+        var t = UITheme.Instance;
         var go = new GameObject("Btn_" + label);
         go.transform.SetParent(parent, false);
-        var rt  = go.AddComponent<RectTransform>();
+        var rt = go.AddComponent<RectTransform>();
         rt.anchorMin = ancMin; rt.anchorMax = ancMax;
         rt.anchoredPosition = pos; rt.sizeDelta = size;
-        var img = go.AddComponent<Image>();
-        img.color = color;
-        var btn = go.AddComponent<Button>();
-        btn.targetGraphic = img;
-        var cb = btn.colors;
-        cb.normalColor      = color;
-        cb.highlightedColor = new Color(color.r * 1.3f, color.g * 1.4f, color.b * 1.3f);
-        cb.pressedColor     = new Color(color.r * 0.6f, color.g * 0.6f, color.b * 0.6f);
-        cb.colorMultiplier  = 1f;
-        btn.colors = cb;
-        var txtGO = new GameObject("L");
-        txtGO.transform.SetParent(go.transform, false);
-        var txt = txtGO.AddComponent<Text>();
-        txt.text = label; txt.font = uiFont; txt.fontSize = 13;
-        txt.fontStyle = FontStyle.Bold;
-        txt.alignment = TextAnchor.MiddleCenter;
-        txt.color = C_TEXT;
-        var tRT = txt.rectTransform;
-        tRT.anchorMin = Vector2.zero; tRT.anchorMax = Vector2.one;
-        tRT.offsetMin = tRT.offsetMax = Vector2.zero;
-        return btn;
-    }
-
-    void SetBtnTextColor(Button btn, Color color)
-    {
-        var txt = btn.GetComponentInChildren<Text>();
-        if (txt != null) txt.color = color;
+        go.AddComponent<Image>();
+        go.AddComponent<Outline>().effectDistance = new Vector2(1, 1);
+        var lbl = new GameObject("L");
+        lbl.transform.SetParent(go.transform, false);
+        var lrt = lbl.AddComponent<RectTransform>();
+        lrt.anchorMin = Vector2.zero; lrt.anchorMax = Vector2.one;
+        lrt.offsetMin = lrt.offsetMax = Vector2.zero;
+        var ltx = lbl.AddComponent<Text>();
+        ltx.text = label; ltx.font = uiFont; ltx.fontSize = t.textS;
+        ltx.fontStyle = FontStyle.Bold; ltx.alignment = TextAnchor.MiddleCenter;
+        ltx.color = t.textPrimary;
+        var btn = go.AddComponent<UIThemedButton>();
+        btn.ButtonStyle = style;
+        btn.OnClick = onClick;
     }
 
     static void AddEvt(EventTrigger et, EventTriggerType type,
-                       UnityEngine.Events.UnityAction<BaseEventData> cb)
+                        UnityEngine.Events.UnityAction<BaseEventData> cb)
     {
         var e = new EventTrigger.Entry { eventID = type };
         e.callback.AddListener(cb);
         et.triggers.Add(e);
+    }
+
+    static Sprite _cachedGradient;
+    Sprite CreateVerticalGradient(Color bottom, Color mid, Color top)
+    {
+        if (_cachedGradient != null) return _cachedGradient;
+        const int H = 256;
+        var tex = new Texture2D(2, H, TextureFormat.RGBA32, false, false);
+        tex.wrapMode = TextureWrapMode.Clamp;
+        tex.filterMode = FilterMode.Bilinear;
+        for (int y = 0; y < H; y++)
+        {
+            float u = y / (float)(H - 1);
+            Color c;
+            if (u < 0.5f)
+            {
+                float a = u / 0.5f; a = a * a * (3f - 2f * a);
+                c = Color.Lerp(bottom, mid, a);
+            }
+            else
+            {
+                float a = (u - 0.5f) / 0.5f; a = a * a * (3f - 2f * a);
+                c = Color.Lerp(mid, top, a);
+            }
+            tex.SetPixel(0, y, c); tex.SetPixel(1, y, c);
+        }
+        tex.Apply();
+        _cachedGradient = Sprite.Create(tex, new Rect(0, 0, 2, H), new Vector2(0.5f, 0.5f));
+        return _cachedGradient;
+    }
+
+    static Color HexC(string hex)
+    {
+        if (ColorUtility.TryParseHtmlString(hex, out var c)) return c;
+        return Color.magenta;
     }
 }

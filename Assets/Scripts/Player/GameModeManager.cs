@@ -60,8 +60,8 @@ public class GameModeManager : MonoBehaviour
     {
         _gc = gc;
         _pc = pc;
-        _fc  = FindFirstObjectByType<FlightCamera>();
-        _hud = FindFirstObjectByType<FlightHUD>();
+        _fc  = FindAnyObjectByType<FlightCamera>();
+        _hud = FindAnyObjectByType<FlightHUD>();
         _charRenderers = gc.GetComponentsInChildren<Renderer>(true);
 
         // 프리플라이트 시스템 초기화
@@ -210,7 +210,7 @@ public class GameModeManager : MonoBehaviour
             var pf = PreflightSystem.Instance;
             if (pf != null && pf.IsReadyForLaunch)
             {
-                _boardingCarrier ??= FindFirstObjectByType<CarrierController>();
+                _boardingCarrier ??= FindAnyObjectByType<CarrierController>();
                 string lbl = _boardingCarrier != null ? "CATAPULT LAUNCH" : "TAKE OFF";
                 ShowPrompt(true, lbl, new Color(0f, 1f, 0.5f, 1f), keyLabel: "F");
                 if (Input.GetKeyDown(KeyCode.F))
@@ -250,7 +250,7 @@ public class GameModeManager : MonoBehaviour
 
             _pc              = boardedPC;
             _pc.isLocalPlayer = true;
-            _boardingCarrier = FindFirstObjectByType<CarrierController>();
+            _boardingCarrier = FindAnyObjectByType<CarrierController>();
             EnterCockpit(_pc.transform.position);
         }
 
@@ -391,6 +391,9 @@ public class GameModeManager : MonoBehaviour
         // 비행 종료를 원격 플레이어에게 즉시 통보 (isFlying=false 패킷)
         _pc.SendFlightState(false);
         _pc.enabled = false;
+
+        // 다음 사이클을 위해 캐리어 참조 초기화 (EnterCockpit에서 재할당)
+        _boardingCarrier = null;
 
         // 캐릭터를 착륙 위치에 배치
         Vector3 spawnPos = landingPos + new Vector3(0f, 0.05f, 0f);

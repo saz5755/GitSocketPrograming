@@ -25,10 +25,14 @@ public class EscortBehaviorSO : ScriptableObject
     public float turnRateOverride = 150f;
 
     [Header("캐터펄트 발진")]
-    [Tooltip("발진 시 직진 유지 시간")]
+    [Tooltip("발진 시 직진 유지 시간 (최소)")]
     public float launchDuration = 3f;
     [Tooltip("발진 시 직진 목표 속도")]
     public float launchSpeed    = 55f;
+    [Tooltip("항모 중심에서 이 수평거리 이상 벗어난 뒤에만 Escorting으로 전환. " +
+            "launchDuration이 지나도 항모 위에 있으면 직진 유지 — 측면 비행 리더로 꺾이는 것을 방지. " +
+            "폴백: 거리 체크 실패 또는 launchDuration*3 초과 시 강제 전환.")]
+    public float carrierClearanceDistance = 180f;
 
     [Header("자유비행 존 경계 회피")]
     [Tooltip("외부 경계 도달 전부터 안쪽으로 조향 시작 거리")]
