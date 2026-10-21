@@ -358,7 +358,7 @@ public class MFDController : MonoBehaviour
         img.raycastTarget = false;
         _blipImgs[nick]   = img;
 
-        var icon = MkTMP(root, "◆", Vector2.zero, new Vector2(20f, 20f), 15f, ENEMY);
+        var icon = MkTMP(root, "▼", Vector2.zero, new Vector2(20f, 20f), 15f, ENEMY);   // TMP 기본 폰트에 ◆ 가 없어 □ 로 보였음 → ▲(자기) 와 구분되는 ▼ 로 교체
         icon.fontStyle    = FontStyles.Bold;
         _iconTexts[nick]  = icon;
 

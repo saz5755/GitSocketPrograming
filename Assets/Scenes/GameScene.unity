@@ -9999,7 +9999,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1199401218}
-  - component: {fileID: 1199401219}
   m_Layer: 0
   m_Name: PlayerAirCraftManager
   m_TagString: Untagged
@@ -10022,18 +10021,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1913829128}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1199401219
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1199401217}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d1782b820d1b6694fb22e26af243b1f9, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::PlayerAircraftManager
 --- !u!1 &1208653666
 GameObject:
   m_ObjectHideFlags: 0
@@ -10356,7 +10343,7 @@ MonoBehaviour:
   _aiPrefab: {fileID: 6036812862657962760, guid: 7cccd4623a96e8646b2aed594e1dd140, type: 3}
   _spawnEscorts: 1
   _escortSlotsRoot: {fileID: 354215655}
-  _escortBehavior: {fileID: 11400000, guid: d78024d2c5ba2c0428b912a2da8b6d25, type: 2}
+  _escortBehavior: {fileID: 11400000, guid: c14710927d9e95c4680826f64e8ca783, type: 2}
   _botConfig: {fileID: 11400000, guid: 14e4ea523f2055a4484033e34f87772b, type: 2}
   _spawnEnemies: 0
   _enemyCount: 2

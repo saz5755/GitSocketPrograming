@@ -116,17 +116,17 @@ public class RadarMiniMap : MonoBehaviour
     void BuildScope()
     {
         float D = Radius * 2f;
-        var center = new Vector2(780f, -430f);
+        var center = new Vector2(-790f, -400f);   // 좌하단 (전투 HUD 시안)
 
         // 외부 글로우 헤일로
         CircleImg("Glow",   _canvas.transform, center, D + 38f,
-                  new Color(HG.r, HG.g, HG.b, 0.07f), _spFilled);
+                  new Color(HG.r, HG.g, HG.b, 0.04f), _spFilled);
         // 메인 어두운 배경
         CircleImg("BG",     _canvas.transform, center, D + 4f,
                   MFD, _spFilled);
         // 밝은 테두리 링
         CircleImg("Border", _canvas.transform, center, D + 10f,
-                  new Color(HG.r, HG.g, HG.b, 0.88f), _spRing);
+                  new Color(HG.r, HG.g, HG.b, 0.60f), _spRing);
 
         // 헤더 / 탐지거리 레이블
         MkTMP(_canvas.transform, "RADAR",
@@ -268,8 +268,8 @@ public class RadarMiniMap : MonoBehaviour
         img.raycastTarget = false;
         _blipImgs[nick] = img;
 
-        // 적기 아이콘 (◆ 다이아몬드 — 자기 ▲와 명확히 구분)
-        var icon = MkTMP(root, "◆", Vector2.zero, new Vector2(20f, 20f), 17, ENEMY);
+        // 적기 아이콘 (▼ — 자기 ▲와 명확히 구분)
+        var icon = MkTMP(root, "▼", Vector2.zero, new Vector2(20f, 20f), 17, ENEMY);   // TMP 기본 폰트에 ◆ 가 없어 □ 로 보였음 → ▲(자기) 와 구분되는 ▼ 로 교체
         icon.fontStyle = FontStyles.Bold;
         _iconTexts[nick] = icon;
 

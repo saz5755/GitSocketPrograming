@@ -3,8 +3,8 @@ using UnityEngine;
 
 /// <summary>
 /// CanvasGroup 기반 Fade In + 미세 상승 이동. 패널 순차 등장용.
-/// 사용법: 패널 GameObject에 AddComponent, delay/duration 설정.
-/// CanvasGroup 없으면 자동 추가.
+/// 사용법: 패널 GameObject에 AddComponent 후 Configure(delay, duration, rise).
+/// CanvasGroup 없으면 자동 추가. rise 가 0 이면 위치는 건드리지 않는다 (레이아웃 그룹/Drift 와 공존 가능).
 /// </summary>
 public class UIFadeIn : MonoBehaviour
 {
@@ -17,7 +17,6 @@ public class UIFadeIn : MonoBehaviour
 
     CanvasGroup _cg;
     RectTransform _rt;
-    Vector2 _origAnchoredPos;
 
     void Awake()
     {
@@ -28,9 +27,8 @@ public class UIFadeIn : MonoBehaviour
 
     void OnEnable()
     {
-        if (_rt != null) _origAnchoredPos = _rt.anchoredPosition;
+        // Configure()는 AddComponent 직후에 호출되므로, 값은 코루틴의 첫 프레임 뒤에 읽는다
         _cg.alpha = 0f;
-        if (_rt != null) _rt.anchoredPosition = _origAnchoredPos + Vector2.down * _riseDistance;
         StartCoroutine(FadeCo());
     }
 
@@ -43,24 +41,23 @@ public class UIFadeIn : MonoBehaviour
 
     IEnumerator FadeCo()
     {
+        yield return UIStartup.WaitStable();   // 씬 시작 직후 정지 구간이 끝난 뒤에 애니메이션 시작
         if (_delay > 0f) yield return new WaitForSecondsRealtime(_delay);
 
+        bool rise = _rt != null && _riseDistance > 0.01f;
+        Vector2 orig = rise ? _rt.anchoredPosition : Vector2.zero;
         float d = _duration > 0f ? _duration : UITheme.Instance.panelTransition;
         float t = 0f;
         while (t < d)
         {
-            t += Time.unscaledDeltaTime;
+            t += Mathf.Min(Time.unscaledDeltaTime, 0.05f);   // 프레임이 튀어도 애니메이션이 점프하지 않게
             float u = Mathf.Clamp01(t / d);
-            // easeOutCubic
-            float e = 1f - Mathf.Pow(1f - u, 3f);
+            float e = 1f - Mathf.Pow(1f - u, 3f);   // easeOutCubic
             _cg.alpha = e;
-            if (_rt != null)
-                _rt.anchoredPosition = Vector2.Lerp(
-                    _origAnchoredPos + Vector2.down * _riseDistance,
-                    _origAnchoredPos, e);
+            if (rise) _rt.anchoredPosition = orig + Vector2.down * _riseDistance * (1f - e);
             yield return null;
         }
         _cg.alpha = 1f;
-        if (_rt != null) _rt.anchoredPosition = _origAnchoredPos;
+        if (rise) _rt.anchoredPosition = orig;
     }
 }

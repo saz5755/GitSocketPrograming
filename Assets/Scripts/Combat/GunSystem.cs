@@ -18,6 +18,8 @@ public class GunSystem : MonoBehaviour
     int              _ammo;
     float            _fireTimer;
 
+    /// <summary>CombatHud 의 무장 카드가 탄수를 대신 표시할 때 true (기존 단독 텍스트 숨김)</summary>
+    public static bool HideAmmoText;
     public int Ammo    => _ammo;
     public int MaxAmmo => maxAmmo;
 
@@ -100,7 +102,7 @@ public class GunSystem : MonoBehaviour
         // 탄수 텍스트 — 비행 중에만 표시
         if (_ammoText != null)
         {
-            _ammoText.gameObject.SetActive(flying);
+            _ammoText.gameObject.SetActive(flying && !HideAmmoText);
             if (flying)
             {
                 _ammoText.text  = _ammo > 0 ? $"GUN  {_ammo:D3}" : "GUN  EMPTY";

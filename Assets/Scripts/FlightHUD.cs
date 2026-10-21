@@ -5,8 +5,8 @@ public class FlightHUD : MonoBehaviour
 {
     // ── 색상 팔레트 ────────────────────────────────────────────────────────────
     static readonly Color HG    = new Color(0.00f, 0.98f, 0.42f, 0.92f);
-    static readonly Color HGD   = new Color(0.00f, 0.98f, 0.42f, 0.50f);
-    static readonly Color HGX   = new Color(0.00f, 0.98f, 0.42f, 0.22f);
+    static readonly Color HGD   = new Color(0.00f, 0.98f, 0.42f, 0.66f);
+    static readonly Color HGX   = new Color(0.00f, 0.98f, 0.42f, 0.30f);
     static readonly Color FPVC  = new Color(0.00f, 0.98f, 0.42f, 0.88f);
     static readonly Color WARN  = new Color(1.00f, 0.82f, 0.00f, 0.95f);
     static readonly Color CRIT  = new Color(1.00f, 0.18f, 0.08f, 0.95f);
@@ -160,8 +160,12 @@ public class FlightHUD : MonoBehaviour
         CountermeasureSystem.OnDeploy += OnCMSDeploy;
         BuildHUD();
         BuildWarningCanvas();
+        // 씬에 저장된 HUD 배치는 유지한 채 시각 품질만 보정 (Outline→링, 패널 질감, 카드, 라벨 대비)
+        HudSkin.Apply(hudCanvas);
+        HudSkin.Apply(warningCanvas);
 
         if (GetComponent<RadarMiniMap>()     == null) gameObject.AddComponent<RadarMiniMap>();
+        if (GetComponent<CombatHud>()        == null) gameObject.AddComponent<CombatHud>();
         if (GetComponent<FlightAudioSystem>() == null) gameObject.AddComponent<FlightAudioSystem>();
     }
 
@@ -394,19 +398,15 @@ public class FlightHUD : MonoBehaviour
     {
         if (_warnRwrNeedle != null) return;
         var root = Rect("WRWR", warningCanvas.transform, new Vector2(-800f, 0f), new Vector2(90f, 90f));
-        Img(root, new Color(0f, 0f, 0f, 0.60f));
-        var ol = root.gameObject.AddComponent<Outline>();
-        ol.effectColor    = new Color(HG.r, HG.g, HG.b, 0.55f);
-        ol.effectDistance = new Vector2(1.5f, 1.5f);
+        Img(root, new Color(0.01f, 0.05f, 0.03f, 0.70f));
+        UIShapes.Round(root.GetComponent<Image>(), 8);
+        UIShapes.AddBorder(root, 8, new Color(HG.r, HG.g, HG.b, 0.55f));
 
         AddTxt(root, "RWR", new Vector2(0f, 30f), new Vector2(80f, 16f), 8, HGX, TextAnchor.MiddleCenter);
         Img(Rect("WH", root, Vector2.zero, new Vector2(60f, 1f)), new Color(HG.r, HG.g, HG.b, 0.22f));
         Img(Rect("WV", root, Vector2.zero, new Vector2(1f, 60f)), new Color(HG.r, HG.g, HG.b, 0.22f));
         var ring = Rect("Ring", root, Vector2.zero, new Vector2(54f, 54f));
-        ring.gameObject.AddComponent<Image>().color = Color.clear;
-        var ringOl = ring.gameObject.AddComponent<Outline>();
-        ringOl.effectColor    = new Color(HG.r, HG.g, HG.b, 0.20f);
-        ringOl.effectDistance = new Vector2(1f, 1f);
+        RingBox(ring, new Color(HG.r, HG.g, HG.b, 0.30f), 27);
 
         _warnRwrNeedle = Rect("WNeedle", root, new Vector2(0f, 10f), new Vector2(3f, 28f));
         _warnRwrNeedle.pivot = new Vector2(0.5f, 0f);
@@ -525,7 +525,9 @@ public class FlightHUD : MonoBehaviour
         if (_ilsPanel != null) return;
         float pw = 160f, ph = 160f;
         _ilsPanel = Rect("ILS_Panel", warningCanvas.transform, new Vector2(-680f, -330f), new Vector2(pw, ph));
-        Img(_ilsPanel, new Color(0f, 0f, 0f, 0.65f));
+        Img(_ilsPanel, new Color(0.01f, 0.05f, 0.03f, 0.72f));
+        UIShapes.Round(_ilsPanel.GetComponent<Image>(), 8);
+        UIShapes.AddBorder(_ilsPanel, 8, new Color(HG.r, HG.g, HG.b, 0.50f));
 
         // 스케일 도트 (±1/2 풀스케일)
         float half = ILS_DEFLECT_PX * 0.5f;
@@ -682,7 +684,7 @@ public class FlightHUD : MonoBehaviour
         ahRoot  = Rect("AH_Root",  mask,   Vector2.zero, _ahMaskSize);
         ahSlide = Rect("AH_Slide", ahRoot, Vector2.zero, new Vector2(_ahMaskSize.x, 3200f));
 
-        Img(Rect("HL", ahSlide, Vector2.zero, new Vector2(_ahMaskSize.x, 2f)), HG);
+        Img(Rect("HL", ahSlide, Vector2.zero, new Vector2(_ahMaskSize.x, 1.5f)), new Color(HG.r, HG.g, HG.b, 0.38f));
 
         var ladder = Rect("Ladder", ahSlide, Vector2.zero, new Vector2(_ahMaskSize.x, 3200f));
         const float GAP = 155f;
@@ -690,9 +692,9 @@ public class FlightHUD : MonoBehaviour
         {
             float y    = deg * PX_PER_DEG;
             bool major = Mathf.Abs(deg) % 10 == 0;
-            float arm  = major ? 280f : 140f;
+            float arm  = major ? 150f : 70f;
             float thk  = major ? 2f   : 1.5f;
-            Color col  = major ? HGD  : HGX;
+            Color col  = major ? new Color(HG.r,HG.g,HG.b,0.58f) : new Color(HG.r,HG.g,HG.b,0.26f);
             Img(Rect($"PL{deg}", ladder, new Vector2(-(GAP + arm * 0.5f), y), new Vector2(arm, thk)), col);
             Img(Rect($"PR{deg}", ladder, new Vector2( (GAP + arm * 0.5f), y), new Vector2(arm, thk)), col);
             if (major)
@@ -711,9 +713,7 @@ public class FlightHUD : MonoBehaviour
     void BuildWingMarkers()
     {
         var box = Rect("WM_Box", ahRoot, Vector2.zero, new Vector2(14f, 14f));
-        box.gameObject.AddComponent<Image>().color = Color.clear;
-        var ol = box.gameObject.AddComponent<Outline>();
-        ol.effectColor = HG; ol.effectDistance = new Vector2(1.5f, 1.5f);
+        RingBox(box, HG, 2);
         Img(Rect("WM_LI", ahRoot, new Vector2( -88f, 0f), new Vector2(60f, 3f)), HG);
         Img(Rect("WM_RI", ahRoot, new Vector2(  88f, 0f), new Vector2(60f, 3f)), HG);
         Img(Rect("WM_LO", ahRoot, new Vector2(-132f, 0f), new Vector2(18f, 3f)), HGD);
@@ -730,19 +730,22 @@ public class FlightHUD : MonoBehaviour
         if (hudCanvas.transform.Find("FrameL") == null)
         {
             var L = Rect("FrameL", hudCanvas.transform, _frameLPos, _frameLSize);
-            Img(L, PANEL);
+            Img(L, PANEL); PanelSkin(L, false);
             Img(Rect("FLE", hudCanvas.transform, new Vector2(_frameLPos.x + 44f, 0f), new Vector2(2f, _frameLSize.y)),
                 new Color(HG.r, HG.g, HG.b, 0.14f));
 
             var R = Rect("FrameR", hudCanvas.transform, _frameRPos, _frameRSize);
-            Img(R, PANEL);
+            Img(R, PANEL); PanelSkin(R, false);
             Img(Rect("FRE", hudCanvas.transform, new Vector2(_frameRPos.x - 44f, 0f), new Vector2(2f, _frameRSize.y)),
                 new Color(HG.r, HG.g, HG.b, 0.14f));
 
             var T = Rect("CanopyTop", hudCanvas.transform, _canopyTopPos, _canopyTopSize);
-            Img(T, PANEL);
-            AddTxt(T, "KAI  KF-21 BORAMAE",
-                Vector2.zero, new Vector2(700f, 28f), 10, HGX, TextAnchor.MiddleCenter);
+            Img(T, PANEL); PanelSkin(T, false);
+            AddTxt(T, "K F - 2 1   B O R A M A E",
+                Vector2.zero, new Vector2(700f, 28f), 11, HGD, TextAnchor.MiddleCenter);
+            // 타이틀 좌우 장식선
+            Img(Rect("TitleL", T, new Vector2(-190f, 0f), new Vector2(120f, 1f)), new Color(HG.r, HG.g, HG.b, 0.30f));
+            Img(Rect("TitleR", T, new Vector2( 190f, 0f), new Vector2(120f, 1f)), new Color(HG.r, HG.g, HG.b, 0.30f));
             Img(Rect("TopEdge", hudCanvas.transform, new Vector2(0f, _canopyTopPos.y - 16f), new Vector2(_canopyTopSize.x, 1f)),
                 new Color(HG.r, HG.g, HG.b, 0.18f));
         }
@@ -753,7 +756,7 @@ public class FlightHUD : MonoBehaviour
                               : Rect("GlareshieldL", hudCanvas.transform, _gsLPos, _gsLSize);
         if (gsLt == null)
         {
-            Img(BL, PANEL);
+            Img(BL, PANEL); PanelSkin(BL, true);
             Img(Rect("GsEdgeL", hudCanvas.transform, new Vector2(_gsLPos.x, _gsLPos.y + _gsLSize.y * 0.5f), new Vector2(_gsLSize.x, 1f)),
                 new Color(HG.r, HG.g, HG.b, 0.18f));
         }
@@ -765,7 +768,7 @@ public class FlightHUD : MonoBehaviour
                               : Rect("GlareshieldR", hudCanvas.transform, _gsRPos, _gsRSize);
         if (gsRt == null)
         {
-            Img(BR, PANEL);
+            Img(BR, PANEL); PanelSkin(BR, true);
             Img(Rect("GsEdgeR", hudCanvas.transform, new Vector2(_gsRPos.x, _gsRPos.y + _gsRSize.y * 0.5f), new Vector2(_gsRSize.x, 1f)),
                 new Color(HG.r, HG.g, HG.b, 0.18f));
         }
@@ -778,11 +781,15 @@ public class FlightHUD : MonoBehaviour
         float ex = _engScrX  - _gsLPos.x;  // 엔진 섹션 로컬 x
         float lx = _mfdLScrX - _gsLPos.x;  // 좌측 MFD 로컬 x
 
+        // 엔진/연료/모드 정보 카드 (섹션 뒤 배경)
+        if (p.Find("EngCard") == null)
+            Card("EngCard", p, new Vector2(ex, 8f), new Vector2(132f, 252f),
+                 new Color(0.01f, 0.05f, 0.03f, 0.55f), new Color(HG.r, HG.g, HG.b, 0.28f), 6);
+
         // 엔진·N1 섹션
         if (n1Text == null)
         {
-            AddTxt(p, "ENGINE", new Vector2(ex, 118f), new Vector2(110f, 20f), 9, HGD, TextAnchor.MiddleCenter);
-            Img(Rect("LD1", p, new Vector2(ex, 107f), new Vector2(100f, 1f)), HGX);
+            SectionHeader(p, "ENGINE", new Vector2(ex, 118f), 110f);
             AddTxt(p, "N1", new Vector2(ex - 30f, 88f), new Vector2(38f, 20f), 9, HGD, TextAnchor.MiddleLeft);
             n1Text = AddTxt(p, "30%", new Vector2(ex + 25f, 88f), new Vector2(58f, 20f), 10, HG, TextAnchor.MiddleRight);
             var n1BG = Rect("N1BG", p, new Vector2(ex, 72f), new Vector2(88f, 8f));
@@ -794,8 +801,7 @@ public class FlightHUD : MonoBehaviour
         // 연료 섹션
         if (fuelText == null)
         {
-            AddTxt(p, "FUEL", new Vector2(ex, 46f), new Vector2(110f, 20f), 9, HGD, TextAnchor.MiddleCenter);
-            Img(Rect("LD2", p, new Vector2(ex, 35f), new Vector2(100f, 1f)), HGX);
+            SectionHeader(p, "FUEL", new Vector2(ex, 46f), 110f);
             fuelText = AddTxt(p, "100.0%", new Vector2(ex, 17f), new Vector2(100f, 20f), 11, HG, TextAnchor.MiddleCenter);
             var fBG = Rect("FBG", p, new Vector2(ex, -1f), new Vector2(88f, 8f));
             Img(fBG, new Color(HG.r*.1f, HG.g*.1f, HG.b*.1f, 0.8f));
@@ -819,14 +825,14 @@ public class FlightHUD : MonoBehaviour
         if (p.Find("MFDL") != null) return;
         var lMFD = Rect("MFDL", p, new Vector2(lx, 8f), new Vector2(220f, 170f));
         Img(lMFD, MFD);
-        var lOl = lMFD.gameObject.AddComponent<Outline>();
-        lOl.effectColor = new Color(HG.r,HG.g,HG.b,.3f); lOl.effectDistance = new Vector2(1,1);
+        UIShapes.Round(lMFD.GetComponent<Image>(), 6);
+        UIShapes.AddBorder(lMFD, 6, new Color(HG.r,HG.g,HG.b,.42f));
+        Img(Rect("MfdHdr", lMFD, new Vector2(0f, 76f), new Vector2(204f, 1f)), new Color(HG.r,HG.g,HG.b,.30f));
         AddTxt(lMFD, "SA / EW", new Vector2(0f, 72f), new Vector2(200f,18f), 8, HGD, TextAnchor.MiddleCenter);
         Img(Rect("LMH", lMFD, Vector2.zero, new Vector2(110f,1f)), HGX);
         Img(Rect("LMV", lMFD, Vector2.zero, new Vector2(1f,90f)), HGX);
         var mc = Rect("LMC", lMFD, Vector2.zero, new Vector2(10f,10f));
-        mc.gameObject.AddComponent<Image>().color = Color.clear;
-        mc.gameObject.AddComponent<Outline>().effectColor = new Color(HG.r,HG.g,HG.b,.5f);
+        RingBox(mc, new Color(HG.r,HG.g,HG.b,.6f), 2);
         AddTxt(lMFD, "NO THREAT", new Vector2(0f,-68f), new Vector2(190f,16f), 8, HGX, TextAnchor.MiddleCenter);
     }
 
@@ -841,29 +847,31 @@ public class FlightHUD : MonoBehaviour
         {
             var rMFD = Rect("MFDR", p, new Vector2(rx, 8f), new Vector2(220f,170f));
             Img(rMFD, MFD);
-            var rOl = rMFD.gameObject.AddComponent<Outline>();
-            rOl.effectColor = new Color(HG.r,HG.g,HG.b,.3f); rOl.effectDistance = new Vector2(1,1);
+            UIShapes.Round(rMFD.GetComponent<Image>(), 6);
+            UIShapes.AddBorder(rMFD, 6, new Color(HG.r,HG.g,HG.b,.42f));
+            Img(Rect("MfdHdr", rMFD, new Vector2(0f, 76f), new Vector2(204f, 1f)), new Color(HG.r,HG.g,HG.b,.30f));
             AddTxt(rMFD, "NAV / HSI", new Vector2(0f, 72f), new Vector2(200f,18f), 8, HGD, TextAnchor.MiddleCenter);
             var hsi = Rect("HSI", rMFD, new Vector2(0f,-10f), new Vector2(85f,85f));
-            hsi.gameObject.AddComponent<Image>().color = Color.clear;
-            hsi.gameObject.AddComponent<Outline>().effectColor = new Color(HG.r,HG.g,HG.b,.35f);
+            RingBox(hsi, new Color(HG.r,HG.g,HG.b,.45f), 43);
             AddTxt(rMFD, "N", new Vector2(0f, 32f), new Vector2(18f,16f), 8, HGD, TextAnchor.MiddleCenter);
             AddTxt(rMFD, "S", new Vector2(0f,-54f), new Vector2(18f,16f), 8, HGD, TextAnchor.MiddleCenter);
             AddTxt(rMFD, "E", new Vector2( 34f,-12f), new Vector2(18f,16f), 8, HGD, TextAnchor.MiddleCenter);
             AddTxt(rMFD, "W", new Vector2(-34f,-12f), new Vector2(18f,16f), 8, HGD, TextAnchor.MiddleCenter);
         }
 
+        if (p.Find("WpnCard") == null)
+            Card("WpnCard", p, new Vector2(wx, -16f), new Vector2(146f, 292f),
+                 new Color(0.01f, 0.05f, 0.03f, 0.55f), new Color(HG.r, HG.g, HG.b, 0.28f), 6);
+
         // 무장 섹션
         if (weaponText == null)
         {
-            AddTxt(p, "WEAPON", new Vector2(wx, 118f), new Vector2(110f,20f), 9, HGD, TextAnchor.MiddleCenter);
-            Img(Rect("RD1", p, new Vector2(wx,107f), new Vector2(100f,1f)), HGX);
+            SectionHeader(p, "WEAPON", new Vector2(wx, 118f), 120f);
             weaponText = AddTxt(p, "SAFE", new Vector2(wx,88f), new Vector2(100f,26f), 13, HGD, TextAnchor.MiddleCenter);
             if (aim120CountText == null)
                 aim120CountText = AddTxt(p, "AIM-120  x4", new Vector2(wx,66f), new Vector2(110f,18f), 8, HGX, TextAnchor.MiddleCenter);
             AddTxt(p, "AIM-9X   x2", new Vector2(wx,48f), new Vector2(110f,18f), 8, HGX, TextAnchor.MiddleCenter);
-            AddTxt(p, "SYSTEMS", new Vector2(wx,20f), new Vector2(110f,20f), 9, HGD, TextAnchor.MiddleCenter);
-            Img(Rect("RD2", p, new Vector2(wx,9f), new Vector2(100f,1f)), HGX);
+            SectionHeader(p, "SYSTEMS", new Vector2(wx,20f), 120f);
             if (gearText == null)
                 gearText = AddTxt(p, "GEAR  UP", new Vector2(wx,-10f), new Vector2(110f,20f), 9, HGD, TextAnchor.MiddleCenter);
             AddTxt(p, "FLAP  RET",  new Vector2(wx,-30f), new Vector2(110f,20f), 9, HGD, TextAnchor.MiddleCenter);
@@ -911,7 +919,8 @@ public class FlightHUD : MonoBehaviour
     {
         float px = _spdTapeX;
         var panel = Rect("SpdPanel", parent, new Vector2(px,0f), new Vector2(130f,SPD_LINES*SPD_PX+24f));
-        Img(panel, new Color(0f,0f,0f,.60f));
+        Img(panel, new Color(0f,0.03f,0.015f,.34f)); UIShapes.Round(panel.GetComponent<Image>(), 8);
+        UIShapes.AddBorder(panel, 8, new Color(HG.r,HG.g,HG.b,.28f));
         var msk = Rect("SM", panel, Vector2.zero, new Vector2(110f,SPD_LINES*SPD_PX));
         msk.gameObject.AddComponent<Image>().color = new Color(0f,0f,0f,.01f);
         msk.gameObject.AddComponent<Mask>().showMaskGraphic = false;
@@ -924,11 +933,12 @@ public class FlightHUD : MonoBehaviour
             Img(Rect($"ST{i}",scr,new Vector2(52f,y),new Vector2(12f,1f)),i==SPD_LINES/2?HG:HGX);
         }
         var cB=Rect("SCB",panel,Vector2.zero,new Vector2(130f,32f));
-        Img(cB,new Color(HG.r*.14f,HG.g*.14f,HG.b*.14f,.65f));
-        cB.gameObject.AddComponent<Outline>().effectColor=new Color(HG.r,HG.g,HG.b,.80f);
+        Img(cB,new Color(HG.r*.14f,HG.g*.14f,HG.b*.14f,.80f));
+        UIShapes.Round(cB.GetComponent<Image>(), 4);
+        UIShapes.AddBorder(cB, 4, new Color(HG.r,HG.g,HG.b,.85f));
         spdCurrent=AddTxt(panel,"0",Vector2.zero,new Vector2(108f,32f),21,HG,TextAnchor.MiddleRight);
         AddTxt(panel,"◀",new Vector2(58f,0f),new Vector2(24f,32f),14,HG,TextAnchor.MiddleLeft);
-        AddTxt(panel,"IAS KPH",new Vector2(0f,SPD_LINES*SPD_PX/2f+14f),new Vector2(110f,18f),8,HGD,TextAnchor.MiddleCenter);
+        AddTxt(panel,"SPD",new Vector2(0f,SPD_LINES*SPD_PX/2f+32f),new Vector2(110f,20f),12,HG,TextAnchor.MiddleCenter);
         var mach=Rect("MP",parent,new Vector2(px,-(SPD_LINES*SPD_PX/2f+50f)),new Vector2(130f,30f));
         Img(mach,new Color(0f,0f,0f,.50f));
         machText=AddTxt(mach,"M 0.00",Vector2.zero,new Vector2(110f,30f),12,HGD,TextAnchor.MiddleCenter);
@@ -950,7 +960,8 @@ public class FlightHUD : MonoBehaviour
     {
         float px = _altTapeX;
         var panel=Rect("AltPanel",parent,new Vector2(px,0f),new Vector2(130f,ALT_LINES*ALT_PX+24f));
-        Img(panel,new Color(0f,0f,0f,.60f));
+        Img(panel,new Color(0f,0.03f,0.015f,.34f)); UIShapes.Round(panel.GetComponent<Image>(), 8);
+        UIShapes.AddBorder(panel, 8, new Color(HG.r,HG.g,HG.b,.28f));
         var msk=Rect("AM",panel,Vector2.zero,new Vector2(110f,ALT_LINES*ALT_PX));
         msk.gameObject.AddComponent<Image>().color=new Color(0f,0f,0f,.01f);
         msk.gameObject.AddComponent<Mask>().showMaskGraphic=false;
@@ -963,11 +974,12 @@ public class FlightHUD : MonoBehaviour
             Img(Rect($"AT{i}",scr,new Vector2(-52f,y),new Vector2(12f,1f)),i==ALT_LINES/2?HG:HGX);
         }
         var cB=Rect("ACB",panel,Vector2.zero,new Vector2(130f,32f));
-        Img(cB,new Color(HG.r*.14f,HG.g*.14f,HG.b*.14f,.65f));
-        cB.gameObject.AddComponent<Outline>().effectColor=new Color(HG.r,HG.g,HG.b,.80f);
+        Img(cB,new Color(HG.r*.14f,HG.g*.14f,HG.b*.14f,.80f));
+        UIShapes.Round(cB.GetComponent<Image>(), 4);
+        UIShapes.AddBorder(cB, 4, new Color(HG.r,HG.g,HG.b,.85f));
         altCurrent=AddTxt(panel,"0",Vector2.zero,new Vector2(108f,32f),21,HG,TextAnchor.MiddleLeft);
         AddTxt(panel,"▶",new Vector2(-56f,0f),new Vector2(24f,32f),14,HG,TextAnchor.MiddleRight);
-        AddTxt(panel,"ALT m",new Vector2(0f,ALT_LINES*ALT_PX/2f+14f),new Vector2(110f,18f),8,HGD,TextAnchor.MiddleCenter);
+        AddTxt(panel,"ALT",new Vector2(0f,ALT_LINES*ALT_PX/2f+32f),new Vector2(110f,20f),12,HG,TextAnchor.MiddleCenter);
         var vsi=Rect("VSI",parent,new Vector2(px,-(ALT_LINES*ALT_PX/2f+48f)),new Vector2(130f,30f));
         Img(vsi,new Color(0f,0f,0f,.50f));
         vsiText=AddTxt(vsi,"VVI  +0",Vector2.zero,new Vector2(120f,30f),11,HGD,TextAnchor.MiddleCenter);
@@ -980,7 +992,8 @@ public class FlightHUD : MonoBehaviour
     void BuildHeadingStrip(Transform parent)
     {
         var panel=Rect("HdgPanel",parent,new Vector2(0f,_hdgStripY),new Vector2(HDG_LINES*HDG_PX+24f,50f));
-        Img(panel,new Color(0f,0f,0f,.60f));
+        Img(panel,new Color(0f,0.03f,0.015f,.34f)); UIShapes.Round(panel.GetComponent<Image>(), 8);
+        UIShapes.AddBorder(panel, 8, new Color(HG.r,HG.g,HG.b,.28f));
         var msk=Rect("HM",panel,Vector2.zero,new Vector2(HDG_LINES*HDG_PX,42f));
         msk.gameObject.AddComponent<Image>().color=new Color(0f,0f,0f,.01f);
         msk.gameObject.AddComponent<Mask>().showMaskGraphic=false;
@@ -994,8 +1007,9 @@ public class FlightHUD : MonoBehaviour
         }
         Img(Rect("HPtr",panel,new Vector2(0f,-19f),new Vector2(2f,11f)),HG);
         var cB=Rect("HCB",panel,new Vector2(0f,-6f),new Vector2(70f,24f));
-        Img(cB,new Color(HG.r*.14f,HG.g*.14f,HG.b*.14f,.70f));
-        cB.gameObject.AddComponent<Outline>().effectColor=new Color(HG.r,HG.g,HG.b,.65f);
+        Img(cB,new Color(HG.r*.14f,HG.g*.14f,HG.b*.14f,.80f));
+        UIShapes.Round(cB.GetComponent<Image>(), 4);
+        UIShapes.AddBorder(cB, 4, new Color(HG.r,HG.g,HG.b,.75f));
         hdgCurrent=AddTxt(panel,"000°",new Vector2(0f,-6f),new Vector2(64f,22f),13,HG,TextAnchor.MiddleCenter);
     }
 
@@ -1003,8 +1017,9 @@ public class FlightHUD : MonoBehaviour
     void BuildStatusStrip(Transform parent)
     {
         var panel=Rect("Status",parent,new Vector2(0f,_statusStripY),new Vector2(540f,36f));
-        Img(panel,new Color(0f,0f,0f,.54f));
-        panel.gameObject.AddComponent<Outline>().effectColor=new Color(HG.r,HG.g,HG.b,.22f);
+        Img(panel,new Color(0f,0.04f,0.02f,.58f));
+        UIShapes.Round(panel.GetComponent<Image>(), 6);
+        UIShapes.AddBorder(panel, 6, new Color(HG.r,HG.g,HG.b,.30f));
         aoaText=AddTxt(panel,"AOA +0.0°",new Vector2(-180f,0f),new Vector2(155f,36f),11,HGD,TextAnchor.MiddleCenter);
         gText  =AddTxt(panel,"G  1.0",  new Vector2(0f,0f),   new Vector2(110f,36f),15,HG, TextAnchor.MiddleCenter);
         AddTxt(panel,"SAFE",new Vector2(180f,0f),new Vector2(100f,36f),10,HGD,TextAnchor.MiddleCenter);
@@ -1018,9 +1033,7 @@ public class FlightHUD : MonoBehaviour
     {
         Color c=new Color(HG.r,HG.g,HG.b,.72f);
         var ct=Rect("BS",parent,Vector2.zero,new Vector2(20f,20f));
-        ct.gameObject.AddComponent<Image>().color=Color.clear;
-        ct.gameObject.AddComponent<Outline>().effectColor=c;
-        ct.GetComponent<Outline>().effectDistance=new Vector2(2f,2f);
+        RingBox(ct, c, 10);
         Img(Rect("BHL",parent,new Vector2(-34f,0f),new Vector2(22f,2f)),c);
         Img(Rect("BHR",parent,new Vector2( 34f,0f),new Vector2(22f,2f)),c);
         Img(Rect("BVU",parent,new Vector2(0f, 34f),new Vector2(2f,22f)),c);
@@ -1032,9 +1045,7 @@ public class FlightHUD : MonoBehaviour
     {
         fpvRoot=Rect("FPV",parent,Vector2.zero,Vector2.zero);
         var ci=Rect("FC",fpvRoot,Vector2.zero,new Vector2(18f,18f));
-        ci.gameObject.AddComponent<Image>().color=Color.clear;
-        var ol=ci.gameObject.AddComponent<Outline>();
-        ol.effectColor=FPVC; ol.effectDistance=new Vector2(1.5f,1.5f);
+        RingBox(ci, FPVC, 9);
         Img(Rect("FL",fpvRoot,new Vector2(-24f,0f),new Vector2(18f,2f)),FPVC);
         Img(Rect("FR",fpvRoot,new Vector2( 24f,0f),new Vector2(18f,2f)),FPVC);
         Img(Rect("FT",fpvRoot,new Vector2(0f,16f), new Vector2(2f,12f)),FPVC);
@@ -1249,10 +1260,9 @@ public class FlightHUD : MonoBehaviour
         threatWarningText = AddTxt(wp, "", Vector2.zero, new Vector2(700f, 38f), 18, CRIT, TextAnchor.MiddleCenter);
 
         var rwrRoot = Rect("RWR_Root", hudCanvas.transform, new Vector2(-740f, 200f), new Vector2(60f, 60f));
-        Img(rwrRoot, new Color(0f, 0f, 0f, 0.55f));
-        var rwrOl = rwrRoot.gameObject.AddComponent<UnityEngine.UI.Outline>();
-        rwrOl.effectColor = new Color(HG.r, HG.g, HG.b, 0.5f);
-        rwrOl.effectDistance = new Vector2(1f, 1f);
+        Img(rwrRoot, new Color(0.01f, 0.05f, 0.03f, 0.70f));
+        UIShapes.Round(rwrRoot.GetComponent<Image>(), 6);
+        UIShapes.AddBorder(rwrRoot, 6, new Color(HG.r, HG.g, HG.b, 0.5f));
         AddTxt(rwrRoot, "RWR", new Vector2(0f, 20f), new Vector2(56f, 14f), 7, HGX, TextAnchor.MiddleCenter);
         Img(Rect("RH", rwrRoot, Vector2.zero, new Vector2(40f, 1f)), new Color(HG.r,HG.g,HG.b,0.25f));
         Img(Rect("RV", rwrRoot, Vector2.zero, new Vector2(1f, 40f)), new Color(HG.r,HG.g,HG.b,0.25f));
@@ -1552,6 +1562,48 @@ public class FlightHUD : MonoBehaviour
         var rt=go.AddComponent<RectTransform>();
         rt.anchorMin=Vector2.zero; rt.anchorMax=Vector2.one;
         rt.offsetMin=rt.offsetMax=Vector2.zero; return rt;
+    }
+
+    // 둥근 모서리 + 얇은 테두리 링을 가진 패널.
+    RectTransform Card(string name, Transform parent, Vector2 pos, Vector2 size, Color fill, Color border, int radius = 4)
+    {
+        var rt = Rect(name, parent, pos, size);
+        var img = rt.gameObject.AddComponent<Image>();
+        img.raycastTarget = false;
+        UIShapes.Round(img, radius);
+        img.color = fill;
+        UIShapes.AddBorder(rt, radius, border);
+        return rt;
+    }
+
+    // 채움 없이 테두리만 (박스/원형 마커). radius 가 크기의 절반 이상이면 원.
+    void RingBox(RectTransform rt, Color border, int radius = 2)
+    {
+        var img = rt.gameObject.GetComponent<Image>();
+        if (img == null) img = rt.gameObject.AddComponent<Image>();
+        img.color = Color.clear; img.raycastTarget = false;
+        UIShapes.AddBorder(rt, radius, border);
+    }
+
+    // 패널 상단에서 아래로 옅게 어두워지는 면 + 안쪽 키라인(1px) — 평평한 검은 블록 느낌 제거
+    void PanelSkin(RectTransform rt, bool keylineTop)
+    {
+        var g = UIBackdropFit.MakeGradient(rt, "Sheen", false, new Color(HG.r, HG.g, HG.b), 0f, 0.012f);
+        g.anchorMin = Vector2.zero; g.anchorMax = Vector2.one; g.offsetMin = g.offsetMax = Vector2.zero;
+        if (keylineTop)
+        {
+            var k = Rect("Keyline", rt, Vector2.zero, Vector2.zero);
+            k.anchorMin = new Vector2(0, 1); k.anchorMax = new Vector2(1, 1);
+            k.pivot = new Vector2(0.5f, 1); k.offsetMin = new Vector2(0, -1); k.offsetMax = Vector2.zero;
+            Img(k, new Color(HG.r, HG.g, HG.b, 0.32f));
+        }
+    }
+
+    // 섹션 제목: 짧은 강조 바 + 라벨
+    void SectionHeader(Transform parent, string label, Vector2 pos, float width)
+    {
+        AddTxt(parent, label, pos, new Vector2(width, 20f), 10, HG, TextAnchor.MiddleCenter);
+        Img(Rect("SecLine", parent, new Vector2(pos.x, pos.y - 12f), new Vector2(width * 0.8f, 1f)), new Color(HG.r, HG.g, HG.b, 0.34f));
     }
 
     void Img(RectTransform rt,Color c)

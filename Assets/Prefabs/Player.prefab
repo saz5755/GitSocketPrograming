@@ -287,7 +287,7 @@ MonoBehaviour:
   nickname: 
   isLocalPlayer: 0
   lastReceivedTick: 0
-  _stats: {fileID: 11400000, guid: 11e11209456ba3148a9653297adb13e4, type: 2}
+  _stats: {fileID: 11400000, guid: 5006110199ea5f442aa00202aadbbd19, type: 2}
 --- !u!95 &7247021537001746904
 Animator:
   serializedVersion: 7

@@ -1,0 +1,40 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f4d24d3282ba40b42ac017b450a34ab2, type: 3}
+  m_Name: AircraftStats_KF21
+  m_EditorClassIdentifier: Assembly-CSharp::AircraftStatsSO
+  maxSpeed: 80
+  acceleration: 12
+  drag: 6
+  pitchSensitivity: 60
+  yawSensitivity: 60
+  rollSpeed: 85
+  sendInterval: 0.05
+  interpolationDelay: 0.1
+  reconcileThreshold: 3
+  arrestDecel: 50
+  catapultHoldSec: 4
+  catapultAccel: 180
+  maxFuel: 10000
+  fuelConsumption: 15
+  fuelConsumptionAB: 60
+  lowFuelThreshold: 0.2
+  afterburnerMultiplier: 1.5
+  afterburnerAccelMult: 1.8
+  stallSpeed: 25
+  stallPitchDeg: 25
+  stallNoseDownRate: 25
+  stallFallAccel: 9.8
+  maxHP: 100
+  engineDamageThreshold: 0.3
+  engineDamageSpeedMult: 0.7
+  criticalDamageThreshold: 0.15

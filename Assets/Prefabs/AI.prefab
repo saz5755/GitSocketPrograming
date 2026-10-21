@@ -265,7 +265,7 @@ MonoBehaviour:
   nickname: 
   isLocalPlayer: 0
   lastReceivedTick: 0
-  _stats: {fileID: 11400000, guid: 11e11209456ba3148a9653297adb13e4, type: 2}
+  _stats: {fileID: 11400000, guid: 5006110199ea5f442aa00202aadbbd19, type: 2}
 --- !u!114 &-7942190390661286254
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -278,7 +278,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1990fa7d71b522e4c9a86ee8d4988ee9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AIBotController
-  _config: {fileID: 11400000, guid: 14e4ea523f2055a4484033e34f87772b, type: 2}
+  _config: {fileID: 11400000, guid: fffca594f757de74182078c6653aaf9f, type: 2}
 --- !u!114 &-517297725358655814
 MonoBehaviour:
   m_ObjectHideFlags: 0

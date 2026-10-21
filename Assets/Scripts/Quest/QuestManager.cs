@@ -72,8 +72,20 @@ public class QuestManager : MonoBehaviour
     }
 
     // ── 레이캐스트 포커스 ────────────────────────────────────────────────────
+    // 지상 모드에서 매 프레임 돌던 탐색 비용을 줄인다:
+    //  - OverlapSphere → OverlapSphereNonAlloc (재사용 버퍼, 프레임당 배열 할당 제거)
+    //  - GetComponent → TryGetComponent (컴포넌트가 없을 때 에디터가 만드는 에러 메시지 문자열 할당 제거)
+    //  - 0.1초 주기로 스캔 (포커스는 사람이 인지하는 속도면 충분)
+    const float FocusScanInterval = 0.1f;
+    static readonly Collider[] s_focusBuffer = new Collider[64];
+    float _focusTimer;
+
     void UpdateFocus()
     {
+        _focusTimer -= Time.deltaTime;
+        if (_focusTimer > 0f) return;
+        _focusTimer = FocusScanInterval;
+
         FocusedNPC          = null;
         FocusedInteractable = null;
 
@@ -81,20 +93,21 @@ public class QuestManager : MonoBehaviour
         if (gc == null) return;
 
         // 레이캐스트 대신 구 형태로 주변 오브젝트 감지 — 카메라 조준 불필요
-        Collider[] cols = Physics.OverlapSphere(gc.position, interactRange);
+        int n = Physics.OverlapSphereNonAlloc(gc.position, interactRange, s_focusBuffer);
 
         float bestNpc = float.MaxValue;
         float bestObj = float.MaxValue;
 
-        foreach (var col in cols)
+        for (int i = 0; i < n; i++)
         {
+            var col = s_focusBuffer[i];
             float dist = (col.transform.position - gc.position).sqrMagnitude;
 
-            var npc = col.GetComponent<QuestNPC>();
-            if (npc != null && dist < bestNpc) { bestNpc = dist; FocusedNPC = npc; }
+            if (dist < bestNpc && col.TryGetComponent<QuestNPC>(out var npc))
+            { bestNpc = dist; FocusedNPC = npc; }
 
-            var obj = col.GetComponent<QuestInteractable>();
-            if (obj != null && dist < bestObj) { bestObj = dist; FocusedInteractable = obj; }
+            if (dist < bestObj && col.TryGetComponent<QuestInteractable>(out var obj))
+            { bestObj = dist; FocusedInteractable = obj; }
         }
     }
 

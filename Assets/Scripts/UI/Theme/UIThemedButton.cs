@@ -14,7 +14,7 @@ public class UIThemedButton : MonoBehaviour, IPointerEnterHandler, IPointerExitH
                               IPointerDownHandler, IPointerUpHandler, IPointerClickHandler,
                               ISelectHandler, IDeselectHandler
 {
-    public enum Style { Primary, Secondary, Outline, Ghost }
+    public enum Style { Primary, Secondary, Outline, Ghost, Danger }
 
     [SerializeField] Style _style = Style.Primary;
     [SerializeField] bool  _interactable = true;
@@ -23,12 +23,14 @@ public class UIThemedButton : MonoBehaviour, IPointerEnterHandler, IPointerExitH
 
     Image _bg;
     Text  _label;
-    Outline _outline;
+    Image _outline;      // 둥근 테두리 링 (UIShapes)
     RectTransform _rt;
 
     bool  _hovered;
     bool  _pressed;
     bool  _focused;
+    bool  _selected;
+    bool  _started;      // Start 이전의 스타일/상태 변경은 즉시 반영 (첫 프레임 색 번쩍임 방지)
     Color _targetBG;
     Color _targetTxt;
     Color _targetOutline;
@@ -43,10 +45,20 @@ public class UIThemedButton : MonoBehaviour, IPointerEnterHandler, IPointerExitH
     {
         _bg      = GetComponent<Image>();
         _label   = GetComponentInChildren<Text>();
-        _outline = GetComponent<Outline>();
         _rt      = (RectTransform)transform;
+
+        // 둥근 모서리 + 테두리 링. 호출 측이 붙여 둔 Outline 은 링으로 대체한다.
+        int radius = Mathf.Clamp(Mathf.RoundToInt(Mathf.Min(_rt.rect.height > 1f ? _rt.rect.height : _rt.sizeDelta.y, 56f) * 0.2f), 6, 12);
+        if (_bg.sprite == null) UIShapes.Round(_bg, radius);
+        var oldOutline = GetComponent<Outline>();
+        if (oldOutline != null) { oldOutline.enabled = false; Destroy(oldOutline); }
+        _outline = UIShapes.AddBorder(transform, radius, Color.clear);
+        _outline.transform.SetAsFirstSibling();
+        if (_label != null) _label.transform.SetAsLastSibling();
         ApplyTargetsInstant();
     }
+
+    void Start() { _started = true; }
 
     void OnEnable()
     {
@@ -58,13 +70,20 @@ public class UIThemedButton : MonoBehaviour, IPointerEnterHandler, IPointerExitH
     public Style ButtonStyle
     {
         get => _style;
-        set { _style = value; UpdateTargets(); }
+        set { _style = value; UpdateTargets(); if (!_started) ApplyTargetsInstant(); }
     }
 
     public bool Interactable
     {
         get => _interactable;
-        set { _interactable = value; UpdateTargets(); }
+        set { _interactable = value; UpdateTargets(); if (!_started) ApplyTargetsInstant(); }
+    }
+
+    /// <summary>메뉴/탭에서 현재 선택된 항목 표시.</summary>
+    public bool Selected
+    {
+        get => _selected;
+        set { _selected = value; UpdateTargets(); }
     }
 
     public void SetLabel(string txt)
@@ -88,6 +107,12 @@ public class UIThemedButton : MonoBehaviour, IPointerEnterHandler, IPointerExitH
         Color baseBG = BaseBGForStyle(t);
         Color baseTxt = BaseTxtForStyle(t);
         Color baseOutline = BaseOutlineForStyle(t);
+        if (_selected)
+        {
+            baseBG = new Color(t.primaryBlue.r, t.primaryBlue.g, t.primaryBlue.b, 0.30f);
+            baseTxt = t.textPrimary;
+            baseOutline = t.accentCyan;
+        }
 
         if (!_interactable)
         {
@@ -98,15 +123,15 @@ public class UIThemedButton : MonoBehaviour, IPointerEnterHandler, IPointerExitH
         }
         else if (_pressed)
         {
-            _targetBG = t.PressTint(baseBG);
+            _targetBG = baseBG.a < 0.1f ? FillForTransparent(t, 0.14f) : t.PressTint(baseBG);
             _targetTxt = baseTxt;
             _targetOutline = t.borderAccent;
             _targetScale = 0.97f;
         }
         else if (_hovered || _focused)
         {
-            _targetBG = t.HoverTint(baseBG);
-            _targetTxt = baseTxt;
+            _targetBG = baseBG.a < 0.1f ? FillForTransparent(t, 0.08f) : t.HoverTint(baseBG);
+            _targetTxt = _style == Style.Ghost ? t.textPrimary : baseTxt;
             _targetOutline = t.borderAccent;
             _targetScale = 1.015f;
         }
@@ -122,9 +147,10 @@ public class UIThemedButton : MonoBehaviour, IPointerEnterHandler, IPointerExitH
     Color BaseBGForStyle(UITheme t) => _style switch
     {
         Style.Primary   => t.primaryBlue,
-        Style.Secondary => t.panelBG,
+        Style.Secondary => new Color(t.primaryBlue.r, t.primaryBlue.g, t.primaryBlue.b, 0.12f),
         Style.Outline   => new Color(0f, 0f, 0f, 0f),
-        Style.Ghost     => new Color(1f, 1f, 1f, 0.04f),
+        Style.Ghost     => new Color(1f, 1f, 1f, 0f),
+        Style.Danger    => new Color(t.error.r, t.error.g, t.error.b, 0.85f),
         _ => t.panelBG,
     };
 
@@ -134,6 +160,7 @@ public class UIThemedButton : MonoBehaviour, IPointerEnterHandler, IPointerExitH
         Style.Secondary => t.textPrimary,
         Style.Outline   => t.accentCyan,
         Style.Ghost     => t.textSecondary,
+        Style.Danger    => t.textPrimary,
         _ => t.textPrimary,
     };
 
@@ -143,8 +170,14 @@ public class UIThemedButton : MonoBehaviour, IPointerEnterHandler, IPointerExitH
         Style.Secondary => t.border,
         Style.Outline   => t.accentCyan,
         Style.Ghost     => new Color(0f, 0f, 0f, 0f),
+        Style.Danger    => new Color(0f, 0f, 0f, 0f),
         _ => t.border,
     };
+
+    // 투명 배경 스타일(Ghost/Outline)의 호버·눌림 채움색
+    Color FillForTransparent(UITheme t, float alpha)
+        => _style == Style.Outline ? new Color(t.accentCyan.r, t.accentCyan.g, t.accentCyan.b, alpha)
+                                   : new Color(1f, 1f, 1f, alpha);
 
     static Color DimColor(Color c, float m)
         => new Color(c.r * m, c.g * m, c.b * m, c.a * (0.5f + 0.5f * m));
@@ -164,7 +197,7 @@ public class UIThemedButton : MonoBehaviour, IPointerEnterHandler, IPointerExitH
 
         if (_bg != null)      _bg.color = _curBG;
         if (_label != null)   _label.color = _curTxt;
-        if (_outline != null) _outline.effectColor = _curOutline;
+        if (_outline != null) _outline.color = _curOutline;
         if (_rt != null)      _rt.localScale = new Vector3(_curScale, _curScale, 1f);
     }
 
@@ -176,7 +209,7 @@ public class UIThemedButton : MonoBehaviour, IPointerEnterHandler, IPointerExitH
         _curScale   = _targetScale;
         if (_bg != null)      _bg.color = _curBG;
         if (_label != null)   _label.color = _curTxt;
-        if (_outline != null) _outline.effectColor = _curOutline;
+        if (_outline != null) _outline.color = _curOutline;
         if (_rt != null)      _rt.localScale = new Vector3(_curScale, _curScale, 1f);
     }
 }

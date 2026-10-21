@@ -1,0 +1,43 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2a6129b12ebefb4429b9232b9303b403, type: 3}
+  m_Name: EscortBehavior
+  m_EditorClassIdentifier: Assembly-CSharp::EscortBehaviorSO
+  speedJitterRange: 3
+  bankOffsetDeg: 12
+  slotAheadThreshold: 5
+  snapDistance: 40
+  rotSmoothSpeed: 6
+  maxSpeedOverride: 200
+  turnRateOverride: 150
+  launchDuration: 3
+  launchSpeed: 55
+  carrierClearanceDistance: 180
+  outerBuffer: 160
+  innerBuffer: 110
+  outerSteerGain: 1.8
+  innerSteerGain: 1.6
+  outerRadiusFallback: 800
+  innerRadiusFallback: 350
+  leaderStopTimeout: 2
+  freeFlightDuration: 4
+  approachDistance: 1500
+  approachAltitude: 300
+  waypointArriveDistance: 80
+  approachSpeed: 60
+  finalSpeed: 25
+  landingSideOffset: 4
+  directLandDistance: 5
+  arrestEntrySpeed: 65
+  arrestDecelRate: 80
+  arrestYSnapRate: 20
+  arrestStopSpeed: 0.2
