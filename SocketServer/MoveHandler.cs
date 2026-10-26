@@ -40,7 +40,11 @@ class MoveHandler
         session.player.animState = packet.animState;
 
         // 비행 중 플레이어 항공기를 풀에 등록·갱신 (신규 입장자 동기화용)
-        if (packet.isFlying && session.player.room != null)
+        // 있으면 제자리 갱신 — 패킷마다 AircraftEntry 를 새로 할당하지 않는다
+        if (packet.isFlying && session.player.room != null
+            && !session.player.room.UpdateAircraftPose(session.player.nickname,
+                    packet.posX, packet.posY, packet.posZ,
+                    packet.rotX, packet.rotY, packet.rotZ, 0f, true))
         {
             session.player.room.UpsertAircraft(new AircraftEntry
             {

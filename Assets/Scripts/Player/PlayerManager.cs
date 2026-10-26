@@ -186,9 +186,11 @@ public class PlayerManager : MonoBehaviour
         _abandonedAircraft[nickname] = go;
 
         // 항모가 있으면 갑판으로 자동 착함 → 지상 플레이어가 F키 탑승 가능
-        var carrier = Object.FindAnyObjectByType<CarrierController>();
+        // 항모는 씬에 수동 배치된 오브젝트라 CarrierController 가 없다 → 와이어 시스템의 부모(항공모함)로 폴백
+        var carrier = Object.FindAnyObjectByType<CarrierController>()?.transform
+                      ?? ArrestingWireSystem.Instance?.transform.parent;
         if (carrier != null)
-            StartCoroutine(AutoLandAbandoned(go, carrier.transform));
+            StartCoroutine(AutoLandAbandoned(go, carrier));
 
         Debug.Log($"[PlayerManager] Abandoned aircraft spawned at {pos} for {nickname}");
     }

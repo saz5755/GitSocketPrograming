@@ -84,6 +84,7 @@ public class AIManager : MonoBehaviour
         sc.OnEnterRoomResult  += HandleEnterRoomResult;
         sc.OnSpawn            += HandleRemotePlayerJoin;
         sc.OnAircraftPoolSync += HandleAircraftPoolSync;
+        sc.OnArrestEvent      += HandleArrestEvent;
     }
 
     void OnDestroy()
@@ -98,6 +99,7 @@ public class AIManager : MonoBehaviour
         sc.OnEnterRoomResult  -= HandleEnterRoomResult;
         sc.OnSpawn            -= HandleRemotePlayerJoin;
         sc.OnAircraftPoolSync -= HandleAircraftPoolSync;
+        sc.OnArrestEvent      -= HandleArrestEvent;
     }
 
     // ── 호스트 초기화 (PlayerManager.CreateLocalPlayer에서 호출) ───────────
@@ -489,11 +491,43 @@ public class AIManager : MonoBehaviour
         }
     }
 
+    // 게스트 착함 이벤트 (ARREST_EVENT) — 에스코트 AI 는 호스트에만 있으므로 호스트가 대신 처리
+    void HandleArrestEvent(ArrestEventPacket p)
+    {
+        if (!_isHost) return;
+        switch (p.eventType)
+        {
+            case 0:
+                BeginEscortFreeFlightNow();
+                break;
+            case 1:
+                StoreArrestInfo(new Vector3(p.approachDirX, p.approachDirY, p.approachDirZ),
+                                new Vector3(p.wirePosX, p.wirePosY, p.wirePosZ));
+                BeginEscortLandingAfterDismount();
+                break;
+            case 2:
+                BeginEscortLanding(null);
+                break;
+        }
+    }
+
     // 플레이어 항모 착함 후 호출 (폴백 경로 — 와이어 없이 착함, 또는 UpdateEscorting 폴백)
     public void BeginEscortLanding(Transform carrier)
     {
         if (!_isHost || _escortLandingStarted) return;
         _escortLandingStarted = true;
+
+        // 씬에 CarrierController 가 없어 carrier 가 null 로 들어온다 → 기존엔 착함 목표가 (0,0,0) 이 되어
+        // 에스코트가 해수면 아래로 날아갔다. 와이어 시스템이 있으면 와이어 체결 경로와 같은 슬롯 착함을 쓴다.
+        var aws = ArrestingWireSystem.Instance;
+        if (aws != null)
+        {
+            if (carrier == null) carrier = aws.transform.parent;
+            Debug.Log($"[AIManager] BeginEscortLanding: wire path  carrier={(carrier != null ? carrier.name : "null")}  wire={aws.WireCenter}");
+            _landingCoroutine = StartCoroutine(EscortLandingCoroutine(carrier, aws.LandingDirection, aws.WireCenter, true));
+            return;
+        }
+
         Debug.Log($"[AIManager] BeginEscortLanding: starting landing coroutine  carrier={(carrier != null ? carrier.name : "null")}");
         _landingCoroutine = StartCoroutine(EscortLandingCoroutine(carrier, Vector3.zero, Vector3.zero, false));
     }

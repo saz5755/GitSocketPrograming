@@ -65,6 +65,7 @@ class PacketHandler
 
         handlers[PacketType.BOARD_AIRCRAFT] = AircraftBoardHandler.HandleBoard;
         handlers[PacketType.LEAVE_AIRCRAFT] = AircraftBoardHandler.HandleLeave;
+        handlers[PacketType.ARREST_EVENT]   = ArrestEventHandler.Handle;
     }
 
     // 기본적으로 TCP Handle

@@ -444,6 +444,15 @@ public class PlayerController : MonoBehaviour
         {
             transform.position += Vector3.down * Cfg.stallFallAccel * dt;
         }
+        // 실속 속도 미만이면 피치와 무관하게 양력 부족으로 침하 (기존: 수평 자세로 감속하면 속도 0 으로 공중 정지).
+        // 갑판 위 저속 주행은 제외 — 바로 아래에 지면이 있으면 침하하지 않는다.
+        else if (flying && currentSpeed < Cfg.stallSpeed && !HasSurfaceBelow(4f))
+        {
+            float deficit = 1f - currentSpeed / Cfg.stallSpeed;
+            transform.position += Vector3.down * Cfg.stallFallAccel * deficit * dt;
+            _stallWarning = true;
+        }
+        if (flying) ClampAboveSea();
 
         if (currentSpeed > 0.1f) ConstrainToSurface();
 
@@ -488,6 +497,31 @@ public class PlayerController : MonoBehaviour
     }
 
     // ── 지면/갑판 관통 방지 ────────────────────────────────────────────────────────
+    bool HasSurfaceBelow(float range)
+    {
+        int count = Physics.RaycastNonAlloc(
+            transform.position + Vector3.up * 1f, Vector3.down,
+            _groundHits, range + 1f,
+            Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+        for (int i = 0; i < count; i++)
+            if (!_groundHits[i].transform.IsChildOf(transform)) return true;
+        return false;
+    }
+
+    // 바다에는 콜라이더가 없어 기체가 해수면 아래로 그대로 통과한다 — 수면에서 멈춘다 (추락 처리는 별도 과제)
+    OceanSurface _ocean;
+    bool _oceanSearched;
+    void ClampAboveSea()
+    {
+        if (!_oceanSearched) { _ocean = FindAnyObjectByType<OceanSurface>(); _oceanSearched = true; }
+        if (_ocean == null) return;
+        float minY = _ocean.seaLevel + 1.5f;
+        if (transform.position.y < minY)
+        {
+            var p = transform.position; p.y = minY; transform.position = p;
+        }
+    }
+
     void ConstrainToSurface()
     {
         int count = Physics.RaycastNonAlloc(

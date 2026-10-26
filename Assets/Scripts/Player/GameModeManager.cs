@@ -414,7 +414,21 @@ public class GameModeManager : MonoBehaviour
         // 와이어 체결 후 하차 시: 저장된 경로로 에스코트 AI 순차 착함 시작
         // platform != null (Carrier존) 또는 HasArrestInfo (Landing존에서 와이어 체결 후 하차) 모두 처리
         if (platform != null || (AIManager.Instance != null && AIManager.Instance.HasArrestInfo))
-            AIManager.Instance?.BeginEscortLandingAfterDismount();
+        {
+            var ai = AIManager.Instance;
+            if (ai != null && !ai.IsHost)
+            {
+                // 게스트: 에스코트 AI 는 호스트에 있으므로 호스트에게 착함 시작을 요청
+                var sc = NetworkManager.Instance?.socketClient;
+                if (ai.HasArrestInfo)
+                {
+                    var (dir, wire) = ai.GetArrestInfo();
+                    sc?.SendArrestEvent(1, dir, wire);
+                }
+                else sc?.SendArrestEvent(2, Vector3.zero, Vector3.zero);
+            }
+            else ai?.BeginEscortLandingAfterDismount();
+        }
 
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible   = false;
@@ -429,6 +443,8 @@ public class GameModeManager : MonoBehaviour
         _pc.BeginArrest();
         // 와이어 체결 즉시 에스코트를 자유비행으로 전환 (플레이어 감속에 끌려다니지 않도록)
         AIManager.Instance?.BeginEscortFreeFlightNow();
+        if (AIManager.Instance != null && !AIManager.Instance.IsHost)
+            NetworkManager.Instance?.socketClient?.SendArrestEvent(0, Vector3.zero, Vector3.zero);
 
         // 착함 충격 카메라 쉐이크
         _fc?.TriggerShake(0.7f, 1.8f);

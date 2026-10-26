@@ -27,21 +27,20 @@ public class Room
         lock (_poolLock) _aircraftPool.Remove(nickname);
     }
 
-    // AI_MOVE 수신 시 포지션만 갱신 (엔트리 없으면 무시)
-    public void UpdateAircraftPose(string nickname,
+    // 포지션만 갱신 (엔트리 없으면 무시하고 false)
+    public bool UpdateAircraftPose(string nickname,
         float px, float py, float pz,
         float rx, float ry, float rz,
         float speed, bool isFlying)
     {
         lock (_poolLock)
         {
-            if (_aircraftPool.TryGetValue(nickname, out var e))
-            {
-                e.posX = px; e.posY = py; e.posZ = pz;
-                e.rotX = rx; e.rotY = ry; e.rotZ = rz;
-                e.speed   = speed;
-                e.isFlying = isFlying;
-            }
+            if (!_aircraftPool.TryGetValue(nickname, out var e)) return false;
+            e.posX = px; e.posY = py; e.posZ = pz;
+            e.rotX = rx; e.rotY = ry; e.rotZ = rz;
+            e.speed   = speed;
+            e.isFlying = isFlying;
+            return true;
         }
     }
 
