@@ -245,13 +245,17 @@ public class CombatHud : MonoBehaviour
     {
         foreach (var pc in PlayerController.All)
             if (pc != null && pc.isLocalPlayer) { _local = pc; break; }
+        // 무장 시스템은 기체가 아니라 FlightHUD 오브젝트에 붙는다 (기체에서만 찾으면 항상 null → 패널이 자리표시 값 4/0/0 고정)
         if (_local != null)
         {
-            _gun = _local.GetComponentInChildren<GunSystem>();
+            _gun      = _local.GetComponentInChildren<GunSystem>();
             _launcher = _local.GetComponentInChildren<MissileLauncher>();
-            _cms = _local.GetComponentInChildren<CountermeasureSystem>();
+            _cms      = _local.GetComponentInChildren<CountermeasureSystem>();
         }
-        if (_cam == null) _cam = FindFirstObjectByType<FlightCamera>();
+        if (_gun == null)      _gun      = FindAnyObjectByType<GunSystem>();
+        if (_launcher == null) _launcher = FindAnyObjectByType<MissileLauncher>();
+        if (_cms == null)      _cms      = FindAnyObjectByType<CountermeasureSystem>();
+        if (_cam == null) _cam = FindAnyObjectByType<FlightCamera>();
     }
 
     void Update()

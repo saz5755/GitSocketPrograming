@@ -41,6 +41,8 @@ public class PlayerManager : MonoBehaviour
         sc.OnAircraftBoard     += HandleAircraftBoard;
         sc.OnAircraftLeave     += HandleAircraftLeave;
         sc.OnAircraftPoolSync  += HandleAircraftPoolSync;
+        sc.OnPlayerKilled      += HandleRemotePlayerKilled;
+        sc.OnAircraftState     += HandleAircraftState;
     }
 
     void OnDestroy()
@@ -58,6 +60,8 @@ public class PlayerManager : MonoBehaviour
             sc.OnAircraftBoard    -= HandleAircraftBoard;
             sc.OnAircraftLeave    -= HandleAircraftLeave;
             sc.OnAircraftPoolSync -= HandleAircraftPoolSync;
+            sc.OnPlayerKilled     -= HandleRemotePlayerKilled;
+            sc.OnAircraftState    -= HandleAircraftState;
         }
         ClearAll();
         ClearRemoteMissiles();
@@ -419,6 +423,44 @@ public class PlayerManager : MonoBehaviour
     }
 
     // 원격 비행 항공기 뷰 제거
+    // ── 원격 플레이어 사망 / 기체 상태 ───────────────────────────────────────
+    // 잔해 낙하는 사망자 클라이언트가 MOVE 로 계속 송신하므로 여기선 폭발 연출만.
+    void HandleRemotePlayerKilled(PlayerKilledPacket p)
+    {
+        if (p.victim == GetMyName() || AIManager.IsAIBot(p.victim)) return;
+        // 미사일 격추는 MISSILE_DESTROY 에서 이미 폭발 — 기총 격추만 공중 폭발 추가
+        if (p.cause == PilotStatus.CauseShotDown && p.weapon == CombatDamage.WeaponGun)
+            ExplosionEffect.Spawn(new Vector3(p.posX, p.posY, p.posZ));
+    }
+
+    void HandleAircraftState(AircraftStatePacket p)
+    {
+        GameObject view = null;
+        var na = NetworkAircraft.GetById(p.aircraftId);
+        if (na != null) view = na.gameObject;
+        else if (_remoteAircraft.TryGetValue(p.nickname, out var fallback) && fallback != null) view = fallback.gameObject;
+        var pos = new Vector3(p.posX, p.posY, p.posZ);
+
+        if (p.state == 0)
+        {
+            // 잔해 충돌 — 폭발 후 기체 숨김
+            ExplosionEffect.Spawn(pos);
+            FlightAudioSystem.NotifyExplosion(pos, false);
+            if (view != null) WreckController.SetAircraftVisible(view, false);
+        }
+        else if (p.state == 1 && view != null)
+        {
+            // 재출격 — 갑판 슬롯으로 재배치 (이어서 LEAVE_AIRCRAFT 가 와 대기 상태가 된다)
+            var pc = view.GetComponent<PlayerController>();
+            pc?.ClearSnapshots();
+            if (AIManager.Instance != null && AIManager.Instance.TryGetDeckPose(p.aircraftId, out var dp, out var dr))
+                view.transform.SetPositionAndRotation(dp, dr);
+            else
+                view.transform.position = pos;
+            WreckController.SetAircraftVisible(view, true);
+        }
+    }
+
     void HideRemoteAircraft(string nickname)
     {
         if (_remoteAircraft.TryGetValue(nickname, out var aircraft))
@@ -515,7 +557,8 @@ public class PlayerManager : MonoBehaviour
     void HandleMissileDestroy(MissileDestroyPacket p)
     {
         string myName = GetMyName();
-        if (p.shooterNickname == myName) return;
+        // 내가 시뮬레이션한 미사일(내가 쐈거나, 호스트로서 AI 가 쏜 것)은 Detonate 에서 이미 처리됨
+        if (CombatDamage.SimulatesWeaponOf(p.shooterNickname)) return;
 
         if (remoteMissiles.TryGetValue(p.missileId, out var view))
         {
@@ -526,6 +569,7 @@ public class PlayerManager : MonoBehaviour
         var pos   = new Vector3(p.posX, p.posY, p.posZ);
         bool hitMe = !string.IsNullOrEmpty(p.hitNickname) && p.hitNickname == myName;
         HitEffectSystem.Instance?.TriggerHit(pos, hitMe);
+        CombatDamage.Apply(p.hitNickname, p.damage, p.shooterNickname, CombatDamage.WeaponMissile);
     }
 
     void HandleMissileWarn(MissileWarnPacket p)

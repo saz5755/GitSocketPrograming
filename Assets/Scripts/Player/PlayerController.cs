@@ -161,6 +161,22 @@ public class PlayerController : MonoBehaviour
 
     public void Repair() { _currentHP = Cfg.maxHP; }
 
+    /// <summary>새 출격 — 기체를 정비 완료 상태(체력·연료 만탄, 정지, 기동/제동 상태 해제)로 되돌린다.</summary>
+    public void ResetForNewSortie()
+    {
+        Repair();
+        Refuel();
+        currentSpeed   = 0f;
+        _catapulting   = false;
+        _afterburner   = false;
+        _stallWarning  = false;
+        _isStalling    = false;
+        _barrelRollDir = 0;
+        _cobraPhase    = CobraInactive;
+        EndArrest();
+        ClearSnapshots();
+    }
+
     // ── 자동 기동: 배럴롤 + Immelmann (GameplayConfigSO 중앙 관리) ───────────
     // 모든 수치는 Assets/Resources/GameplayConfig.asset에서 조정.
     // Config 미할당 시 하드코딩 기본값 사용 (SO.Instance가 자동 폴백).
@@ -288,7 +304,7 @@ public class PlayerController : MonoBehaviour
             float yawC     = freeLookC ? 0f :  Input.GetAxis("Mouse X") * Cfg.yawSensitivity   * dt;
             float rollC    = 0f;
             if (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.Q)) rollC =  Cfg.rollSpeed * dt;
-            if (Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.E)) rollC = -Cfg.rollSpeed * dt;
+            if (Input.GetKey(KeyCode.D) || (Input.GetKey(KeyCode.E) && !SimInput.Modifier)) rollC = -Cfg.rollSpeed * dt;
             transform.Rotate(pitchC, yawC, rollC, Space.Self);
 
             transform.position += transform.forward * currentSpeed * dt;
@@ -320,7 +336,7 @@ public class PlayerController : MonoBehaviour
         if (canStartManeuver && _cobraPhase == CobraInactive)
         {
             if      (Input.GetKey(KeyCode.Q)) newBarrelDir = +1;  // 좌
-            else if (Input.GetKey(KeyCode.E)) newBarrelDir = -1;  // 우
+            else if (Input.GetKey(KeyCode.E) && !SimInput.Modifier) newBarrelDir = -1;  // 우 (Ctrl+E 는 사출 핸들)
         }
         if (newBarrelDir != 0 && _barrelRollDir == 0) _barrelFlareTimer = 0f; // 홀드 시작 시 즉시 첫 플레어
         _barrelRollDir = newBarrelDir;

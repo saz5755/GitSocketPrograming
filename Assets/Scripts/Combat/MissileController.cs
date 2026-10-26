@@ -126,10 +126,18 @@ public class MissileController : MonoBehaviour
         tr.colorGradient = gc;
     }
 
+    static float s_seaY = float.NaN;
+
     void Update()
     {
         _age += Time.deltaTime;
-        if (_age > lifetime) { Destroy(gameObject); return; }
+        // 연료 소진 후 자폭 / 해수면 충돌 — 원격 뷰도 사라지도록 파괴를 알린다 (기존: 조용히 사라지거나 수면 아래로 계속 비행)
+        if (float.IsNaN(s_seaY))
+        {
+            var ocean = FindAnyObjectByType<OceanSurface>();
+            s_seaY = ocean != null ? ocean.seaLevel : float.NegativeInfinity;
+        }
+        if (_age > lifetime || transform.position.y < s_seaY) { SelfDestruct(); return; }
         if (_age > armDelay) _armed = true;
 
         _speed = Mathf.MoveTowards(_speed, topSpeed, acceleration * Time.deltaTime);
@@ -344,25 +352,43 @@ public class MissileController : MonoBehaviour
 
     void Detonate()
     {
-        bool hitLocal = false;
-        if (Target != null)
-        {
-            var pc = Target.GetComponent<PlayerController>();
-            hitLocal = pc != null && pc.isLocalPlayer;
-        }
+        // 기만체(플레어/채프)로 유도된 경우 Target 에 PlayerController 가 없어 피격자 없음
+        var victimPc  = Target != null ? Target.GetComponent<PlayerController>() : null;
+        bool hitLocal = victimPc != null && victimPc.isLocalPlayer;
+        string victim = victimPc != null ? victimPc.nickname : "";
+        float damage  = victimPc != null ? CalcDamage(Vector3.Distance(transform.position, Target.position)) : 0f;
 
         HitEffectSystem.Instance?.TriggerHit(transform.position, hitLocal);
-        BroadcastDestroy(hitLocal);
+
+        // 명중 판정은 이 클라이언트(발사자/호스트)가 내리고, 피해는 피격체 소유자가 적용한다
+        CombatDamage.Apply(victim, damage, ShooterNick, CombatDamage.WeaponMissile);
+        CombatDamage.ReportHit(ShooterNick, victim, CombatDamage.WeaponMissile);
+        BroadcastDestroy(victim, damage);
 
         Destroy(gameObject);
+    }
+
+    void SelfDestruct()
+    {
+        HitEffectSystem.Instance?.TriggerHit(transform.position, false);
+        BroadcastDestroy("", 0f);
+        Destroy(gameObject);
+    }
+
+    // 직격은 치명상, 근접신관은 파편 살상반경 안에서 거리에 따라 감쇠 (기본 missileDamage=40 → 직격 100, 근접 60~30)
+    float CalcDamage(float dist)
+    {
+        float baseDmg = GameplayConfigSO.Instance.missileDamage;
+        if (dist <= directHitDist) return baseDmg * 2.5f;
+        float t = Mathf.InverseLerp(directHitDist, proximityFuse, dist);
+        return baseDmg * Mathf.Lerp(1.5f, 0.75f, t);
     }
 
     // ARH 활성화 시 타겟에게 상위 경고 레벨 브로드캐스트
     void BroadcastARHActive()
     {
         var sc = NetworkManager.Instance?.socketClient;
-        if (sc == null || string.IsNullOrEmpty(ShooterNick)) return;
-        if (sc.myNickname != ShooterNick) return;
+        if (sc == null || !CombatDamage.SimulatesWeaponOf(ShooterNick)) return;
 
         var targetPc = Target?.GetComponent<PlayerController>();
         if (targetPc == null) return;
@@ -374,25 +400,17 @@ public class MissileController : MonoBehaviour
     void BroadcastPosition()
     {
         var sc = NetworkManager.Instance?.socketClient;
-        if (sc == null || string.IsNullOrEmpty(ShooterNick)) return;
-        if (sc.myNickname != ShooterNick) return;
+        // AI 가 쏜 미사일은 호스트가 시뮬레이션한다 (기존: 발사자 닉네임 비교라 AI 미사일 위치·폭발이 전송되지 않았음)
+        if (sc == null || !CombatDamage.SimulatesWeaponOf(ShooterNick)) return;
 
         sc.SendMissileMove(MissileId, transform.position, transform.eulerAngles, _speed);
     }
 
-    void BroadcastDestroy(bool hitLocal)
+    void BroadcastDestroy(string victim, float damage)
     {
         var sc = NetworkManager.Instance?.socketClient;
-        if (sc == null || string.IsNullOrEmpty(ShooterNick)) return;
-        if (sc.myNickname != ShooterNick) return;
+        if (sc == null || !CombatDamage.SimulatesWeaponOf(ShooterNick)) return;
 
-        string hitNick = "";
-        if (hitLocal && Target != null)
-        {
-            var pc = Target.GetComponent<PlayerController>();
-            if (pc != null) hitNick = pc.nickname;
-        }
-
-        sc.SendMissileDestroy(MissileId, ShooterNick, hitNick, transform.position);
+        sc.SendMissileDestroy(MissileId, ShooterNick, victim, transform.position, damage);
     }
 }

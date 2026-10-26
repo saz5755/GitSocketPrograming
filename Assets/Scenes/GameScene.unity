@@ -8486,34 +8486,13 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: -8679921383154817045, guid: e571f9c1e7b42ed41b4bbd82274eb7ed, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1166233825}
-    m_AddedComponents:
-    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: e571f9c1e7b42ed41b4bbd82274eb7ed, type: 3}
-      insertIndex: -1
-      addedObject: {fileID: 1059067958}
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: e571f9c1e7b42ed41b4bbd82274eb7ed, type: 3}
 --- !u!4 &1059067955 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: e571f9c1e7b42ed41b4bbd82274eb7ed, type: 3}
   m_PrefabInstance: {fileID: 1059067954}
   m_PrefabAsset: {fileID: 0}
---- !u!1 &1059067956 stripped
-GameObject:
-  m_CorrespondingSourceObject: {fileID: 919132149155446097, guid: e571f9c1e7b42ed41b4bbd82274eb7ed, type: 3}
-  m_PrefabInstance: {fileID: 1059067954}
-  m_PrefabAsset: {fileID: 0}
---- !u!114 &1059067958
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1059067956}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4ebb5e45b35c53e428b79a43f3c2d8eb, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::ArrestingWireSystem
-  _config: {fileID: 11400000, guid: 02dfd827919c30045acfb2f977102811, type: 2}
 --- !u!1 &1062490431
 GameObject:
   m_ObjectHideFlags: 0
@@ -9609,6 +9588,8 @@ MonoBehaviour:
   _botConfig: {fileID: 11400000, guid: 14e4ea523f2055a4484033e34f87772b, type: 2}
   _spawnEnemies: 0
   _enemyCount: 2
+  _enemyRespawnDelay: 40
+  _botMaxHP: 100
   _escortLandingStagger: 1.5
 --- !u!1 &1275978150
 GameObject:

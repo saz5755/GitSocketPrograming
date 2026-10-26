@@ -13,6 +13,7 @@ public class MissileDestroyPacket : Packet
     public string missileId       = "";
     public string shooterNickname = "";   // 발사자 (클라 중복 방지용)
     public string hitNickname     = "";   // 피격자 (miss면 empty)
+    public float  damage;                 // 발사 측이 계산한 피해 (근접신관 거리 감쇠 반영)
     public float  posX, posY, posZ;
 }
 

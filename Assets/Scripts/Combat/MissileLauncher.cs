@@ -20,6 +20,13 @@ public class MissileLauncher : MonoBehaviour
         MissileCount = maxMissiles;
     }
 
+    /// <summary>새 출격 — 미사일 만재</summary>
+    public void Rearm()
+    {
+        MissileCount   = maxMissiles;
+        _cooldownTimer = 0f;
+    }
+
     void Update()
     {
         if (_cooldownTimer > 0f) _cooldownTimer -= Time.deltaTime;

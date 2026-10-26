@@ -200,7 +200,7 @@ public class EscortAI : MonoBehaviour
             _phase == Phase.BeingArrested || _phase == Phase.LandingApproach ||
             _phase == Phase.FreeFlight)
         {
-            Debug.Log($"[EscortAI] {name}: BeginLanding IGNORED, phase={_phase}");
+            DevLog.Log($"[EscortAI] {name}: BeginLanding IGNORED, phase={_phase}");
             return;
         }
 
@@ -209,7 +209,7 @@ public class EscortAI : MonoBehaviour
         _freeFlightTimer      = 0f;
         _bot.PositionOverride = false;
         _phase                = Phase.FreeFlight;
-        Debug.Log($"[EscortAI] {name}: BeginLanding {prev} → FreeFlight (hasPath={_hasApproachInfo})");
+        DevLog.Log($"[EscortAI] {name}: BeginLanding {prev} → FreeFlight (hasPath={_hasApproachInfo})");
     }
 
     // AIManager.BeginEscortFreeFlightNow() 에서 호출 — 즉시 자유비행 전환 (Escorting/Launching 시)
@@ -256,7 +256,7 @@ public class EscortAI : MonoBehaviour
         if (_landingSlot == Vector3.zero) _landingSlot = _landingSpot;
         _bot.PositionOverride = true;
         _phase = Phase.BeingArrested;
-        Debug.Log($"[EscortAI] {name} 와이어 체결! 진입속도={_arrestSpeed:F1}  목표슬롯={_landingSlot}");
+        DevLog.Log($"[EscortAI] {name} 와이어 체결! 진입속도={_arrestSpeed:F1}  목표슬롯={_landingSlot}");
     }
 
     // ArrestingWireSystem이 플레이어 와이어 잡힌 후 호출 — 진행 중인 에스코트의 경로 갱신.
@@ -522,7 +522,7 @@ public class EscortAI : MonoBehaviour
             SetupApproach();
             _bot.PositionOverride = true;
             _phase = Phase.LandingApproach;
-            Debug.Log($"[EscortAI] {name}: FreeFlight → LandingApproach, wp={_approachWaypoint}, landingSpot={_landingSpot}, hasPath={_hasApproachInfo}");
+            DevLog.Log($"[EscortAI] {name}: FreeFlight → LandingApproach, wp={_approachWaypoint}, landingSpot={_landingSpot}, hasPath={_hasApproachInfo}");
         }
     }
 
@@ -632,7 +632,7 @@ public class EscortAI : MonoBehaviour
 
             _bot.SetTarget(pos, transform.rotation, 0f);
             _phase = Phase.Landed;
-            Debug.Log($"[EscortAI] {name} 착함 완료  슬롯={_landingSlot}");
+            DevLog.Log($"[EscortAI] {name} 착함 완료  슬롯={_landingSlot}");
         }
     }
 

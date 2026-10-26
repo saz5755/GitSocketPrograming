@@ -55,6 +55,9 @@ public class GunSystem : MonoBehaviour
     static readonly Color WARN = new Color(1.00f, 0.82f, 0.00f, 0.95f);
 
     // ─────────────────────────────────────────────────────────────────────────
+    /// <summary>새 출격 — 기총탄 만재</summary>
+    public void Rearm() => _ammo = maxAmmo;
+
     void Awake()
     {
         _ammo = maxAmmo;
@@ -162,6 +165,9 @@ public class GunSystem : MonoBehaviour
         var pos = new Vector3(p.posX, p.posY, p.posZ);
         bool hitMe = p.targetNickname == _myNick;
         HitEffectSystem.Instance?.TriggerBulletHit(pos, hitMe);
+        // 서버가 발사자 포함 방 전체에 중계 — 피격체 소유자만 피해 적용, 발사자는 히트 마커
+        CombatDamage.Apply(p.targetNickname, GameplayConfigSO.Instance.bulletDamage, p.shooterNickname, CombatDamage.WeaponGun);
+        CombatDamage.ReportHit(p.shooterNickname, p.targetNickname, CombatDamage.WeaponGun);
     }
 
     // ── 예측 조준 (Lead Indicator) — 모든 적기 표시 ───────────────────────────
@@ -232,7 +238,8 @@ public class GunSystem : MonoBehaviour
 
             _leadRTs[i].gameObject.SetActive(true);
 
-            _overlayRT ??= _overlayCanvas.GetComponent<RectTransform>();
+            // ??= 는 직렬화 필드의 에디터 "가짜 null" 을 null 로 보지 않아 할당이 안 된다 → == null 비교
+            if (_overlayRT == null) _overlayRT = _overlayCanvas.GetComponent<RectTransform>();
             float w = _overlayRT.sizeDelta.x, h = _overlayRT.sizeDelta.y;
             _leadRTs[i].anchoredPosition = new Vector2((vp.x - 0.5f) * w, (vp.y - 0.5f) * h);
 

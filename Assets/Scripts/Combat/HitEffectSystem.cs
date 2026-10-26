@@ -27,6 +27,8 @@ public class HitEffectSystem : MonoBehaviour
 
     void Start() => _cam = FindAnyObjectByType<FlightCamera>();
 
+    // 연출 전용 — 피해 적용은 CombatDamage 가 소유자 클라이언트에서 처리한다.
+
     // 미사일 피격 (강한 폭발 이펙트)
     public void TriggerHit(Vector3 worldPos, bool hitLocalPlayer)
     {
@@ -38,8 +40,6 @@ public class HitEffectSystem : MonoBehaviour
         if (hitLocalPlayer) _cam?.TriggerShake(0.38f, 0.75f);
 
         FlightAudioSystem.NotifyExplosion(worldPos, hitLocalPlayer);
-
-        if (hitLocalPlayer) ApplyLocalDamage(GameplayConfigSO.Instance.missileDamage);
     }
 
     // 기총 피격 (작은 스파크 이펙트)
@@ -51,21 +51,6 @@ public class HitEffectSystem : MonoBehaviour
             _audio.PlayOneShot(MakeBulletImpactClip(), hitLocalPlayer ? 0.55f : 0.3f);
 
         if (hitLocalPlayer) _cam?.TriggerShake(0.10f, 0.18f);
-
-        if (hitLocalPlayer) ApplyLocalDamage(GameplayConfigSO.Instance.bulletDamage);
-    }
-
-    // 로컬 플레이어 PC를 찾아 데미지 적용. 비행 중일 때만 유효 (지상 캐릭터는 무시).
-    static void ApplyLocalDamage(float amount)
-    {
-        foreach (var pc in PlayerController.All)
-        {
-            if (pc != null && pc.isLocalPlayer && pc.IsFlying)
-            {
-                pc.TakeDamage(amount);
-                break;
-            }
-        }
     }
 
     static AudioClip MakeBulletImpactClip()

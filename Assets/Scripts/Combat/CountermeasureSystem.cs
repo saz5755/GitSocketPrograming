@@ -31,10 +31,16 @@ public class CountermeasureSystem : MonoBehaviour
 
     void Start()
     {
+        Rearm();
+        FindLocal();
+    }
+
+    /// <summary>새 출격 — 플레어·채프 만재</summary>
+    public void Rearm()
+    {
         var cfg = GameplayConfigSO.Instance;
         FlareRemaining = cfg.flareStockMax;
         ChaffRemaining = cfg.chaffStockMax;
-        FindLocal();
     }
 
     void FindLocal()

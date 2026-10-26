@@ -145,6 +145,7 @@ public class FlightCamera : MonoBehaviour
     // ── 외부 API ────────────────────────────────────────────────────────────
     public void SetGroundTarget(Transform t)
     {
+        _deathFocus       = null;
         _isBoardingMode   = false;
         _boardingAircraft = null;
         for (int i = 0; i < 3; i++) { var sw = CockpitSwitch.Get(i); sw?.SetVisible(false); sw?.Unregister(); }
@@ -190,8 +191,34 @@ public class FlightCamera : MonoBehaviour
         SetCockpit(false, false);
     }
 
+    // ── 사망 카메라 — 외부 시점으로 잔해를 천천히 선회하며 추적 (추락 지점에 닿으면 그 자리 유지) ──
+    Transform _deathFocus;
+    Vector3   _deathFocusPos;
+    float     _deathOrbitYaw;
+
+    public void BeginDeathCam(Transform wreck)
+    {
+        _deathFocus    = wreck;
+        _deathFocusPos = wreck.position;
+        _deathOrbitYaw = wreck.eulerAngles.y + 150f;
+        if (isCockpit) SetCockpit(false);
+    }
+
+    void UpdateDeathCam()
+    {
+        if (_deathFocus != null && _deathFocus.gameObject.activeInHierarchy)
+            _deathFocusPos = Vector3.Lerp(_deathFocusPos, _deathFocus.position, 1f - Mathf.Exp(-8f * Time.deltaTime));
+        _deathOrbitYaw += 12f * Time.deltaTime;
+        Vector3 offset = Quaternion.Euler(18f, _deathOrbitYaw, 0f) * new Vector3(0f, 0f, -55f);
+        Vector3 pos = _deathFocusPos + offset;
+        transform.position = Vector3.Lerp(transform.position, pos, 1f - Mathf.Exp(-3f * Time.deltaTime));
+        transform.rotation = Quaternion.Slerp(transform.rotation,
+            Quaternion.LookRotation(_deathFocusPos - transform.position), 1f - Mathf.Exp(-6f * Time.deltaTime));
+    }
+
     public void SetFlightTarget(PlayerController pc)
     {
+        _deathFocus   = null;
         _groundTarget = null;
         localPlayer   = pc;
         BuildRendererLists(pc);
@@ -199,6 +226,12 @@ public class FlightCamera : MonoBehaviour
 
     void LateUpdate()
     {
+        if (_deathFocus != null)
+        {
+            UpdateDeathCam();
+            return;
+        }
+
         if (_groundTarget != null)
         {
             UpdateGround();

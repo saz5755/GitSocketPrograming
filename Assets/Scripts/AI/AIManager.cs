@@ -29,6 +29,10 @@ public class AIManager : MonoBehaviour
     [Header("적 AI — 미사일 공격 + 위협 기동")]
     [SerializeField] bool _spawnEnemies = false;
     [SerializeField] [Range(1, 4)] int _enemyCount = 1;
+    [Tooltip("격추된 적기가 같은 콜사인으로 다시 투입되기까지의 시간 (초)")]
+    [SerializeField] float _enemyRespawnDelay = 40f;
+    [Tooltip("AI 기체 내구도 (플레이어 기체 maxHP 와 같은 스케일)")]
+    [SerializeField] float _botMaxHP = 100f;
 
     [Header("에스코트 착함 타이밍")]
     [Tooltip("에스코트 간 착함 시작 시차 (초) — 플레이어 F키 하차 후 1번기부터 이 간격으로 순차 착함")]
@@ -85,6 +89,7 @@ public class AIManager : MonoBehaviour
         sc.OnSpawn            += HandleRemotePlayerJoin;
         sc.OnAircraftPoolSync += HandleAircraftPoolSync;
         sc.OnArrestEvent      += HandleArrestEvent;
+        sc.OnPlayerKilled     += HandleRemoteBotKilled;
     }
 
     void OnDestroy()
@@ -100,6 +105,7 @@ public class AIManager : MonoBehaviour
         sc.OnSpawn            -= HandleRemotePlayerJoin;
         sc.OnAircraftPoolSync -= HandleAircraftPoolSync;
         sc.OnArrestEvent      -= HandleArrestEvent;
+        sc.OnPlayerKilled     -= HandleRemoteBotKilled;
     }
 
     // ── 호스트 초기화 (PlayerManager.CreateLocalPlayer에서 호출) ───────────
@@ -188,7 +194,7 @@ public class AIManager : MonoBehaviour
             sc.SendAISpawn(bot.Nickname, bot.transform.position, bot.transform.eulerAngles,
                            IsEnemyBot(bot.Nickname) ? 1 : 0);
         }
-        Debug.Log($"[AIManager] Re-sent AI_SPAWN for {_bots.Count} bot(s) to new joiner");
+        DevLog.Log($"[AIManager] Re-sent AI_SPAWN for {_bots.Count} bot(s) to new joiner");
     }
 
     // ── 호스트: AI 스폰 ───────────────────────────────────────────────────
@@ -233,7 +239,7 @@ public class AIManager : MonoBehaviour
             NetworkManager.Instance?.socketClient?.SendAISpawn(
                 nick, spawnPos, spawnRot.eulerAngles, aiType: 0);
 
-            Debug.Log($"[AIManager] Escort spawned: {nick}  formation={slot.formationOffset}");
+            DevLog.Log($"[AIManager] Escort spawned: {nick}  formation={slot.formationOffset}");
         }
     }
 
@@ -259,22 +265,115 @@ public class AIManager : MonoBehaviour
     void SpawnEnemies(PlayerController leader)
     {
         for (int i = 0; i < _enemyCount; i++)
+            SpawnEnemy($"BOT_N{i + 1}", leader);
+    }
+
+    void SpawnEnemy(string nick, PlayerController leader)
+    {
+        Vector3 spawnPos = leader.transform.position + new Vector3(
+            Random.Range(-300f, 300f), Random.Range(30f, 80f), Random.Range(700f, 1400f));
+
+        var go    = BuildAIObject(nick, spawnPos, leader.transform.rotation);
+        var bot   = go.GetComponent<AIBotController>();
+        var enemy = go.AddComponent<EnemyAI>();
+        enemy.Initialize(leader.transform, leader.nickname);
+
+        _bots.Add(bot);
+        _botHP[nick] = _botMaxHP;
+        NetworkManager.Instance?.socketClient?.SendAISpawn(
+            nick, spawnPos, leader.transform.eulerAngles, aiType: 1);
+
+        DevLog.Log($"[AIManager] Enemy spawned: {nick}");
+    }
+
+    // ── 피격·격추 (호스트 권한) ──────────────────────────────────────────────
+    // 에스코트(BOT_E*)는 탑승 가능한 공유 기체라 아직 피해를 받지 않는다 (아군 오사 처리는 별도 과제).
+    readonly Dictionary<string, float> _botHP = new();
+
+    public void DamageBot(string nick, float amount, string attacker, string weapon)
+    {
+        if (!_isHost || IsEscortBot(nick)) return;
+        var bot = GetBot(nick);
+        if (bot == null) return;
+
+        float hp = (_botHP.TryGetValue(nick, out var cur) ? cur : _botMaxHP) - amount;
+        _botHP[nick] = hp;
+        if (hp <= 0f) KillBot(bot, attacker, weapon);
+    }
+
+    void KillBot(AIBotController bot, string attacker, string weapon)
+    {
+        string  nick = bot.Nickname;
+        Vector3 pos  = bot.transform.position;
+        Vector3 vel  = bot.transform.forward * Mathf.Max(bot.Speed, 40f);
+        _botHP.Remove(nick);
+        _bots.Remove(bot);
+
+        // 사망 보고 → 원격은 자기 뷰를 잔해로 전환, 이어서 AI_DESPAWN 으로 서버 풀 정리
+        var sc = NetworkManager.Instance?.socketClient;
+        sc?.SendPlayerKilled(nick, attacker, weapon, PilotStatus.CauseShotDown, pos, -1);
+        sc?.SendAIDespawn(nick);
+
+        var go = bot.gameObject;
+        StripAIComponents(go);
+        ExplosionEffect.Spawn(pos);
+        WreckController.Begin(go, vel, onFire: true, sendMoves: false,
+            onImpact: _ => Destroy(go, 8f));
+
+        if (IsEnemyBot(nick) && _spawnEnemies)
+            StartCoroutine(RespawnEnemyLater(nick));
+        DevLog.Log($"[AIManager] {nick} shot down by {attacker} ({weapon})");
+    }
+
+    System.Collections.IEnumerator RespawnEnemyLater(string nick)
+    {
+        yield return new WaitForSeconds(_enemyRespawnDelay);
+        if (!_isHost || GetBot(nick) != null) yield break;
+        // 리더(호스트 기체)가 없거나 비행 중이 아니면 다음 출격까지 대기
+        while (_localPlayerAircraft == null || GameModeManager.Instance == null || !GameModeManager.Instance.IsFlying)
+            yield return new WaitForSeconds(2f);
+        SpawnEnemy(nick, _localPlayerAircraft);
+        GetBot(nick)?.GetComponent<EnemyAI>()?.EnableCombat();
+    }
+
+    // 원격 클라이언트: 호스트가 보고한 AI 격추 → 뷰를 잔해로 전환 (이후 AI_DESPAWN 은 무시됨)
+    void HandleRemoteBotKilled(PlayerKilledPacket p)
+    {
+        if (_isHost || !IsAIBot(p.victim)) return;
+        if (!_remoteBots.TryGetValue(p.victim, out var pc)) return;
+        _remoteBots.Remove(p.victim);
+        if (pc == null) return;
+
+        var go = pc.gameObject;
+        StripAIComponents(go);
+        ExplosionEffect.Spawn(new Vector3(p.posX, p.posY, p.posZ));
+        WreckController.Begin(go, go.transform.forward * 120f, onFire: true, sendMoves: false,
+            onImpact: _ => Destroy(go, 8f));
+    }
+
+    static void StripAIComponents(GameObject go)
+    {
+        foreach (var c in go.GetComponents<MonoBehaviour>())
+            if (c is AIBotController || c is EnemyAI || c is EscortAI || c is AircraftBoardingTrigger)
+                Destroy(c);
+        var pc = go.GetComponent<PlayerController>();
+        // IsFlying 해제 — 잔해가 락온·리드 표시 대상에서 빠지도록
+        if (pc != null) { pc.ClearSnapshots(); pc.IsFlying = false; pc.enabled = false; }
+    }
+
+    /// <summary>공유 기체(networkId)의 갑판 주기 위치 — 에스코트 슬롯 i 가 networkId i+1.</summary>
+    public bool TryGetDeckPose(int networkId, out Vector3 pos, out Quaternion rot)
+    {
+        var slots = CollectEscortSlots();
+        int i = networkId - 1;
+        if (i >= 0 && i < slots.Count)
         {
-            string  nick     = $"BOT_N{i + 1}";
-            Vector3 spawnPos = leader.transform.position + new Vector3(
-                Random.Range(-300f, 300f), Random.Range(30f, 80f), Random.Range(700f, 1400f));
-
-            var go    = BuildAIObject(nick, spawnPos, leader.transform.rotation);
-            var bot   = go.GetComponent<AIBotController>();
-            var enemy = go.AddComponent<EnemyAI>();
-            enemy.Initialize(leader.transform, leader.nickname);
-
-            _bots.Add(bot);
-            NetworkManager.Instance?.socketClient?.SendAISpawn(
-                nick, spawnPos, leader.transform.eulerAngles, aiType: 1);
-
-            Debug.Log($"[AIManager] Enemy spawned: {nick}");
+            pos = slots[i].transform.position;
+            rot = slots[i].transform.rotation;
+            return true;
         }
+        pos = default; rot = Quaternion.identity;
+        return false;
     }
 
     // ── 호스트 승계 ───────────────────────────────────────────────────────
@@ -285,7 +384,7 @@ public class AIManager : MonoBehaviour
         string myNick = NetworkManager.Instance?.socketClient?.myNickname ?? string.Empty;
         if (p.newHostNickname != myNick) return;
 
-        Debug.Log("[AIManager] Host handoff received — taking over escort bots");
+        DevLog.Log("[AIManager] Host handoff received — taking over escort bots");
         TakeOverRemoteBotsAsHost();
     }
 
@@ -354,7 +453,7 @@ public class AIManager : MonoBehaviour
             idx++;
         }
 
-        Debug.Log($"[AIManager] Host takeover complete: {idx} escort bots now under local control");
+        DevLog.Log($"[AIManager] Host takeover complete: {idx} escort bots now under local control");
     }
 
     // ── 원격 클라이언트: AI 패킷 핸들러 ──────────────────────────────────
@@ -394,7 +493,7 @@ public class AIManager : MonoBehaviour
         }
 
         _remoteBots[p.nickname] = pc;
-        Debug.Log($"[AIManager] Remote AI view: {p.nickname} (aiType={p.aiType})");
+        DevLog.Log($"[AIManager] Remote AI view: {p.nickname} (aiType={p.aiType})");
     }
 
     void HandleRemoteAIDespawn(string nickname)
@@ -476,7 +575,7 @@ public class AIManager : MonoBehaviour
         if (_landingCoroutine != null) { StopCoroutine(_landingCoroutine); _landingCoroutine = null; }
         _escortLandingStarted = true;
         var carrierTr = _cachedCarrier?.transform ?? FindAnyObjectByType<CarrierController>()?.transform;
-        Debug.Log($"[AIManager] BeginEscortLandingAfterDismount: carrier={(carrierTr != null ? carrierTr.name : "null")}  dir={_arrestedApproachDir}  wirePos={_arrestedWirePos}");
+        DevLog.Log($"[AIManager] BeginEscortLandingAfterDismount: carrier={(carrierTr != null ? carrierTr.name : "null")}  dir={_arrestedApproachDir}  wirePos={_arrestedWirePos}");
         _landingCoroutine = StartCoroutine(EscortLandingCoroutine(carrierTr, _arrestedApproachDir, _arrestedWirePos, true));
     }
 
@@ -523,12 +622,12 @@ public class AIManager : MonoBehaviour
         if (aws != null)
         {
             if (carrier == null) carrier = aws.transform.parent;
-            Debug.Log($"[AIManager] BeginEscortLanding: wire path  carrier={(carrier != null ? carrier.name : "null")}  wire={aws.WireCenter}");
+            DevLog.Log($"[AIManager] BeginEscortLanding: wire path  carrier={(carrier != null ? carrier.name : "null")}  wire={aws.WireCenter}");
             _landingCoroutine = StartCoroutine(EscortLandingCoroutine(carrier, aws.LandingDirection, aws.WireCenter, true));
             return;
         }
 
-        Debug.Log($"[AIManager] BeginEscortLanding: starting landing coroutine  carrier={(carrier != null ? carrier.name : "null")}");
+        DevLog.Log($"[AIManager] BeginEscortLanding: starting landing coroutine  carrier={(carrier != null ? carrier.name : "null")}");
         _landingCoroutine = StartCoroutine(EscortLandingCoroutine(carrier, Vector3.zero, Vector3.zero, false));
     }
 
@@ -545,7 +644,7 @@ public class AIManager : MonoBehaviour
 
         // 착함 슬롯 목록 수집 — 에스코트 i번은 Slot_0(i+1)에 정지
         var slots = CollectEscortSlots();
-        Debug.Log($"[AIManager] EscortLandingCoroutine: escorts={escorts.Count}  slots={slots.Count}  hasPath={hasPath}");
+        DevLog.Log($"[AIManager] EscortLandingCoroutine: escorts={escorts.Count}  slots={slots.Count}  hasPath={hasPath}");
 
         // 슬롯 순서(1번→2번→...)로 순차 착함 시작.
         // 발진 중(Launching)인 에스코트는 발진 완료까지 대기 후 착함.
@@ -560,12 +659,12 @@ public class AIManager : MonoBehaviour
             {
                 // 에스코트 i번 → Slot_0(i+1) 위치에 착함. 슬롯 부족 시 wirePos 폴백
                 Vector3 slotPos = i < slots.Count ? slots[i].transform.position : wirePos;
-                Debug.Log($"[AIManager] → BeginLandingWithPath '{escort.name}' → Slot_{i + 1}  pos={slotPos}");
+                DevLog.Log($"[AIManager] → BeginLandingWithPath '{escort.name}' → Slot_{i + 1}  pos={slotPos}");
                 escort.BeginLandingWithPath(carrier, approachDir, slotPos);
             }
             else
             {
-                Debug.Log($"[AIManager] → BeginLanding '{escort.name}' (slot {i + 1})");
+                DevLog.Log($"[AIManager] → BeginLanding '{escort.name}' (slot {i + 1})");
                 escort.BeginLanding(carrier);
             }
 
@@ -624,7 +723,7 @@ public class AIManager : MonoBehaviour
 
         _localPlayerAircraft = newPlayerPC;
         RecalculateEscortFormation();
-        Debug.Log($"[AIManager] Escort takeover: '{botNick}' → player, old aircraft → '{newEscortNick}' escort");
+        DevLog.Log($"[AIManager] Escort takeover: '{botNick}' → player, old aircraft → '{newEscortNick}' escort");
     }
 
     /// <summary>
@@ -649,7 +748,7 @@ public class AIManager : MonoBehaviour
         escortPC.isLocalPlayer = true;
 
         RecalculateEscortFormation();
-        Debug.Log($"[AIManager] BoardEscortFromGround: '{nick}' AI 제거, 플레이어 탑승");
+        DevLog.Log($"[AIManager] BoardEscortFromGround: '{nick}' AI 제거, 플레이어 탑승");
     }
 
     // 플레이어 탑승 후 남은 에스코트들의 편대 오프셋을 좌우 대칭으로 재배분.
@@ -715,7 +814,7 @@ public class AIManager : MonoBehaviour
             sb.Append($"[AIManager] 편대 재배분 N={N}  쌍={pairs}  후방={hasBehind}\n");
             foreach (var e in escorts)
                 sb.Append($"  {e.name}: {e.FormationOffset}\n");
-            Debug.Log(sb.ToString());
+            DevLog.Log(sb.ToString());
         }
     }
 

@@ -15,6 +15,34 @@ public class Room
     readonly Dictionary<string, AircraftEntry> _aircraftPool = new();
     readonly object _poolLock = new();
 
+    // 방 단위 전과 (입장 시 0 으로 생성, 퇴장 시 제거)
+    readonly Dictionary<string, ScoreEntry> _scores = new();
+    readonly object _scoreLock = new();
+
+    // ── 전과 ────────────────────────────────────────────────────────────────
+
+    public void RecordKill(string victim, string killer, bool victimIsBot)
+    {
+        lock (_scoreLock)
+        {
+            if (!victimIsBot && _scores.TryGetValue(victim, out var v)) v.deaths++;
+            if (!string.IsNullOrEmpty(killer) && killer != victim && _scores.TryGetValue(killer, out var k))
+            {
+                if (victimIsBot) k.aiKills++;
+                else             k.kills++;
+            }
+        }
+    }
+
+    public void BroadcastScoreboard()
+    {
+        var packet = new ScoreboardPacket { type = PacketType.SCOREBOARD };
+        lock (_scoreLock)
+            foreach (var e in _scores.Values)
+                packet.entries.Add(new ScoreEntry { nickname = e.nickname, kills = e.kills, aiKills = e.aiKills, deaths = e.deaths });
+        Broadcast(packet);
+    }
+
     // ── 항공기 풀 ────────────────────────────────────────────────────────────
 
     public void UpsertAircraft(AircraftEntry e)
@@ -77,7 +105,10 @@ public class Room
         if (isFirst)
             hostNickname = player.nickname;
 
+        lock (_scoreLock) _scores[player.nickname] = new ScoreEntry { nickname = player.nickname };
+
         BroadcastSystem($"{player.nickname} joined");
+        BroadcastScoreboard();
     }
 
     public void Leave(Player player)
@@ -109,6 +140,9 @@ public class Room
         Broadcast(despawn);
 
         BroadcastSystem($"{player.nickname} left");
+
+        lock (_scoreLock) _scores.Remove(player.nickname);
+        if (!wasLast) BroadcastScoreboard();
 
         // 호스트가 나갔고 남은 플레이어가 있으면 다음 플레이어에게 호스트 승계
         if (wasHost && !wasLast)

@@ -252,7 +252,7 @@ public class EnemyAI : MonoBehaviour
         sc.SendMissileWarn(_bot.Nickname, _targetNick,
             (int)ThreatWarningSystem.ThreatLevel.MissileFired);
 
-        Debug.Log($"[AI] {_bot.Nickname} fired missile → {_targetNick}  salvo={_salvosFired + 1}/{maxSalvos}");
+        DevLog.Log($"[AI] {_bot.Nickname} fired missile → {_targetNick}  salvo={_salvosFired + 1}/{maxSalvos}");
     }
 
     static GameObject CreateFallbackMissile(Vector3 pos, Quaternion rot)
@@ -265,8 +265,22 @@ public class EnemyAI : MonoBehaviour
 
     // ── 이동 헬퍼 ─────────────────────────────────────────────────────────
 
+    // 하드 덱 — AI 는 이 고도(해수면 기준) 아래로 내려가지 않는다 (기존: 갑판 위 표적을 쫓아 해수면 아래로 비행)
+    const float HardDeck = 120f;
+    static float s_seaY = float.NaN;
+
     void FlyTo(Vector3 dest, float speed)
     {
+        if (float.IsNaN(s_seaY))
+        {
+            var ocean = FindAnyObjectByType<OceanSurface>();
+            s_seaY = ocean != null ? ocean.seaLevel : 0f;
+        }
+        float floor = s_seaY + HardDeck;
+        dest.y = Mathf.Max(dest.y, floor);
+        // 이미 하드 덱 아래면 기수를 들어 회복 — 수평 성분은 유지
+        if (transform.position.y < floor) dest.y = Mathf.Max(dest.y, transform.position.y + 200f);
+
         Vector3 toTarget = dest - transform.position;
         if (toTarget.sqrMagnitude < 0.01f) { _bot.SetTarget(dest, transform.rotation, speed); return; }
 

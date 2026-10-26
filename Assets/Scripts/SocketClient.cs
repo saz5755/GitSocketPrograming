@@ -36,6 +36,7 @@ public class SocketClient : MonoBehaviour
 
     // 현재 방의 호스트 닉네임 — ENTER_ROOM_RESULT 수신 즉시 세팅 (씬 전환 전에도 참조 가능)
     public string roomHostNickname = "";
+    public ScoreboardPacket LastScoreboard;
 
     // ── 이벤트 (Unity 메인스레드에서 발행) ──────────────────────────────
     public event Action<LoginResultPacket>    OnLoginResult;
@@ -62,6 +63,9 @@ public class SocketClient : MonoBehaviour
     public event Action<AircraftBoardPacket>      OnAircraftLeave;
     public event Action<AircraftPoolSyncPacket>   OnAircraftPoolSync;
     public event Action<ArrestEventPacket>        OnArrestEvent;
+    public event Action<PlayerKilledPacket>       OnPlayerKilled;
+    public event Action<ScoreboardPacket>         OnScoreboard;
+    public event Action<AircraftStatePacket>      OnAircraftState;
 
     // ── 연결 ──────────────────────────────────────────────────────────────
     public void Connect(string ip = null)
@@ -270,6 +274,29 @@ public class SocketClient : MonoBehaviour
                 break;
             }
 
+            case PacketType.PLAYER_KILLED:
+            {
+                var p = JsonConvert.DeserializeObject<PlayerKilledPacket>(json);
+                UnityMainThreadDispatcher.Instance.Enqueue(() => OnPlayerKilled?.Invoke(p));
+                break;
+            }
+
+            case PacketType.SCOREBOARD:
+            {
+                var p = JsonConvert.DeserializeObject<ScoreboardPacket>(json);
+                LastScoreboard = p;   // UI 가 늦게 생성돼도 최신 전과를 읽을 수 있게
+                UnityMainThreadDispatcher.Instance.Enqueue(() => OnScoreboard?.Invoke(p));
+                break;
+            }
+
+            case PacketType.AIRCRAFT_STATE:
+            {
+                var p = JsonConvert.DeserializeObject<AircraftStatePacket>(json);
+                if (p.nickname != myNickname)
+                    UnityMainThreadDispatcher.Instance.Enqueue(() => OnAircraftState?.Invoke(p));
+                break;
+            }
+
             case PacketType.ARREST_EVENT:
             {
                 var p = JsonConvert.DeserializeObject<ArrestEventPacket>(json);
@@ -457,10 +484,10 @@ public class SocketClient : MonoBehaviour
             rotX = rot.x, rotY = rot.y, rotZ = rot.z,
             guidanceType = guidanceType });
 
-    public void SendMissileDestroy(string id, string shooterNick, string hitNick, Vector3 pos)
+    public void SendMissileDestroy(string id, string shooterNick, string hitNick, Vector3 pos, float damage = 0f)
         => SendTCP(new MissileDestroyPacket {
             type = PacketType.MISSILE_DESTROY, missileId = id,
-            shooterNickname = shooterNick, hitNickname = hitNick,
+            shooterNickname = shooterNick, hitNickname = hitNick, damage = damage,
             posX = pos.x, posY = pos.y, posZ = pos.z });
 
     public void SendMissileWarn(string shooter, string target, int lockLevel)
@@ -525,6 +552,17 @@ public class SocketClient : MonoBehaviour
             eventType    = eventType,
             approachDirX = approachDir.x, approachDirY = approachDir.y, approachDirZ = approachDir.z,
             wirePosX     = wirePos.x,     wirePosY     = wirePos.y,     wirePosZ     = wirePos.z });
+
+    public void SendPlayerKilled(string victim, string killer, string weapon, string cause, Vector3 pos, int aircraftId)
+        => SendTCP(new PlayerKilledPacket {
+            type   = PacketType.PLAYER_KILLED,
+            victim = victim, killer = killer ?? "", weapon = weapon ?? "", cause = cause,
+            posX = pos.x, posY = pos.y, posZ = pos.z, aircraftId = aircraftId });
+
+    public void SendAircraftState(int aircraftId, int state, Vector3 pos)
+        => SendTCP(new AircraftStatePacket {
+            type = PacketType.AIRCRAFT_STATE, nickname = myNickname,
+            aircraftId = aircraftId, state = state, posX = pos.x, posY = pos.y, posZ = pos.z });
 
     public void SendBoardAircraft(int aircraftId)
         => SendTCP(new AircraftBoardPacket { type = PacketType.BOARD_AIRCRAFT, aircraftId = aircraftId });

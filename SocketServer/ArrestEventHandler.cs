@@ -2,7 +2,7 @@ using Newtonsoft.Json;
 
 // ARREST_EVENT (TCP): 게스트의 착함 이벤트를 방 전체에 중계 — 호스트가 에스코트 AI 착함을 처리한다
 // eventType 0=와이어 체결(에스코트 자유비행), 1=하차(와이어 경로 있음), 2=하차(경로 없음)
-class ArrestEventPacket : Packet
+public class ArrestEventPacket : Packet
 {
     public string nickname = "";
     public int    eventType;

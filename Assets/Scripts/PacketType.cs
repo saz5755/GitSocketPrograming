@@ -33,4 +33,7 @@ public enum PacketType
     LEAVE_AIRCRAFT       = 31,
     AIRCRAFT_POOL_SYNC   = 32,
     ARREST_EVENT         = 33,
+    PLAYER_KILLED        = 34,
+    SCOREBOARD           = 35,
+    AIRCRAFT_STATE       = 36,
 }

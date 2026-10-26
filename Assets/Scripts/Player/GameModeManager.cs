@@ -11,6 +11,11 @@ public class GameModeManager : MonoBehaviour
 
     public bool IsFlying          { get; private set; }
     public bool IsBoardedInCockpit { get; private set; }
+    /// <summary>격추·추락·사출 후 재출격 전까지 (PilotStatus 가 관리)</summary>
+    public bool IsDead            { get; private set; }
+    /// <summary>비행 시작 시각 — 발진 직후 충돌 판정 유예 등에 사용</summary>
+    public float FlightStartTime  { get; private set; }
+    public PlayerController LocalPC => _pc;
 
     // 외부(AircraftZone)에서 접근
     public Transform GroundCharacter => _gc != null ? _gc.transform : null;
@@ -71,6 +76,13 @@ public class GameModeManager : MonoBehaviour
             pf.Initialize(LaunchOfficerNPC.Instance);
         }
 
+        // 조종사 생존 상태 (피격 귀속·추락·사출·재출격)
+        if (GetComponent<PilotStatus>() == null)
+            gameObject.AddComponent<PilotStatus>();
+        // 킬 피드·사망 화면·스코어보드
+        if (CombatFeedUI.Instance == null)
+            new GameObject("CombatFeed_Canvas").AddComponent<CombatFeedUI>();
+
         // 콕핏 인터랙션 시스템 초기화
         if (GetComponent<CockpitInteractionSystem>() == null)
             gameObject.AddComponent<CockpitInteractionSystem>();
@@ -89,6 +101,7 @@ public class GameModeManager : MonoBehaviour
 
         // 지상 캐릭터 시작 위치: Zone 12m 뒤, 지면 위 5cm
         Vector3 charStart = new Vector3(groundPos.x, groundPos.y + 0.05f, groundPos.z - 12f);
+        _respawnPos = charStart;
         ApplyGroundMode(charStart, 0f);
 
         Debug.Log($"[GameMode] Init complete. _pc={(pc != null ? pc.name : "null (공유 항공기 대기)")}");
@@ -139,6 +152,9 @@ public class GameModeManager : MonoBehaviour
     // ── 매 프레임: 프롬프트 표시 + E키 처리 ────────────────────────────────
     void Update()
     {
+        // 사망 중에는 입력을 PilotStatus(재출격)가 처리한다 — 탑승·하차 키 무시
+        if (IsDead) { ShowPrompt(false); return; }
+
         // ── 비행 중: 착함·착륙 존 처리 ──────────────────────────────────────
         if (IsFlying)
         {
@@ -262,6 +278,7 @@ public class GameModeManager : MonoBehaviour
     {
         if (IsFlying || _gc == null || _pc == null) return;
         IsFlying = true;
+        FlightStartTime = Time.time;
 
         // 캐릭터 숨기기
         _gc.enabled = false;
@@ -507,6 +524,48 @@ public class GameModeManager : MonoBehaviour
     }
 
     // ── 내부 헬퍼 ────────────────────────────────────────────────────────────
+    // ── 사망 / 재출격 ───────────────────────────────────────────────────────
+    Vector3 _respawnPos;
+
+    /// <summary>조종사 사망 — 비행 상태를 끝내고 무장·HUD·존 처리를 멈춘다 (캐릭터는 아직 숨긴 채).</summary>
+    public void EnterDeathState()
+    {
+        if (IsDead) return;
+        IsDead   = true;
+        IsFlying = false;
+        if (_trapping) StopTrap();
+        _activeZone = null;
+        _hud?.SetVisible(false);
+        ShowPrompt(false);
+    }
+
+    /// <summary>재출격 — 조종사를 항모 갑판(최초 스폰 위치)으로 복귀시킨다. 기체 정비·재배치는 PilotStatus 가 먼저 수행.</summary>
+    public void RespawnOnDeck()
+    {
+        if (!IsDead || _gc == null) return;
+        IsDead = false;
+
+        if (_pc != null)
+        {
+            var vfx = _pc.GetComponent<F35VFXController>();
+            if (vfx != null) { vfx.SetEngineIdle(false); vfx.enabled = false; }
+
+            int id = _pc.GetComponent<NetworkAircraft>()?.networkId ?? -1;
+            if (id >= 0) NetworkManager.Instance?.socketClient?.SendLeaveAircraft(id);
+            _pc.SendFlightState(false);
+            _pc.enabled = false;
+        }
+
+        // 항모는 정적 배치 오브젝트 — 와이어 시스템 부모가 항공모함 루트
+        var carrier = ArrestingWireSystem.Instance != null ? ArrestingWireSystem.Instance.transform.parent : null;
+        if (carrier != null) _gc.transform.SetParent(carrier, true);
+        ApplyGroundMode(_respawnPos, 0f);
+
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible   = false;
+        Debug.Log("[GameMode] → Respawned on carrier deck");
+    }
+
     void ApplyGroundMode(Vector3 charPos, float yaw)
     {
         IsFlying = false;
