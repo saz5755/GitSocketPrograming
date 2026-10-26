@@ -602,8 +602,8 @@ public class LoginUI : MonoBehaviour
         var op = SceneManager.LoadSceneAsync("LobbyScene");
         if (op != null) op.allowSceneActivation = false;
 
-        // 인증 연출이 충분히 보이도록 최소 시간 대기 (3단계 완료 + ACCESS GRANTED 표시)
-        while (_authFx != null && _authFx.Playing && (_authFx.Elapsed < 2.3f || _authFx.GrantedFor < 0.8f)) yield return null;
+        // 인증 연출이 충분히 보이도록 최소 시간 대기 (3단계 완료 + 레티클 락온·확정 펄스 + ACCESS GRANTED 표시)
+        while (_authFx != null && _authFx.Playing && (_authFx.Elapsed < 2.3f || _authFx.GrantedFor < 1.4f)) yield return null;
         yield return new WaitForSecondsRealtime(0.1f);
 
         // 암전

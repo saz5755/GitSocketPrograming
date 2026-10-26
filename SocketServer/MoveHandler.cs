@@ -92,16 +92,7 @@ class MoveHandler
             animState          = sender.animState
         };
 
-        foreach (Player target in sender.room!.GetPlayers())
-        {
-            if (target == sender) continue;
-            if (target.session == null) continue;
-
-            // UDP endpoint 등록 전이면 TCP로 fallback (동기화 보장)
-            if (target.session.udpEndPoint != null)
-                UdpSender.Send(target.session.udpEndPoint, broadcast);
-            else
-                ServerSender.SendPacket(target.session, broadcast);
-        }
+        // UDP endpoint 등록 전이면 TCP로 fallback (동기화 보장)
+        UdpSender.BroadcastToRoom(sender.room!, sender, broadcast);
     }
 }

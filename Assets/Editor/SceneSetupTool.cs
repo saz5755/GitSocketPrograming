@@ -103,5 +103,5 @@ public static class SceneSetupTool
     }
 
     static T FindType<T>() where T : Object
-        => Object.FindObjectOfType<T>();
+        => Object.FindAnyObjectByType<T>();
 }

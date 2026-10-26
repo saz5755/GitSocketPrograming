@@ -6,6 +6,10 @@ public class Room
     public string hostNickname = string.Empty;
 
     List<Player> players = new();
+
+    // 빈 방이 된 시각 (생성 직후 포함). 입장자가 있으면 null.
+    // 생성 후 아무도 들어오지 않거나(씬 로딩 중 종료/이탈) 입장 직후 이탈한 경우의 유령 방 정리용.
+    public DateTime? emptySinceUtc = DateTime.UtcNow;
     readonly object locker = new();
 
     readonly Dictionary<string, AircraftEntry> _aircraftPool = new();
@@ -66,6 +70,7 @@ public class Room
         {
             isFirst = players.Count == 0;
             players.Add(player);
+            emptySinceUtc = null;
         }
 
         player.room = this;
@@ -84,6 +89,7 @@ public class Room
         {
             players.Remove(player);
             wasLast = players.Count == 0;
+            if (wasLast) emptySinceUtc = DateTime.UtcNow;
         }
 
         player.room = null;

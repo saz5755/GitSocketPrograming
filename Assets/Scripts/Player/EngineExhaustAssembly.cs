@@ -30,7 +30,7 @@ public class EngineExhaustAssembly : MonoBehaviour
         // 처음엔 모두 꺼져 있어야 함 — playOnAwake 무시 보정
         if (_outerGlow != null) _outerGlow.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
         if (_innerCore != null) _innerCore.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
-        if (_light     != null) _light.intensity = 0f;
+        if (_light     != null) { _light.intensity = 0f; _light.enabled = false; }
     }
 
     // 절차적으로 빌드한 컴포넌트를 등록할 때 사용 — F35VFXController/EscortVFXController fallback 경로
@@ -40,6 +40,7 @@ public class EngineExhaustAssembly : MonoBehaviour
         _outerGlow         = outerGlow;
         _innerCore         = innerCore;
         _light             = light;
+        if (_light != null && _light.intensity <= 0f) _light.enabled = false;  // SetActive(true) 때 켜짐
         _maxLightIntensity = maxLightIntensity;
         _lightLerpSpeed    = lightLerpSpeed;
     }
@@ -53,14 +54,22 @@ public class EngineExhaustAssembly : MonoBehaviour
             if (_outerGlow != null && !_outerGlow.isPlaying) _outerGlow.Play();
             if (_innerCore != null && !_innerCore.isPlaying) _innerCore.Play();
             if (_light != null)
+            {
+                _light.enabled   = true;
                 _light.intensity = Mathf.Lerp(_light.intensity, _maxLightIntensity, dt * _lightLerpSpeed);
+            }
         }
         else
         {
             if (_outerGlow != null && _outerGlow.isPlaying) _outerGlow.Stop();
             if (_innerCore != null && _innerCore.isPlaying) _innerCore.Stop();
-            if (_light != null)
+            // Lerp는 0에 수렴만 하므로 임계값 아래에서 끊고 라이트를 끈다 —
+            // intensity 0이어도 enabled 라이트는 컬링·Forward+ 라이트 리스트 비용이 든다.
+            if (_light != null && _light.enabled)
+            {
                 _light.intensity = Mathf.Lerp(_light.intensity, 0f, dt * _lightLerpSpeed);
+                if (_light.intensity < 0.01f) { _light.intensity = 0f; _light.enabled = false; }
+            }
         }
     }
 }

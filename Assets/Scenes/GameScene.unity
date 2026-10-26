@@ -20,11 +20,11 @@ RenderSettings:
   m_FogDensity: 0.01
   m_LinearFogStart: 0
   m_LinearFogEnd: 300
-  m_AmbientSkyColor: {r: 0.212, g: 0.227, b: 0.259, a: 1}
+  m_AmbientSkyColor: {r: 0.069771856, g: 0.099674076, b: 0.18938074, a: 0.99674076}
   m_AmbientEquatorColor: {r: 0.114, g: 0.125, b: 0.133, a: 1}
   m_AmbientGroundColor: {r: 0.047, g: 0.043, b: 0.035, a: 1}
   m_AmbientIntensity: 1
-  m_AmbientMode: 0
+  m_AmbientMode: 3
   m_SubtractiveShadowColor: {r: 0.42, g: 0.478, b: 0.627, a: 1}
   m_SkyboxMaterial: {fileID: 10304, guid: 0000000000000000f000000000000000, type: 0}
   m_HaloStrength: 0.5
@@ -32,10 +32,10 @@ RenderSettings:
   m_FlareFadeSpeed: 3
   m_HaloTexture: {fileID: 0}
   m_SpotCookie: {fileID: 10001, guid: 0000000000000000e000000000000000, type: 0}
-  m_DefaultReflectionMode: 0
+  m_DefaultReflectionMode: 1
   m_DefaultReflectionResolution: 128
   m_ReflectionBounces: 1
-  m_ReflectionIntensity: 1
+  m_ReflectionIntensity: 0.99674076
   m_CustomReflection: {fileID: 0}
   m_Sun: {fileID: 0}
   m_UseRadianceAmbientProbe: 0
@@ -3788,8 +3788,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9d45d73b92eb1df4dbfc0954aac75f85, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CountermeasureSystem
-  _vfxAdditive: {fileID: 2100000, guid: c387eaee230ace24c88c560ed606d199, type: 2}
-  _vfxAlpha: {fileID: 2100000, guid: 61751cc2b4e625b469721cdb429668c4, type: 2}
 --- !u!114 &504464693
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -7215,7 +7213,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 832575517}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 172515602e62fb746b5d573b38a5fe58, type: 3}
   m_Name: 
@@ -15075,6 +15073,104 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: -32}
   m_SizeDelta: {x: 80, y: 14}
   m_Pivot: {x: 0.5, y: 0.5}
+--- !u!1 &2099841352
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2099841353}
+  - component: {fileID: 2099841355}
+  - component: {fileID: 2099841354}
+  m_Layer: 0
+  m_Name: '[Environment]'
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &2099841353
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2099841352}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &2099841354
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2099841352}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2c653b728f8f7b04b8dd2a86e929349d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CloudLayer
+  cloudBase: 650
+  cloudTop: 1150
+  coverage: 0.45
+  extinction: 0.045
+  shapeScale: 1400
+  clusterScale: 2900
+  detailScale: 260
+  erosion: 0.45
+  wind: {x: 9, y: 4}
+  sunIntensity: 1
+  ambientIntensity: 1
+  multiScattering: 0.6
+  silverLining: 0.75
+  baseDarkening: 0.45
+  cloudTint: {r: 1, g: 1, b: 1, a: 1}
+  hazeColor: {r: 0.66, g: 0.75, b: 0.82, a: 1}
+  hazeDistance: 9000
+  maxDistance: 16000
+  maxSteps: 112
+--- !u!114 &2099841355
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2099841352}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 359c14e06f547074fae1dfff4271d639, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::OceanSurface
+  seaLevel: -11
+  waveScale: 1
+  choppiness: 1
+  rippleStrength: 1
+  windPatches: 0.6
+  foamAmount: 1
+  deepColor: {r: 0.012, g: 0.045, b: 0.085, a: 1}
+  crestScatterColor: {r: 0.03, g: 0.165, b: 0.19, a: 1}
+  foamColor: {r: 0.92, g: 0.95, b: 0.97, a: 1}
+  skyZenithColor: {r: 0.24, g: 0.42, b: 0.68, a: 1}
+  carrier: {fileID: 1059067955}
+  sternLocal: {x: 0, y: 0, z: 94}
+  forwardLocal: {x: 0, y: 0, z: -1}
+  hullHalfSize: {x: 94, y: 13}
+  virtualSpeed: 12
+  wakeLength: 650
+  wakeStrength: 1
+  autoHazeFromSky: 1
+  hazeColor: {r: 0.66, g: 0.75, b: 0.82, a: 1}
+  hazeStart: 600
+  hazeEnd: 14000
+  cameraFar: 20000
 --- !u!1 &2131750517
 GameObject:
   m_ObjectHideFlags: 0
@@ -16538,3 +16634,4 @@ SceneRoots:
   - {fileID: 1941889057}
   - {fileID: 117688614}
   - {fileID: 1003530591}
+  - {fileID: 2099841353}

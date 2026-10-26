@@ -17,15 +17,6 @@ class AIMoveHandler
             packet.rotX, packet.rotY, packet.rotZ,
             packet.speed, true);
 
-        foreach (var player in session.player.room.GetPlayers())
-        {
-            if (player == session.player) continue;
-            if (player.session == null) continue;
-
-            if (player.session.udpEndPoint != null)
-                UdpSender.Send(player.session.udpEndPoint, packet);
-            else
-                ServerSender.SendPacket(player.session, packet);
-        }
+        UdpSender.BroadcastToRoom(session.player.room, session.player, packet);
     }
 }

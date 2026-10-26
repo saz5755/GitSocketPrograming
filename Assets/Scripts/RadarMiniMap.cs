@@ -207,10 +207,13 @@ public class RadarMiniMap : MonoBehaviour
     }
 
     // ── 아이콘 갱신 (20Hz) ────────────────────────────────────────────────────
+    readonly HashSet<string> _seen = new HashSet<string>();
+
     void UpdateIcons()
     {
         string targetNick = _targeting?.Target?.nickname ?? "";
-        var seen = new HashSet<string>();
+        var seen = _seen;
+        seen.Clear();
 
         foreach (var pc in PlayerController.All)
         {
@@ -247,7 +250,8 @@ public class RadarMiniMap : MonoBehaviour
             SetVisible(nick, true);
         }
 
-        foreach (var k in new List<string>(_blipRoots.Keys))
+        // SetVisible은 딕셔너리를 수정하지 않으므로 키 복사 없이 순회
+        foreach (var k in _blipRoots.Keys)
             if (!seen.Contains(k)) SetVisible(k, false);
     }
 

@@ -4,8 +4,9 @@ using UnityEngine.UI;
 
 /// <summary>
 /// 로그인 화면의 사이버펑크 "디지털 전장 진입" 레이어:
-///  · 상시 HUD 오버레이 — 스캔라인, 도트 그리드, 코너 브래킷, 텔레메트리(UTC/좌표/노드), 가끔 지나가는 글리치 라인, 전투기를 조준하는 타깃 레티클
-///  · 인증 연출 — 폼이 업링크 터미널로 바뀌며 부팅 로그가 타이핑되고, 레티클이 전투기에 LOCK 된다
+///  · 상시 HUD 오버레이 — 스캔라인, 도트 그리드, 텔레메트리 (레티클은 평소 숨김)(UTC/좌표/노드), 가끔 지나가는 글리치 라인, 전투기를 조준하는 타깃 레티클
+///  · 인증 연출 — 폼이 업링크 터미널로 바뀌며 부팅 로그가 타이핑된다
+///  · 로그인 승인 순간에만 타깃 레티클이 나타나 두 호(arc)가 회전하며 링으로 수렴 → LOCK 확정 펄스
 ///  · 성공 시 ACCESS GRANTED → 글리치 와이프로 로비 진입
 /// </summary>
 public class LoginAuthFX : MonoBehaviour
@@ -29,9 +30,10 @@ public class LoginAuthFX : MonoBehaviour
     RectTransform _spinner;
 
     // 레티클
-    RectTransform _ret, _retDash, _retRing, _retBox;
+    RectTransform _ret, _retDash, _retRing, _retArcs;
+    CanvasGroup _retGroup;
+    Image _ringBorder, _arcImg, _flashBorder;
     Text _retTag, _retRange, _retLock;
-    Image[] _retCorners = new Image[4];
     Image _lockFlash;
 
     // 텔레메트리
@@ -52,7 +54,10 @@ public class LoginAuthFX : MonoBehaviour
 
     float _grantedT = -1f;
     float _fadeIn;
-    static Sprite _spinSprite, _dashSprite;
+    static Sprite _spinSprite, _dashSprite, _arcSprite;
+    static readonly Color Mint = new Color(0.5f, 1f, 0.8f, 1f);
+
+    const float FrameMargin = 34f;   // 화면 가장자리에서 텔레메트리까지 여백
 
     // ── 생성 ──────────────────────────────────────────────────────────────
     public static LoginAuthFX Create(Transform canvasRoot, RectTransform heroRoot, RectTransform form, RectTransform button)
@@ -85,9 +90,8 @@ public class LoginAuthFX : MonoBehaviour
         if (hero != null) _overlay.SetSiblingIndex(hero.GetSiblingIndex() + 1);
         _hudGroup = go.AddComponent<CanvasGroup>(); _hudGroup.alpha = 0f; _hudGroup.blocksRaycasts = false; _hudGroup.interactable = false;
 
-        // 코너 브래킷
-        const float M = 34f, L = 46f;
-        Bracket(M, M, L, 1, 1); Bracket(M, M, L, -1, 1); Bracket(M, M, L, 1, -1); Bracket(M, M, L, -1, -1);
+        // 화면 테두리·코너 마크는 두지 않는다 — 배경과 어울리지 않아 제거
+        const float M = FrameMargin;
 
         // 상단 좌/우, 하단 텔레메트리
         Txt(_overlay, UIType.Track("TACTICAL UPLINK", 1), Anchor(0f, 1f), new Vector2(M + 56f, -M - 8f), new Vector2(420f, 18f), 11, Cyan, TextAnchor.MiddleLeft, FontStyle.Bold, new Vector2(0f, 0.5f));
@@ -106,6 +110,8 @@ public class LoginAuthFX : MonoBehaviour
         _ret = new GameObject("Reticle", typeof(RectTransform)).GetComponent<RectTransform>();
         _ret.SetParent(_overlay, false);
         _ret.anchorMin = _ret.anchorMax = new Vector2(0.60f, 0.50f); _ret.sizeDelta = Vector2.zero;
+        // 평소엔 숨김 — 로그인 승인 순간에만 락온 연출로 등장
+        _retGroup = _ret.gameObject.AddComponent<CanvasGroup>(); _retGroup.alpha = 0f; _retGroup.blocksRaycasts = false; _retGroup.interactable = false;
 
         // 점선 회전 링
         _retDash = Child(_ret, "Dash", Vector2.zero, new Vector2(420f, 420f));
@@ -114,7 +120,11 @@ public class LoginAuthFX : MonoBehaviour
         // 얇은 실선 링
         _retRing = Child(_ret, "Ring", Vector2.zero, new Vector2(330f, 330f));
         var ri = _retRing.gameObject.AddComponent<Image>(); UIShapes.Round(ri, 165); ri.color = Color.clear; ri.raycastTarget = false;
-        UIShapes.AddBorder(_retRing, 165, new Color(Cyan.r, Cyan.g, Cyan.b, 0.55f));
+        _ringBorder = UIShapes.AddBorder(_retRing, 165, new Color(Cyan.r, Cyan.g, Cyan.b, 0.55f));
+
+        // 수렴 호 — 좌우 두 개의 짧은 호가 회전하며 링 위로 닫힌다 (꺾쇠 박스 대신)
+        _retArcs = Child(_ret, "LockArcs", Vector2.zero, new Vector2(372f, 372f));
+        _arcImg = _retArcs.gameObject.AddComponent<Image>(); _arcImg.sprite = ArcSprite(); _arcImg.color = new Color(Ink.r, Ink.g, Ink.b, 0f); _arcImg.raycastTarget = false;
 
         // 십자 눈금
         for (int k = 0; k < 4; k++)
@@ -125,28 +135,18 @@ public class LoginAuthFX : MonoBehaviour
         }
         Child(_ret, "Dot", Vector2.zero, new Vector2(5f, 5f)).gameObject.AddComponent<Image>().color = Amber;
 
-        // 락온 박스(코너 브래킷) — 인증 중 수축
-        _retBox = Child(_ret, "Box", Vector2.zero, new Vector2(520f, 330f));
-        float bw = 260f, bh = 165f, bl = 34f;
-        for (int k = 0; k < 4; k++)
-        {
-            float sx = (k % 2 == 0) ? -1f : 1f, sy = (k < 2) ? 1f : -1f;
-            var hz = Child(_retBox, "bh" + k, new Vector2(sx * (bw - bl * 0.5f), sy * bh), new Vector2(bl, 2f));
-            var vt = Child(_retBox, "bv" + k, new Vector2(sx * bw, sy * (bh - bl * 0.5f)), new Vector2(2f, bl));
-            hz.gameObject.AddComponent<Image>().color = Cyan; _retCorners[k] = vt.gameObject.AddComponent<Image>(); _retCorners[k].color = Cyan;
-        }
-
-        // 라벨 + 리더 라인 (박스 우상단 바깥)
-        var lead = Child(_ret, "Leader", new Vector2(-bw, bh + 26f), new Vector2(1f, 52f));
+        // 라벨 + 리더 라인 (링 좌상단 바깥)
+        const float lx = -260f, ly = 165f;
+        var lead = Child(_ret, "Leader", new Vector2(lx, ly + 26f), new Vector2(1f, 52f));
         lead.gameObject.AddComponent<Image>().color = new Color(Cyan.r, Cyan.g, Cyan.b, 0.55f);
-        _retTag = Txt(_ret, "TGT-01  KF-21A", Vector2.zero, Vector2.zero, new Vector2(300f, 18f), 12, Ink, TextAnchor.MiddleLeft, FontStyle.Bold, new Vector2(0f, 0.5f), new Vector2(-bw + 10f, bh + 62f));
-        _retRange = Txt(_ret, "RNG 0412 M", Vector2.zero, Vector2.zero, new Vector2(300f, 16f), 10, new Color(Ink.r, Ink.g, Ink.b, 0.6f), TextAnchor.MiddleLeft, FontStyle.Normal, new Vector2(0f, 0.5f), new Vector2(-bw + 10f, bh + 44f));
-        _retLock = Txt(_ret, "LOCK: STANDBY", Vector2.zero, Vector2.zero, new Vector2(300f, 16f), 10, Amber, TextAnchor.MiddleLeft, FontStyle.Bold, new Vector2(0f, 0.5f), new Vector2(-bw + 10f, bh + 28f));
+        _retTag = Txt(_ret, "", Vector2.zero, Vector2.zero, new Vector2(300f, 18f), 12, Ink, TextAnchor.MiddleLeft, FontStyle.Bold, new Vector2(0f, 0.5f), new Vector2(lx + 10f, ly + 62f));
+        _retRange = Txt(_ret, "RNG 0412 M", Vector2.zero, Vector2.zero, new Vector2(300f, 16f), 10, new Color(Ink.r, Ink.g, Ink.b, 0.6f), TextAnchor.MiddleLeft, FontStyle.Normal, new Vector2(0f, 0.5f), new Vector2(lx + 10f, ly + 44f));
+        _retLock = Txt(_ret, "", Vector2.zero, Vector2.zero, new Vector2(300f, 16f), 10, Amber, TextAnchor.MiddleLeft, FontStyle.Bold, new Vector2(0f, 0.5f), new Vector2(lx + 10f, ly + 28f));
 
         // 락온 확정 플래시(링)
         var fl = Child(_ret, "LockFlash", Vector2.zero, new Vector2(330f, 330f));
         _lockFlash = fl.gameObject.AddComponent<Image>(); UIShapes.Round(_lockFlash, 165); _lockFlash.color = Color.clear; _lockFlash.raycastTarget = false;
-        UIShapes.AddBorder(fl, 165, new Color(0.5f, 1f, 0.8f, 0.9f)).color = new Color(0.5f, 1f, 0.8f, 0f);
+        _flashBorder = UIShapes.AddBorder(fl, 165, Mint); _flashBorder.color = new Color(Mint.r, Mint.g, Mint.b, 0f);
     }
 
     // ── 버튼 스피너 ────────────────────────────────────────────────────────
@@ -251,7 +251,8 @@ public class LoginAuthFX : MonoBehaviour
         float termTarget = Playing ? 1f : 0f;
         if (_term != null) _term.alpha = Mathf.MoveTowards(_term.alpha, termTarget, dt * 5f);
 
-        if (!Playing) { RetidleLock(dt); return; }
+        UpdateReticle(dt);
+        if (!Playing) return;
 
         Elapsed += dt;
         if (_spinner != null) _spinner.localRotation = Quaternion.Euler(0f, 0f, -Elapsed * 330f);
@@ -262,7 +263,6 @@ public class LoginAuthFX : MonoBehaviour
 
         UpdateLines(dt);
         UpdateBar();
-        UpdateLock();
     }
 
     void UpdateLines(float dt)
@@ -321,45 +321,71 @@ public class LoginAuthFX : MonoBehaviour
         }
     }
 
-    // ── 레티클 락온 ────────────────────────────────────────────────────────
-    float _lock;   // 0 대기 ~ 1 확정
-    void UpdateLock()
+    // ── 레티클 락온 (로그인 승인 시에만) ───────────────────────────────────
+    //  g = 승인 후 경과(초)
+    //  0.00~0.45  레티클이 1.18배에서 제자리로 내려앉으며 페이드인
+    //  0.10~0.70  두 호가 120° 회전·1.5배에서 링 위로 수렴 (점선 링은 빠르게 회전하다 감속)
+    //  0.70       LOCK 확정 — 호·링이 민트로 물들고 펄스 링이 퍼져 나감
+    //  라벨은 0.25부터 타이핑
+    const float LockAt = 0.7f;
+    float _dashSpin;
+
+    void UpdateReticle(float dt)
     {
-        float goal = _grantedT >= 0f ? 1f : Mathf.Clamp01(Elapsed / 1.8f) * 0.9f;
-        _lock = Mathf.MoveTowards(_lock, goal, Time.unscaledDeltaTime * 1.2f);
-        ApplyLock();
-        bool locked = _grantedT >= 0.3f;
-        _retLock.text = locked ? "LOCK: CONFIRMED" : "LOCK: ACQUIRING" + new string('.', 1 + (int)(Elapsed * 4f) % 3);
-        _retLock.color = locked ? _t.success : Amber;
-        if (locked && _lockFlash != null)
+        if (_retGroup == null) return;
+        float g = Playing ? _grantedT : -1f;
+
+        if (g < 0f)
         {
-            float f = Mathf.Clamp01((_grantedT - 0.3f) / 0.5f);
-            var rt = _lockFlash.rectTransform; rt.localScale = Vector3.one * (1f + f * 0.5f);
-            var b = rt.GetChild(0).GetComponent<Image>(); var c = b.color; c.a = (1f - f) * 0.9f; b.color = c;
+            // 승인 전/실패 시엔 숨김 (실패로 Stop 되면 부드럽게 사라짐)
+            _retGroup.alpha = Mathf.MoveTowards(_retGroup.alpha, 0f, dt * 4f);
+            if (_retGroup.alpha <= 0f) { _retTag.text = ""; _retLock.text = ""; }
+            return;
         }
+
+        float appear = EaseOut(Mathf.Clamp01(g / 0.45f));
+        _retGroup.alpha = appear;
+        _ret.localScale = Vector3.one * Mathf.Lerp(1.18f, 1f, appear);
+
+        float conv = EaseOut(Mathf.Clamp01((g - 0.1f) / (LockAt - 0.1f)));
+        _retArcs.localRotation = Quaternion.Euler(0f, 0f, Mathf.Lerp(120f, 0f, conv));
+        _retArcs.localScale = Vector3.one * Mathf.Lerp(1.5f, 1f, conv);
+        _retRing.localScale = Vector3.one * Mathf.Lerp(1.08f, 1f, conv);
+
+        bool locked = g >= LockAt;
+        float lockT = locked ? Mathf.Clamp01((g - LockAt) / 0.25f) : 0f;
+        Color arcCol = Color.Lerp(Ink, Mint, lockT); arcCol.a = conv * 0.95f;
+        _arcImg.color = arcCol;
+        Color ringCol = Color.Lerp(Cyan, Mint, lockT); ringCol.a = 0.55f + 0.3f * lockT;
+        _ringBorder.color = ringCol;
+
+        // 점선 링: 수렴 중 빠르게 돌다 락 후 천천히
+        _dashSpin += dt * Mathf.Lerp(160f, 12f, conv);
+
+        // 라벨 타이핑
+        const string tag = "TGT-01  KF-21A";
+        int n = Mathf.Clamp((int)((g - 0.25f) * 40f), 0, tag.Length);
+        _retTag.text = tag.Substring(0, n);
+        _retLock.text = g < 0.35f ? "" : locked ? "LOCK: CONFIRMED" : "LOCK: ACQUIRING" + new string('.', 1 + (int)(g * 8f) % 3);
+        _retLock.color = locked ? _t.success : Amber;
+
+        // 확정 펄스
+        if (locked)
+        {
+            float f = Mathf.Clamp01((g - LockAt) / 0.55f);
+            _lockFlash.rectTransform.localScale = Vector3.one * (1f + EaseOut(f) * 0.45f);
+            _flashBorder.color = new Color(Mint.r, Mint.g, Mint.b, (1f - f) * 0.9f);
+        }
+        else _flashBorder.color = new Color(Mint.r, Mint.g, Mint.b, 0f);
     }
 
-    void RetidleLock(float dt)
-    {
-        _lock = Mathf.MoveTowards(_lock, 0f, dt * 0.8f);
-        ApplyLock();
-        if (_retLock != null) { _retLock.text = "LOCK: STANDBY"; _retLock.color = Amber; }
-    }
-
-    void ApplyLock()
-    {
-        float e = _lock * _lock * (3f - 2f * _lock);
-        _retBox.localScale = Vector3.one * Mathf.Lerp(1.35f, 0.82f, e);
-        _retRing.localScale = Vector3.one * Mathf.Lerp(1.12f, 0.94f, e);
-        Color c = Color.Lerp(Cyan, _grantedT >= 0.3f ? new Color(0.5f, 1f, 0.8f) : Amber, e);
-        for (int k = 0; k < 4; k++) _retCorners[k].color = c;
-    }
+    static float EaseOut(float x) => 1f - (1f - x) * (1f - x) * (1f - x);
 
     // ── 상시 애니메이션 ─────────────────────────────────────────────────────
     void AnimateHud(float dt)
     {
         float t = Time.unscaledTime;
-        if (_retDash != null) _retDash.localRotation = Quaternion.Euler(0f, 0f, t * (10f + _lock * 90f));
+        if (_retDash != null) _retDash.localRotation = Quaternion.Euler(0f, 0f, t * 10f + _dashSpin);
         if (_ret != null) _ret.anchoredPosition = new Vector2(Mathf.Sin(t * 0.35f) * 5f, Mathf.Sin(t * 0.5f) * 3f);   // 미세 부유
         if (_utc != null) _utc.text = "UTC " + System.DateTime.UtcNow.ToString("HH:mm:ss");
         if (_node != null) _node.text = string.IsNullOrEmpty(_server) ? "NODE  STANDBY" : "NODE  " + _server;
@@ -409,18 +435,6 @@ public class LoginAuthFX : MonoBehaviour
         var rt = (RectTransform)go.transform; rt.anchorMin = rt.anchorMax = anchor; rt.pivot = new Vector2(0.5f, 0.5f);
         rt.anchoredPosition = pos; rt.sizeDelta = size;
         return rt;
-    }
-
-    // anchor 기준 코너에 L자 브래킷(ix,iy: 안쪽 방향)
-    void Bracket(float mx, float my, float len, int sx, int sy)
-    {
-        // sx: +1 좌 / -1 우, sy: +1 상 / -1 하
-        float ax = sx > 0 ? 0f : 1f, ay = sy > 0 ? 1f : 0f;
-        float x = sx * mx, y = -sy * my;
-        var h = Child(_overlay, "bh", Vector2.zero, new Vector2(len, 2f), new Vector2(ax, ay), new Vector2(x + sx * len * 0.5f, y));
-        var v = Child(_overlay, "bv", Vector2.zero, new Vector2(2f, len), new Vector2(ax, ay), new Vector2(x, y - sy * len * 0.5f));
-        h.gameObject.AddComponent<Image>().color = new Color(Cyan.r, Cyan.g, Cyan.b, 0.7f);
-        v.gameObject.AddComponent<Image>().color = new Color(Cyan.r, Cyan.g, Cyan.b, 0.7f);
     }
 
     Text Txt(RectTransform parent, string s, Vector2 anchor, Vector2 pos, Vector2 size, int fs, Color c, TextAnchor a, FontStyle st, Vector2 pivot, Vector2? posOverride = null)
@@ -477,6 +491,33 @@ public class LoginAuthFX : MonoBehaviour
         tex.SetPixels32(px); tex.Apply(false);
         _dashSprite = Sprite.Create(tex, new Rect(0, 0, S, S), new Vector2(0.5f, 0.5f));
         return _dashSprite;
+    }
+
+    // 수렴 호: 좌우 각 64° 짜리 호 두 개, 끝으로 갈수록 가늘고 옅어진다
+    static Sprite ArcSprite()
+    {
+        if (_arcSprite != null) return _arcSprite;
+        const int S = 256;
+        var tex = new Texture2D(S, S, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp, hideFlags = HideFlags.DontSave };
+        var px = new Color32[S * S];
+        float c = (S - 1) * 0.5f, r1 = S * 0.5f - 2f;
+        const float half = 32f * Mathf.Deg2Rad;
+        for (int y = 0; y < S; y++)
+            for (int x = 0; x < S; x++)
+            {
+                float dx = x - c, dy = y - c, d = Mathf.Sqrt(dx * dx + dy * dy);
+                float ang = Mathf.Atan2(dy, dx);                                      // 0 = 오른쪽
+                float off = Mathf.Min(Mathf.Abs(Mathf.DeltaAngle(0f, ang * Mathf.Rad2Deg)),
+                                      Mathf.Abs(Mathf.DeltaAngle(180f, ang * Mathf.Rad2Deg))) * Mathf.Deg2Rad;
+                float along = Mathf.Clamp01(1f - off / half);                          // 호 중앙 1 → 끝 0
+                float thick = Mathf.Lerp(0.6f, 3.2f, along);                            // 끝으로 갈수록 가늘게
+                float ring  = Mathf.Clamp01((thick - Mathf.Abs(d - (r1 - 3f))) / 1.1f);
+                float a = ring * Mathf.SmoothStep(0f, 1f, along);
+                px[y * S + x] = new Color32(255, 255, 255, (byte)(a * 255f));
+            }
+        tex.SetPixels32(px); tex.Apply(false);
+        _arcSprite = Sprite.Create(tex, new Rect(0, 0, S, S), new Vector2(0.5f, 0.5f));
+        return _arcSprite;
     }
 
     // 회전 스피너: 꼬리가 옅어지는 원호

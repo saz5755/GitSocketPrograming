@@ -44,6 +44,10 @@ public class GunSystem : MonoBehaviour
     // 적기별 속도 추정 (지수 평활)
     class EnemyTrack { public Vector3 vel; public Vector3 prevPos; public bool set; }
     readonly Dictionary<PlayerController, EnemyTrack> _tracks = new();
+    // 매 프레임 재사용 버퍼 (GC 방지)
+    readonly List<PlayerController> _leadEnemies = new(MAX_LEAD);
+    readonly List<PlayerController> _staleTracks = new();
+    RectTransform _overlayRT;
 
     // ── 색상 팔레트 ───────────────────────────────────────────────────────────
     static readonly Color HG   = new Color(0.00f, 0.98f, 0.42f, 0.92f);
@@ -175,7 +179,8 @@ public class GunSystem : MonoBehaviour
         Camera cam = Camera.main;
 
         // 현재 프레임에 표시할 적기 목록 수집 (에스코트 봇 제외)
-        var enemies = new List<PlayerController>(MAX_LEAD);
+        var enemies = _leadEnemies;
+        enemies.Clear();
         foreach (var pc in PlayerController.All)
         {
             if (enemies.Count >= MAX_LEAD) break;
@@ -227,8 +232,8 @@ public class GunSystem : MonoBehaviour
 
             _leadRTs[i].gameObject.SetActive(true);
 
-            var canvasRT = _overlayCanvas.GetComponent<RectTransform>();
-            float w = canvasRT.sizeDelta.x, h = canvasRT.sizeDelta.y;
+            _overlayRT ??= _overlayCanvas.GetComponent<RectTransform>();
+            float w = _overlayRT.sizeDelta.x, h = _overlayRT.sizeDelta.y;
             _leadRTs[i].anchoredPosition = new Vector2((vp.x - 0.5f) * w, (vp.y - 0.5f) * h);
 
             // 사거리 색상: 1500m 이내 = 녹색, 이상 = 황색
@@ -240,7 +245,8 @@ public class GunSystem : MonoBehaviour
         }
 
         // 이미 사라진 적 추적 정보 정리
-        var toRemove = new List<PlayerController>();
+        var toRemove = _staleTracks;
+        toRemove.Clear();
         foreach (var kv in _tracks)
             if (kv.Key == null || !PlayerController.All.Contains(kv.Key))
                 toRemove.Add(kv.Key);

@@ -12,10 +12,6 @@ public class CountermeasureSystem : MonoBehaviour
     // 재고, 쿨다운, 수명, 자동 발사 간격/burst, 분산 등 모두 Config에서 조정.
     public float AutoFlareInterval => GameplayConfigSO.Instance.autoFlareInterval;
 
-    [Header("VFX Materials (미할당 시 Resources 폴백)")]
-    [SerializeField] Material _vfxAdditive;
-    [SerializeField] Material _vfxAlpha;
-
     // ── 전역 액티브 디코이 목록 ────────────────────────────────────────────
     static readonly List<CountermeasureDecoy> _active = new List<CountermeasureDecoy>(64);
     public static IReadOnlyList<CountermeasureDecoy> Active => _active;
@@ -110,8 +106,11 @@ public class CountermeasureSystem : MonoBehaviour
             ? (_local.transform.right * Random.Range(-lateralKickMag, lateralKickMag)
               + _local.transform.up * Random.Range(-lateralKickMag * 0.67f, lateralKickMag * 0.67f))
             : Vector3.zero;
+        // 플레어는 동체 하부 디스펜서에서 아래로 사출된다 — 배럴롤 중엔 기체 회전을 따라 나선 커튼이 펼쳐짐
+        Vector3 ejectKick = isFlare ? -_local.transform.up * Random.Range(4f, 8f) : Vector3.zero;
         Vector3 velocity = -_local.transform.forward * (_local.CurrentSpeed * 0.4f)
                          + lateralKick
+                         + ejectKick
                          + Random.insideUnitSphere * velScatter;
 
         var go = new GameObject($"{type}Decoy");
@@ -119,7 +118,7 @@ public class CountermeasureSystem : MonoBehaviour
         go.AddComponent<CountermeasureDecoy>().Initialize(type, lifetime, velocity);
 
         if (isFlare)
-            FlareDecoyVFX.Attach(go, lifetime, _vfxAdditive, _vfxAlpha);
+            FlareDecoyVFX.Attach(go, lifetime);
         else
             SpawnChaffVFX(go.transform, lifetime);
 

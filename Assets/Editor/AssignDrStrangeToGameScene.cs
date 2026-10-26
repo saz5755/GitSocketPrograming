@@ -9,7 +9,7 @@ public class AssignDrStrangeToGameScene
         string scenePath = "Assets/Scenes/GameScene.unity";
         var scene = EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Single);
         
-        PlayerManager pm = Object.FindObjectOfType<PlayerManager>();
+        PlayerManager pm = Object.FindAnyObjectByType<PlayerManager>();
         if (pm != null)
         {
             GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/DrStrange_GroundCharacter.prefab");

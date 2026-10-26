@@ -62,7 +62,7 @@ public class GroundJitterProbe
 
     public static void Execute()
     {
-        var gc = Object.FindFirstObjectByType<GroundController>();
+        var gc = Object.FindAnyObjectByType<GroundController>();
         if (gc == null) { Debug.Log("[JitterProbe] GroundController not found — 플레이어 스폰 후 실행"); return; }
 
         if (gc.GetComponent<JitterMonitor>() != null)

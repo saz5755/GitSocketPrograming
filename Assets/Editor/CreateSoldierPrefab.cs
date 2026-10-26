@@ -58,7 +58,7 @@ public class CreateSoldierPrefab
         AssetDatabase.Refresh();
 
         // ── PlayerManager.groundCharPrefab 슬롯 자동 연결 ─────────────────────
-        var pm = Object.FindObjectOfType<PlayerManager>();
+        var pm = Object.FindAnyObjectByType<PlayerManager>();
         if (pm != null)
         {
             var so   = new SerializedObject(pm);

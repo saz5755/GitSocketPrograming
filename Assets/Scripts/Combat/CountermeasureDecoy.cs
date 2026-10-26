@@ -21,7 +21,8 @@ public class CountermeasureDecoy : MonoBehaviour
         CountermeasureSystem.Register(this);
 
         _rb              = gameObject.AddComponent<Rigidbody>();
-        _rb.useGravity   = false;
+        // 플레어는 연소하며 포물선으로 떨어지고, 채프 구름은 공중에 떠서 퍼진다
+        _rb.useGravity   = type == CountermeasureType.Flare;
         _rb.linearDamping = 1.8f;
         _rb.linearVelocity = velocity;
     }

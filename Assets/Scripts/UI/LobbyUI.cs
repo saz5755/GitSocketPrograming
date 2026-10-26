@@ -200,10 +200,10 @@ public class LobbyUI : MonoBehaviour
         panel.pivot = new Vector2(0, 0.5f);
         panel.anchoredPosition = new Vector2(SideMargin, -10f);
         panel.sizeDelta = new Vector2(PanelW, -240f);   // 위 130 / 아래 110 여백
-        // 그림자 + 유리 패널 + 테두리 + 상단 하이라이트
+        // 그림자 + 유리 패널 + 상단 하이라이트 (외곽선 없음 — 홀로그램 배경과 겹쳐 튀어 보여 제거)
         UIShapes.AddPanelSkin(panel, 18,
             new Color(t.panelBG.r * 0.85f, t.panelBG.g * 0.85f, t.panelBG.b * 0.9f, 0.94f),
-            new Color(t.border.r + 0.03f, t.border.g + 0.05f, t.border.b + 0.09f, 0.95f));
+            Color.clear);
         var gloss = UIBackdropFit.MakeGradient(panel, "Gloss", false, t.primaryBlue, 0f, 0.04f);
         gloss.anchorMin = new Vector2(0.01f, 0.72f); gloss.anchorMax = new Vector2(0.99f, 0.99f);
         gloss.offsetMin = gloss.offsetMax = Vector2.zero;

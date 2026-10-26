@@ -22,6 +22,7 @@ MonoBehaviour:
   interpolationDelay: 0.1
   reconcileThreshold: 3
   arrestDecel: 50
+  arrestRunout: 45
   catapultHoldSec: 4
   catapultAccel: 180
   maxFuel: 10000

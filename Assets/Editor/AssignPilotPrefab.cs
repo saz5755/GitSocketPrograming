@@ -5,7 +5,7 @@ public class AssignPilotPrefab
 {
     public static void Execute()
     {
-        PlayerManager pm = Object.FindObjectOfType<PlayerManager>();
+        PlayerManager pm = Object.FindAnyObjectByType<PlayerManager>();
         if (pm != null)
         {
             GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Pilot_GroundCharacter.prefab");

@@ -17,25 +17,6 @@ public class AssignWireMaterials
         var so = AssetDatabase.LoadAssetAtPath<WireSystemSO>(soPath);
         if (so == null) { Debug.LogError("[AssignWireMaterials] WireSystem.asset 로드 실패: " + soPath); return; }
 
-        // ── 1. wireRopeMaterial (V자 LineRenderer) ─────────────────────────────
-        if (so.wireRopeMaterial == null)
-        {
-            Shader sh = Shader.Find("Universal Render Pipeline/Unlit")
-                     ?? Shader.Find("Unlit/Color")
-                     ?? Shader.Find("Standard");
-            if (sh == null) { Debug.LogError("[AssignWireMaterials] URP Unlit 셰이더를 찾을 수 없습니다."); }
-            else
-            {
-                var mat = new Material(sh);
-                mat.name = "WireRope";
-                mat.color = new Color(0.90f, 0.80f, 0.55f, 1f); // lineColorAvailable
-                AssetDatabase.CreateAsset(mat, matDir + "/WireRope.mat");
-                so.wireRopeMaterial = mat;
-                Debug.Log("[AssignWireMaterials] WireRope.mat 생성 완료");
-            }
-        }
-        else Debug.Log("[AssignWireMaterials] wireRopeMaterial 이미 할당됨 — 스킵");
-
         // ── 2. zoneDiscMaterial (투명 존 디스크) ────────────────────────────────
         if (so.zoneDiscMaterial == null)
         {

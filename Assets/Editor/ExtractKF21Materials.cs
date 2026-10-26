@@ -11,8 +11,9 @@ public class ExtractKF21Materials
         if (importer != null)
         {
             // Set material import mode
+            // Note: ModelImporterMaterialLocation.External은 Unity 2023+에서 지원 중단.
+            // External 머티리얼 추출은 ExtractTextures 호출로 대체되었음.
             importer.materialImportMode = ModelImporterMaterialImportMode.ImportViaMaterialDescription;
-            importer.materialLocation = ModelImporterMaterialLocation.External;
             importer.materialName = ModelImporterMaterialName.BasedOnMaterialName;
             importer.materialSearch = ModelImporterMaterialSearch.Local;
             

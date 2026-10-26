@@ -49,6 +49,27 @@ public class RoomManager
         }
     }
 
+    // 생성 후 GracePeriod 동안 아무도 입장하지 않은(또는 비어 버린) 방을 삭제.
+    // 출격 연출(~8초) + 씬 로딩 시간을 넉넉히 기다린 뒤 정리한다.
+    static readonly TimeSpan EmptyRoomGrace = TimeSpan.FromSeconds(20);
+
+    public static void SweepEmptyRooms()
+    {
+        var now = DateTime.UtcNow;
+        List<int> stale = new();
+        lock (_lock)
+        {
+            foreach (var r in _rooms.Values)
+                if (r.GetPlayerCount() == 0 && r.emptySinceUtc.HasValue && now - r.emptySinceUtc.Value > EmptyRoomGrace)
+                    stale.Add(r.roomId);
+        }
+        foreach (var id in stale)
+        {
+            Console.WriteLine($"[Room] Sweeping empty room #{id}");
+            DeleteRoom(id);
+        }
+    }
+
     // 룸 목록이 바뀔 때마다 로비 클라이언트(룸 미참여)에게 자동 푸시
     public static void BroadcastRoomListToLobby()
     {

@@ -34,8 +34,10 @@ public class AircraftStatsSO : ScriptableObject
     public float reconcileThreshold = 3f;
 
     [Header("어레스팅 와이어")]
-    [Tooltip("와이어 체결 시 감속 (m/s²). 50 ≈ 240 kph→0 약 1.3초")]
+    [Tooltip("와이어 체결 시 최대 감속 (m/s²). 50 ≈ 5G — 런아웃 거리로 계산한 감속이 이 값을 넘지 않음")]
     public float arrestDecel = 50f;
+    [Tooltip("어레스팅 런아웃 거리 (m). 진입 속도와 무관하게 이 거리 안에서 정지하도록 감속도를 정함 (실기 약 100m — 현재 항모 갑판 188m에 맞춰 축소)")]
+    public float arrestRunout = 45f;
 
     [Header("카타펄트")]
     [Tooltip("카타펄트 최고속 도달 후 자동 추력 유지 시간 (초)")]

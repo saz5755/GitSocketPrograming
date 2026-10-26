@@ -93,6 +93,7 @@ public class EscortAI : MonoBehaviour
     public bool    IsLanded        => _phase == Phase.Landed || _phase == Phase.BeingArrested;
     // ArrestingWireSystem이 체결 시도 여부를 판단하는 프로퍼티
     public bool    IsInApproachRun => _phase == Phase.LandingApproach;
+    public bool    IsBeingArrested => _phase == Phase.BeingArrested;
 
     // ── 생명주기 ──────────────────────────────────────────────────────────────
 

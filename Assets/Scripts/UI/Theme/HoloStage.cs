@@ -6,7 +6,8 @@ using UnityEngine.UI;
 
 /// <summary>
 /// 로비/출격 연출 공용 3D 스테이지.
-/// 디지털 터널(네온 라인, 게이트 링, 데이터 월) 속에 KF-21 홀로그램 와이어가 홀로 패드 위에 떠 있다.
+/// 디지털 터널(네온 라인, 게이트 링, 데이터 월) 속에 KF-21 홀로그램(틴트 유리 + 정밀 격자, 홀로그램디자인_03)이
+/// HUD 프로젝션 데크 위에 떠 있다. 배경엔 초점이 나간 보케 광원.
 /// 숨겨진 좌표(레이어 30)의 씬 → 전용 카메라 → RenderTexture → 전체 화면 RawImage.
 /// </summary>
 public class HoloStage : MonoBehaviour
@@ -32,8 +33,10 @@ public class HoloStage : MonoBehaviour
     Material _holo, _holoMirror, _neon, _glow, _flameMat;
     Light[] _lights; float[] _lightBase;
     Transform _warm; int _warmFrames;
-    Transform _holoOverlay; Renderer[] _ovRends; Material _ovMat; float _holoI = 0.3f;
+    Transform _holoOverlay; Renderer[] _ovRends; Material _ovMat; float _holoI = 1.45f;
     Transform _pad, _scanRing, _padGlow, _underGlow, _heatGlow;
+    Material _archMat;
+    Material _scanMat;
     Material _heatMat;
     Material _padMat;
     Transform[] _flames; Transform[] _flameGlow;
@@ -50,6 +53,7 @@ public class HoloStage : MonoBehaviour
         var holoSh = Resources.Load<Shader>("UI/KF21HoloWire");
         var neonSh = Resources.Load<Shader>("UI/KF21Neon");
         if (prefab == null || holoSh == null || neonSh == null) return null;
+        _glassSh = Resources.Load<Shader>("UI/KF21HoloGlass");
 
         var go = new GameObject("Stage", typeof(RectTransform));
         go.transform.SetParent(parent, false);
@@ -70,6 +74,7 @@ public class HoloStage : MonoBehaviour
     }
 
     Material Track(Material m) { m.hideFlags = HideFlags.DontSave; _owned.Add(m); return m; }
+    static Shader _glassSh;
 
     void Build(GameObject prefab, Shader holoSh, Shader neonSh)
     {
@@ -78,8 +83,10 @@ public class HoloStage : MonoBehaviour
         root.transform.position = Origin;
         _stageRoot = root;
 
-        _neon = Track(new Material(neonSh)); _neon.SetFloat("_Mode", 0f); _neon.SetFloat("_Intensity", 2.2f); _neon.SetFloat("_Sharp", 5f);
+        // 터널 네온은 한 단계 낮춰 기체가 주인공이 되게 (레퍼런스의 차분한 배경)
+        _neon = Track(new Material(neonSh)); _neon.SetFloat("_Mode", 0f); _neon.SetFloat("_Intensity", 1.1f); _neon.SetFloat("_Sharp", 5f);
         _neon.SetColor("_Color", Color.white);
+
         _glow = Track(new Material(neonSh)); _glow.SetFloat("_Mode", 1f); _glow.SetFloat("_Intensity", 1f);
         _glow.SetColor("_Color", Color.white);
         _flameMat = Track(new Material(neonSh)); _flameMat.SetFloat("_Mode", 2f); _flameMat.SetFloat("_Intensity", 2.4f);
@@ -191,17 +198,12 @@ public class HoloStage : MonoBehaviour
             var c = cy; c.a = 0.26f * k;
             lines.Ribbon(new Vector3(x, 0.01f, Z0), new Vector3(x, 0.01f, Z1), 0.07f, up, c, 0f, false);
         }
-        for (float z = 0f; z < Z1; z += 7f)
-        {
-            var c = cyDim; c.a = 0.15f * Mathf.Clamp01(1.2f - z / Z1);
-            lines.Ribbon(new Vector3(-W, 0.01f, z), new Vector3(W, 0.01f, z), 0.05f, up, c, 0f, false);
-        }
         // 중앙 활주 라인 (밝게) + 양옆 앰버 가장자리
         lines.Ribbon(new Vector3(0, 0.02f, Z0), new Vector3(0, 0.02f, Z1), 0.18f, up, new Color(0.5f, 0.9f, 1f, 0.28f), 0f, false);
         lines.Ribbon(new Vector3(-9.4f, 0.02f, Z0), new Vector3(-9.4f, 0.02f, Z1), 0.18f, up, new Color(warm.r, warm.g, warm.b, 0.4f), 0f, false);
         lines.Ribbon(new Vector3(9.4f, 0.02f, Z0), new Vector3(9.4f, 0.02f, Z1), 0.18f, up, new Color(warm.r, warm.g, warm.b, 0.4f), 0f, false);
 
-        // 벽: 가로 띠 + 세로 데이터 바 (좌/우, 반사 포함)
+        // 벽: 가로 띠만 (좌/우, 반사 포함) — 짧은 세로 데이터 바는 비처럼 보여 제거
         float[] hy = { 0.5f, 4.4f, 10.5f };
         for (int s = -1; s <= 1; s += 2)
         {
@@ -212,19 +214,6 @@ public class HoloStage : MonoBehaviour
                 var c = acc ? warm : cy; c.a = acc ? 0.55f : 0.22f;
                 lines.Ribbon(new Vector3(x, hy[i], Z0), new Vector3(x, hy[i], Z1), acc ? 0.16f : 0.1f, ex, c, 0.35f, false);
             }
-            for (float z = 0f; z < Z1; z += 5f)
-            {
-                int n = 1 + (int)(r01() * 2.5f);
-                for (int j = 0; j < n; j++)
-                {
-                    float y = 0.8f + r01() * 15f, len = 0.7f + r01() * 4.5f;
-                    float zz = z + r01() * 2f;
-                    bool wm = r01() < 0.12f;
-                    var c = wm ? warm : (r01() < 0.5f ? cy : cyDim);
-                    c.a = (wm ? 0.9f : 0.35f + r01() * 0.6f) * Mathf.Clamp01(1.25f - zz / Z1);
-                    lines.Ribbon(new Vector3(x, y, zz), new Vector3(x, y + len, zz), 0.1f + r01() * 0.1f, ex, c, 0.3f, true);
-                }
-            }
         }
         // 천장 라인
         for (float x = -W + 3f; x <= W - 2.9f; x += 7.2f)
@@ -233,27 +222,29 @@ public class HoloStage : MonoBehaviour
             lines.Ribbon(new Vector3(x, H, Z0), new Vector3(x, H, Z1), 0.12f, up, c, 0f, false);
         }
 
-        // 출격 게이트로 좁혀 들어가는 아치 프레임 (깔때기 느낌)
+        // 출격 게이트로 좁혀 들어가는 아치 프레임 (깔때기 느낌) — 별도 재질: 대기 중엔 어둡게, 출격 때 점등
+        var arches = new MB();
+        _archMat = Track(new Material(_neon));
         float[] gz = { 34f, 52f, 70f, 86f };
         float[] ga = { GA + 4.6f, GA + 3.4f, GA + 2.3f, GA + 1.3f };
         for (int i = 0; i < gz.Length; i++)
         {
             float fade = 1f - i * 0.12f;
             var pts = Arch(ga[i], GHS + 1.5f - i * 0.4f);
-            PolyRibbon(lines, pts, gz[i], 0.5f, new Color(0.30f, 0.82f, 1f, 0.9f * fade), 0.4f);
-            PolyRibbon(lines, Arch(ga[i] - 0.8f, GHS + 1.5f - i * 0.4f - 0.0f), gz[i], 0.1f, new Color(0.7f, 0.96f, 1f, 0.55f * fade), 0.4f);
-            PolyRibbon(lines, Arch(ga[i] + 0.7f, GHS + 1.5f - i * 0.4f), gz[i], 0.24f, new Color(0.18f, 0.5f, 1f, 0.5f * fade), 0.4f);
+            PolyRibbon(arches, pts, gz[i], 0.5f, new Color(0.30f, 0.82f, 1f, 0.9f * fade), 0.4f);
+            PolyRibbon(arches, Arch(ga[i] - 0.8f, GHS + 1.5f - i * 0.4f - 0.0f), gz[i], 0.1f, new Color(0.7f, 0.96f, 1f, 0.55f * fade), 0.4f);
+            PolyRibbon(arches, Arch(ga[i] + 0.7f, GHS + 1.5f - i * 0.4f), gz[i], 0.24f, new Color(0.18f, 0.5f, 1f, 0.5f * fade), 0.4f);
             glows.Glow(new Vector3(0f, GateH * 0.5f, gz[i]), ex * (ga[i] * 2f), up * (GateH * 1.0f), new Color(0.12f, 0.4f, 0.9f, 0.12f * fade));
         }
         // 벽면 사선 빔 (디지털 입구 느낌의 각진 구조)
         for (int s = -1; s <= 1; s += 2)
         {
-            for (int k = 0; k < 9; k++)
+            for (int k = 0; k < 3; k++)
             {
-                float z = 8f + k * 15f + r01() * 6f, len = 14f + r01() * 20f;
+                float z = 30f + k * 40f + r01() * 6f, len = 18f + r01() * 20f;
                 float y0 = 1f + r01() * 12f, dy = (r01() < 0.5f ? 1f : -1f) * (4f + r01() * 8f);
                 bool wm = k % 3 == 0;
-                var c = wm ? warm : cy; c.a = (wm ? 0.55f : 0.4f) * Mathf.Clamp01(1.2f - z / Z1);
+                var c = wm ? warm : cy; c.a = (wm ? 0.35f : 0.25f) * Mathf.Clamp01(1.2f - z / Z1);
                 lines.Ribbon(new Vector3(s * W, y0, z), new Vector3(s * W, Mathf.Clamp(y0 + dy, 0.5f, 18f), z + len), wm ? 0.14f : 0.09f, ex, c, 0.25f, true);
             }
         }
@@ -263,30 +254,39 @@ public class HoloStage : MonoBehaviour
         // 앰비언트 포그 (뒤쪽 벽)
         glows.Glow(new Vector3(8f, 4f, 60f), ex * 40f, up * 14f, new Color(0.08f, 0.25f, 0.6f, 0.22f));
 
+        // 보케: 초점 밖 격납고 조명 — 따뜻한 앰버 + 차가운 시안 원반이 깊이에 따라 크기/밝기 차이
+        for (int i = 0; i < 46; i++)
+        {
+            float kind = r01();
+            bool warmB = kind < 0.62f, whiteB = kind > 0.88f;
+            float z = 80f + r01() * 95f;   // 출격 연출 카메라 궤도(z ≤ 55)보다 충분히 뒤 — 가까운 원반이 화면을 덮지 않게
+            float x = (r01() * 2f - 1f) * (W + 14f);
+            float y = 4f + r01() * 20f;
+            float sz = 2.2f + r01() * 4.5f + z * 0.02f;
+            var bc = whiteB ? new Color(0.95f, 0.92f, 0.85f, 1f) : warmB ? new Color(1f, 0.56f, 0.24f, 1f) : new Color(0.45f, 0.78f, 1f, 1f);
+            bc.a = (0.18f + r01() * 0.3f) * Mathf.Clamp01(1.3f - z / 190f);
+            glows.Glow(new Vector3(x, y, z), ex * sz, up * sz, bc);
+        }
+
         MakeMesh(parent, "Lines", lines.ToMesh("EnvLines"), _neon);
+        MakeMesh(parent, "Arches", arches.ToMesh("EnvArches"), _archMat);
         BuildPortal(parent);
         MakeMesh(parent, "Glows", glows.ToMesh("EnvGlows"), _glow);
 
         // 홀로 패드 (기체 아래)
         var pad = new GameObject("Pad"); pad.transform.SetParent(parent, false); pad.transform.localPosition = PadPos; _pad = pad.transform;
         var pm = new MB();
-        pm.Ring(Vector3.zero, ex, Vector3.forward, 7.8f, 0.2f, 120, new Color(0.45f, 0.9f, 1f, 0.95f));
-        pm.Ring(Vector3.zero, ex, Vector3.forward, 6.6f, 0.08f, 120, new Color(0.25f, 0.75f, 1f, 0.7f));
-        pm.Ring(Vector3.zero, ex, Vector3.forward, 4.2f, 0.06f, 96, new Color(0.25f, 0.75f, 1f, 0.45f));
-        for (int k = 0; k < 72; k++)
-        {
-            float a = k / 72f * Mathf.PI * 2f;
-            Vector3 d = ex * Mathf.Cos(a) + Vector3.forward * Mathf.Sin(a);
-            float l = (k % 6 == 0) ? 1.1f : 0.5f;
-            pm.Ribbon(d * 8.2f, d * (8.2f + l), 0.07f, up, new Color(0.6f, 0.95f, 1f, 0.8f), 0f, false);
-        }
+        pm.Ring(Vector3.zero, ex, Vector3.forward, 7.8f, 0.26f, 180, new Color(0.45f, 0.9f, 1f, 0.85f));
+        pm.Ring(Vector3.zero, ex, Vector3.forward, 6.6f, 0.16f, 180, new Color(0.25f, 0.75f, 1f, 0.55f));
+        pm.Ring(Vector3.zero, ex, Vector3.forward, 4.2f, 0.14f, 144, new Color(0.25f, 0.75f, 1f, 0.38f));
         for (int k = 0; k < 4; k++)
         {
             float a = k * Mathf.PI * 0.5f + Mathf.PI * 0.25f;
             Vector3 d = ex * Mathf.Cos(a) + Vector3.forward * Mathf.Sin(a);
-            pm.Ribbon(d * 4.4f, d * 6.4f, 0.1f, up, new Color(0.35f, 0.85f, 1f, 0.8f), 0f, false);
+            pm.Ribbon(d * 4.4f, d * 6.4f, 0.16f, up, new Color(0.35f, 0.85f, 1f, 0.7f), 0f, false);
         }
         MakeMesh(pad.transform, "PadLines", pm.ToMesh("PadLines"), _neon);
+        BuildDeck(parent);
         var pg = new MB();
         pg.Glow(Vector3.zero + up * 0.02f, Vector3.zero, Vector3.zero, Color.clear);   // 자리표시(사용 안 함)
         var disc = new MB();
@@ -306,11 +306,24 @@ public class HoloStage : MonoBehaviour
             hg.transform.localScale = new Vector3(3.2f, 1f, 6f); hg.SetActive(false); _heatGlow = hg.transform;
         }
 
-        // 스캔 링
+        // 스캔 링: 굵은 단일 띠 대신 — 아주 가는 주 링 + 안쪽 보조 링 + 바깥 눈금 + 옅은 광륜 띠.
+        // 전용 재질로 높이에 따라 밝기를 페이드한다 (UpdateIdle).
         var sr = new GameObject("ScanRing"); sr.transform.SetParent(parent, false); _scanRing = sr.transform;
         var sm = new MB();
-        sm.Ring(Vector3.zero, ex, Vector3.forward, 6.4f, 0.14f, 120, new Color(0.7f, 1f, 1f, 1f));
-        MakeMesh(sr.transform, "ScanLine", sm.ToMesh("Scan"), _neon);
+        const float SR = 6.4f;
+        sm.Ring(Vector3.zero, ex, Vector3.forward, SR, 0.12f, 180, new Color(0.85f, 1f, 1f, 0.9f));            // 주 링
+        sm.Ring(Vector3.zero, ex, Vector3.forward, SR - 0.36f, 0.08f, 180, new Color(0.4f, 0.85f, 1f, 0.45f));  // 보조 링
+        sm.Ring(Vector3.zero, ex, Vector3.forward, SR - 0.12f, 0.55f, 120, new Color(0.15f, 0.55f, 1f, 0.18f)); // 광륜
+        // 4방위 앰버 마커
+        for (int k = 0; k < 4; k++)
+        {
+            float a = k * Mathf.PI * 0.5f;
+            Vector3 d = ex * Mathf.Cos(a) + Vector3.forward * Mathf.Sin(a);
+            Vector3 tng = Vector3.Cross(up, d);
+            sm.Ribbon(d * (SR + 0.05f) - tng * 0.35f, d * (SR + 0.05f) + tng * 0.35f, 0.06f, up, new Color(1f, 0.6f, 0.28f, 0.95f), 0f, false);
+        }
+        _scanMat = Track(new Material(_neon));
+        MakeMesh(sr.transform, "ScanLine", sm.ToMesh("Scan"), _scanMat);
 
         // 흐르는 빛줄기
         int N = 22;
@@ -321,7 +334,7 @@ public class HoloStage : MonoBehaviour
         for (int i = 0; i < N; i++)
         {
             var g = MakeMesh(parent, "Streak" + i, streakMesh, _neon);
-            bool floor = r01() < 0.5f;
+            const bool floor = false;   // 바닥 빛줄기는 루프 순간 튀어 보여 쓰지 않는다
             float x = (r01() * 2f - 1f) * (W - 1f);
             float y = floor ? 0.05f : 0.4f + r01() * 15f;
             if (!floor) x = (r01() < 0.5f ? -1f : 1f) * (W - 0.1f);
@@ -333,6 +346,33 @@ public class HoloStage : MonoBehaviour
             _streaks[i] = g.transform; _streakSpd[i] = 0.6f + r01() * 1.2f;
         }
     }
+
+    // ── HUD 프로젝션 데크: 기체 아래 바닥에 깔린 정밀 그리드 패널 + 오렌지 데이터 행 (홀로그램디자인_03) ──
+    void BuildDeck(Transform parent)
+    {
+        var d = new MB();
+        var rng = new System.Random(5);
+        System.Func<float> r01 = () => (float)rng.NextDouble();
+        Vector3 up = Vector3.up;
+        Color line = new Color(0.35f, 0.8f, 1f, 0.55f), faint = new Color(0.3f, 0.7f, 1f, 0.22f);
+        Color amber = new Color(1f, 0.55f, 0.22f, 0.9f);
+        float y = 0.02f;
+        System.Action<float, float, float, float, Color, float> rect = (x0, z0, x1, z1, c, w) =>
+        {
+            d.Ribbon(new Vector3(x0, y, z0), new Vector3(x1, y, z0), w, up, c, 0f, false);
+            d.Ribbon(new Vector3(x1, y, z0), new Vector3(x1, y, z1), w, up, c, 0f, false);
+            d.Ribbon(new Vector3(x1, y, z1), new Vector3(x0, y, z1), w, up, c, 0f, false);
+            d.Ribbon(new Vector3(x0, y, z1), new Vector3(x0, y, z0), w, up, c, 0f, false);
+        };
+
+        // 큰 데크 외곽 + 보조 격자
+        rect(-13f, -12f, 13f, 12f, line, 0.14f);
+        // (보조 격자·데이터 행·눈금 레일·조명 점은 카메라 이동 시 덜덜거려 제거 — 외곽선만 유지)
+        var deck = MakeMesh(parent, "Deck", d.ToMesh("Deck"), _neon);
+        deck.transform.localPosition = new Vector3(PadPos.x, 0f, PadPos.z);
+        _deck = deck.transform;
+    }
+    Transform _deck;
 
     // ── 디지털 입구: 벽에 뚫린 아치형 출격 게이트. 중앙 이음선에서 두 도어 리프가 위/아래로 갈라져 벽 뒤로 사라지며 열린다.
     //    열리면 안쪽 아치 복도(깊이 링 + 측면 라인)와 빛의 막이 드러나고, 바닥엔 진입 유도등이 순차 점멸한다 ──
@@ -458,14 +498,7 @@ public class HoloStage : MonoBehaviour
             float yTop = GateH + GA * 0.0f + 5.2f;
             fr.Ribbon(new Vector3(-3.2f, yTop, zf), new Vector3(3.2f, yTop, zf), 0.12f, Vector3.forward, new Color(0.5f, 0.9f, 1f, 0.8f), 0.2f, false);
             fr.Ribbon(new Vector3(-0.8f, yTop, zf), new Vector3(0.8f, yTop, zf), 0.5f, Vector3.forward, new Color(1f, 0.55f, 0.25f, 0.95f), 0.2f, false);
-            // 벽 위 좌/우 수직 데이터 바
-            for (int s = -1; s <= 1; s += 2)
-                for (int k = 0; k < 7; k++)
-                {
-                    float x = s * (GA + 3.2f + k * 1.5f); float y0 = 1f + (k * 5 % 4) * 1.6f, ln = 2f + (k * 3 % 5) * 1.3f;
-                    fr.Ribbon(new Vector3(x, y0, zf), new Vector3(x, y0 + ln, zf), 0.1f, Vector3.forward, new Color(0.4f, 0.85f, 1f, 0.35f + 0.1f * (k % 3)), 0.25f, true);
-                }
-            MakeMesh(root.transform, "Frame", fr.ToMesh("GateFrame"), _neon);
+            MakeMesh(root.transform, "Frame", fr.ToMesh("GateFrame"), _archMat);
         }
 
         // ── 복도: 깊이 아치 링 (순차 점등) + 측면 라인 ──
@@ -573,7 +606,7 @@ public class HoloStage : MonoBehaviour
         {
             double r = rng.NextDouble();
             Vector3 pos; Vector3 inward;
-            if (i % 5 == 0)   // 바닥
+            if (false)   // 바닥 빛줄기는 덜덜거려 보여 사용하지 않음
             {
                 pos = new Vector3((float)(rng.NextDouble() * 2 - 1) * (GA - 0.4f), 0.04f, 0f); inward = Vector3.up;
             }
@@ -657,12 +690,16 @@ public class HoloStage : MonoBehaviour
     // ── 기체 ──────────────────────────────────────────────────────────────
     void BuildJet(GameObject prefab, Shader holoSh, Transform parent)
     {
-        _holo = Track(new Material(holoSh));
-        _holo.SetColor("_Color", new Color(0.12f, 0.62f, 1f));
-        _holo.SetColor("_Hot", new Color(0.7f, 1f, 1f));
-        _holo.SetFloat("_Intensity", 0.30f);
-        _holoMirror = Track(new Material(_holo));
-        _holoMirror.SetFloat("_Intensity", 0.35f);
+        // 본체: 틴트 유리 + 정밀 격자 (글래스 셰이더가 없으면 기존 와이어로 폴백)
+        _holo = Track(new Material(_glassSh != null ? _glassSh : holoSh));
+        _holo.SetColor("_Color", new Color(0.09f, 0.48f, 1f));
+        _holo.SetColor("_Hot", new Color(0.62f, 0.93f, 1f));
+        _holo.SetFloat("_Intensity", _holoI);
+        // 바닥 반사: 깊이를 쓰지 않는 가산 와이어로 은은하게
+        _holoMirror = Track(new Material(holoSh));
+        _holoMirror.SetColor("_Color", new Color(0.12f, 0.55f, 1f));
+        _holoMirror.SetColor("_Hot", new Color(0.6f, 0.9f, 1f));
+        _holoMirror.SetFloat("_Intensity", 0.11f);
 
         Jet = Instantiate(prefab, parent).transform; Jet.name = "Jet"; Jet.localScale = Vector3.one * JetScale;
         _rends = Jet.GetComponentsInChildren<Renderer>();
@@ -679,8 +716,10 @@ public class HoloStage : MonoBehaviour
         _mirror = Instantiate(prefab, mr.transform).transform; _mirror.name = "JetMirror"; _mirror.localScale = Vector3.one * JetScale;
         _mirrorRends = _mirror.GetComponentsInChildren<Renderer>();
         foreach (var r in _mirrorRends) { SetMats(r, _holoMirror); r.shadowCastingMode = ShadowCastingMode.Off; r.receiveShadows = false; }
-        // 솔리드 전환 시 와이어가 부드럽게 사라지도록 덮어씌우는 홀로그램 복제 (기체 자식, 동일 포즈)
+        // 솔리드화 스윕 덮개: 아직 물질화되지 않은 부분(후미 쪽)을 홀로그램 유리로 덮어 솔리드를 가린다 (기체 자식, 동일 포즈)
         _ovMat = Track(new Material(_holo));
+        _ovMat.SetFloat("_RevealDir", -1f);
+        _ovMat.SetFloat("_Opacity", 0.94f);
         _holoOverlay = Instantiate(prefab, Jet).transform; _holoOverlay.name = "HoloOverlay";
         _holoOverlay.localPosition = Vector3.zero; _holoOverlay.localRotation = Quaternion.identity; _holoOverlay.localScale = Vector3.one;
         _ovRends = _holoOverlay.GetComponentsInChildren<Renderer>();
@@ -783,9 +822,21 @@ public class HoloStage : MonoBehaviour
         prof.hideFlags = HideFlags.DontSave; _owned.Add(prof);
         var bloom = prof.Add<Bloom>(true);
         bloom.threshold.Override(0.85f); bloom.intensity.Override(1.35f); bloom.scatter.Override(0.72f);
+        // 솔리드 전환 중 캐노피의 극단적 스펙큘러가 화면 전체를 뿌옇게 번지게 하지 않도록 상한
+        bloom.clamp.Override(8f);
+        data.stopNaN = true;
         bloom.highQualityFiltering.Override(true);
         var vg = prof.Add<Vignette>(true);
-        vg.intensity.Override(0.32f); vg.smoothness.Override(0.6f);
+        vg.intensity.Override(0.34f); vg.smoothness.Override(0.6f);
+        // 필름 톤매핑: 과포화된 시안을 눌러 '장난감' 같은 플라스틱 색감 대신 영화적인 계조로
+        var tm = prof.Add<Tonemapping>(true);
+        tm.mode.Override(TonemappingMode.ACES);
+        var ca = prof.Add<ColorAdjustments>(true);
+        ca.postExposure.Override(0.2f); ca.contrast.Override(14f); ca.saturation.Override(-4f);
+        var fg = prof.Add<FilmGrain>(true);
+        fg.type.Override(FilmGrainLookup.Thin1); fg.intensity.Override(0.18f); fg.response.Override(0.8f);
+        var chroma = prof.Add<ChromaticAberration>(true);
+        chroma.intensity.Override(0.08f);
         var volGO = new GameObject("Volume"); volGO.transform.SetParent(root.transform, false); volGO.layer = Layer;
         var vol = volGO.AddComponent<Volume>(); vol.isGlobal = true; vol.priority = 50; vol.sharedProfile = prof;
     }
@@ -800,10 +851,10 @@ public class HoloStage : MonoBehaviour
     /// <summary>홀로그램 공개량 0~1 (기수→후미)</summary>
     public void SetReveal(float v) { _holo.SetFloat("_Reveal", v); _holoMirror.SetFloat("_Reveal", v); }
     public void SetHoloFill(float v) { _holo.SetFloat("_Fill", v); }
-    public void SetHoloIntensity(float v) { _holoI = v; _holo.SetFloat("_Intensity", v); _holoMirror.SetFloat("_Intensity", v * 0.23f); }
+    public void SetHoloIntensity(float v) { _holoI = v; _holo.SetFloat("_Intensity", v); _holoMirror.SetFloat("_Intensity", v * 0.11f); }
     public bool Solid => _solid;
 
-    /// <summary>솔리드(라이트 재질) ↔ 홀로그램 전환. 솔리드로 갈 땐 조명 0에서 시작하고 와이어 복제가 덮고 있다가 SetSolidBlend 로 교차한다.</summary>
+    /// <summary>솔리드(라이트 재질) ↔ 홀로그램 전환. 솔리드로 갈 땐 조명 0에서 시작하고 홀로그램 덮개가 전체를 가린 상태로 시작한다.</summary>
     public void SetSolid(bool solid)
     {
         if (_solid == solid) return;
@@ -817,13 +868,26 @@ public class HoloStage : MonoBehaviour
         if (solid)
         {
             _ovMat.CopyPropertiesFromMaterial(_holo);
+            _ovMat.SetFloat("_RevealDir", -1f);
+            _ovMat.SetFloat("_Opacity", 0.94f);
             _holoOverlay.gameObject.SetActive(true);
+            SetMaterialize(0f);
             SetSolidBlend(0f);
         }
         else _holoOverlay.gameObject.SetActive(false);
     }
 
-    /// <summary>0 = 막 솔리드로 바뀜(어둡고 와이어가 덮음) → 1 = 완전한 솔리드</summary>
+    /// <summary>물질화 스윕 0→1: 기수에서 후미로 밝은 경계면이 지나가며 지나간 자리가 솔리드 기체로 드러난다.</summary>
+    public void SetMaterialize(float s)
+    {
+        s = Mathf.Clamp01(s);
+        if (_holoOverlay == null) return;
+        bool on = _solid && s < 0.999f;
+        if (_holoOverlay.gameObject.activeSelf != on) _holoOverlay.gameObject.SetActive(on);
+        if (on) { _ovMat.SetFloat("_Reveal", s); _ovMat.SetFloat("_Intensity", Mathf.Max(0.6f, _holoI) * 1.25f); }
+    }
+
+    /// <summary>솔리드 조명/반사 0 → 1</summary>
     public void SetSolidBlend(float b)
     {
         b = Mathf.Clamp01(b);
@@ -831,12 +895,6 @@ public class HoloStage : MonoBehaviour
         RenderSettings.reflectionIntensity = b;
         RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
         RenderSettings.ambientLight = new Color(0.07f, 0.10f, 0.19f) * b;
-        if (_holoOverlay != null)
-        {
-            bool on = b < 0.999f;
-            if (_holoOverlay.gameObject.activeSelf != on) _holoOverlay.gameObject.SetActive(on);
-            if (on) _ovMat.SetFloat("_Intensity", Mathf.Max(0.3f, _holoI) * 1.4f * (1f - b) * (1f - b));
-        }
     }
 
     public void ShowPad(bool on, float alpha = 1f)
@@ -844,6 +902,24 @@ public class HoloStage : MonoBehaviour
         _pad.gameObject.SetActive(on);
         if (_padGlow != null) _padGlow.gameObject.SetActive(on);
     }
+
+    /// <summary>게이트 아치 네온 밝기 0(대기: 은은하게) ~ 1(출격: 완전 점등)</summary>
+    public void SetArchGlow(float a) { if (_archMat != null) _archMat.SetFloat("_Intensity", 1.1f * Mathf.Lerp(0.14f, 1f, Mathf.Clamp01(a))); }
+
+    /// <summary>HUD 데크 밝기 (출격 연출 중 서서히 꺼진다)</summary>
+    public void SetDeck(float a)
+    {
+        if (_deck == null) return;
+        _deck.gameObject.SetActive(a > 0.01f);
+        _deck.localScale = new Vector3(1f, 1f, 1f);
+        if (_deckMat == null)
+        {
+            _deckMat = Track(new Material(_neon));
+            _deck.GetComponent<Renderer>().sharedMaterial = _deckMat;
+        }
+        _deckMat.SetFloat("_Intensity", 1.45f * a);
+    }
+    Material _deckMat;
 
     /// <summary>애프터버너 세기 0~1 (0 이면 끔)</summary>
     public void SetFlame(float amount, float boost = 1f)
@@ -887,6 +963,7 @@ public class HoloStage : MonoBehaviour
     {
         var m = Jet.worldToLocalMatrix;
         Shader.SetGlobalMatrix("_KF_W2J", m);
+        Shader.SetGlobalVector("_KF_JetCenter", Jet.TransformPoint(new Vector3(0f, 1.6f, -0.5f)));
         // 글로우 스프라이트는 카메라를 바라보게
         for (int i = 0; i < _flameGlow.Length; i++)
             if (_flameGlow[i].gameObject.activeSelf) _flameGlow[i].rotation = Cam.transform.rotation;
@@ -918,20 +995,34 @@ public class HoloStage : MonoBehaviour
         FinishFrame();
     }
 
-    public Vector3 IdleCamPos => new Vector3(0f, 2.0f, -9f);
-    public Quaternion IdleCamRot => Quaternion.Euler(1.0f, -6.5f, 0f);
+    public Vector3 IdleCamPos => new Vector3(2.4f, 6.2f, 8.0f);   // 살짝 내려다보는 앵글: 기체(z≈30)를 화면 우측에 크게 — UI 패널은 좌측
+    public Quaternion IdleCamRot => Quaternion.Euler(9.5f, -6.5f, 0f);
 
     void UpdateIdle(float t)
     {
-        float yaw = 202f + Mathf.Sin(t * 0.2f) * 12f;
-        float bob = Mathf.Sin(t * 0.7f) * 0.12f;
-        MoveJet(PadPos + new Vector3(0f, 2.6f + bob, 0f), Quaternion.Euler(-1f, yaw, Mathf.Sin(t * 0.3f) * 1.5f));
-        SetCamera(IdleCamPos + new Vector3(Mathf.Sin(t * 0.13f) * 0.4f, Mathf.Sin(t * 0.17f) * 0.12f, 0f), IdleCamRot, 40f);
-        _pad.localRotation = Quaternion.Euler(0f, t * 6f, 0f);
-        float k = Mathf.Repeat(t * 0.22f, 1f);
-        _scanRing.localPosition = PadPos + new Vector3(0f, 0.1f + k * 6.2f, 0f);
-        _scanRing.localScale = Vector3.one * (0.9f + 0.1f * Mathf.Sin(k * 3.14f));
-        _scanRing.gameObject.SetActive(!_solid);
+        // 기체는 히어로 자세로 고정한 채 아주 느리게 부유(호흡)만 하고,
+        // 카메라가 기체를 중심으로 천천히 호를 그리며 돈다(±9°, 약 90초 주기) — 쇼룸 턴테이블 같은 시차감.
+        // 카메라를 기체 중심 기준으로 강체 회전시키므로 화면 속 기체 위치(우측)는 그대로 유지된다.
+        float bob = Mathf.Sin(t * 0.55f) * 0.07f;
+        MoveJet(PadPos + new Vector3(0f, 0.9f + bob, 0f),
+                Quaternion.Euler(-0.5f + Mathf.Sin(t * 0.4f) * 0.3f, 196f, Mathf.Sin(t * 0.33f) * 0.6f));
+        Vector3 pivot = PadPos + new Vector3(0f, 2.2f, 0f);
+        if (_archMat != null) SetArchGlow(0f);
+        float orbit = Mathf.Sin(t * 0.07f) * 4f;   // 어색한 비스듬한 각도가 나오지 않도록 좁게
+        float dolly = 1f + Mathf.Sin(t * 0.05f + 1.1f) * 0.035f;
+        Quaternion q = Quaternion.Euler(0f, orbit, 0f);
+        SetCamera(pivot + q * (IdleCamPos - pivot) * dolly, q * IdleCamRot, 40f);
+        _pad.localRotation = Quaternion.Euler(0f, t * 4f, 0f);   // 느린 회전 (선이 충분히 굵어 반짝임 없음)
+        // 스캔 링: 4.5초 주기로 데크에서 기체 높이까지 천천히 올라가며 살짝 좁아지고,
+        // 시작/끝에서 밝기가 0 으로 부드럽게 페이드 → 주기가 바뀌는 순간 끊김이 보이지 않는다.
+        float k = Mathf.Repeat(t / 4.5f, 1f);
+        float rise = 1f - (1f - k) * (1f - k);
+        _scanRing.localPosition = PadPos + new Vector3(0f, 0.08f + rise * 5.6f, 0f);
+        _scanRing.localScale = Vector3.one * Mathf.Lerp(1.0f, 0.86f, rise);
+        _scanRing.localRotation = Quaternion.Euler(0f, -t * 9f, 0f);
+        float fade = Mathf.SmoothStep(0f, 1f, k / 0.12f) * (1f - Mathf.SmoothStep(0f, 1f, (k - 0.5f) / 0.42f));
+        _scanMat.SetFloat("_Intensity", 1.6f * fade);
+        _scanRing.gameObject.SetActive(!_solid && fade > 0.001f);
     }
 
     public void AnimateEnv(float dt, float speed)

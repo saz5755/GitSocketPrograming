@@ -70,7 +70,7 @@ public static class UIShapes
         Round(fi, radius);
         fi.color = fill;
         skin.Add(fl);
-        skin.Add(AddBorder(panel, radius, border).transform);
+        if (border.a > 0f) skin.Add(AddBorder(panel, radius, border).transform);   // 알파 0 = 테두리 없음
         for (int i = 0; i < skin.Count; i++) skin[i].SetSiblingIndex(i);
     }
 

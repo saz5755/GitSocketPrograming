@@ -405,6 +405,7 @@ public class F35VFXController : MonoBehaviour
         _idleLight.color   = idleExhaust.lightColor;
         _idleLight.range   = idleExhaust.lightRange;
         _idleLight.intensity = 0f;
+        _idleLight.enabled   = false;
     }
 
     void SetupHeatHaze()
@@ -466,13 +467,13 @@ public class F35VFXController : MonoBehaviour
         {
             if (_idleExhaustPS != null && !_idleExhaustPS.isPlaying) _idleExhaustPS.Play();
             if (_heatHazePS    != null && !_heatHazePS.isPlaying)    _heatHazePS.Play();
-            if (_idleLight     != null) _idleLight.intensity = idleExhaust.lightIntensity;
+            if (_idleLight     != null) { _idleLight.intensity = idleExhaust.lightIntensity; _idleLight.enabled = true; }
         }
         else
         {
             _idleExhaustPS?.Stop(false, ParticleSystemStopBehavior.StopEmitting);
             _heatHazePS?.Stop(false,    ParticleSystemStopBehavior.StopEmitting);
-            if (_idleLight != null) _idleLight.intensity = 0f;
+            if (_idleLight != null) { _idleLight.intensity = 0f; _idleLight.enabled = false; }
         }
     }
 

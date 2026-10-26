@@ -6,7 +6,7 @@ public class GroundMoveProbe
 {
     public static void Execute()
     {
-        var gc = Object.FindFirstObjectByType<GroundController>();
+        var gc = Object.FindAnyObjectByType<GroundController>();
         if (gc == null) { Debug.Log("[Probe] GroundController not found"); return; }
 
         var go = gc.gameObject;
@@ -20,7 +20,7 @@ public class GroundMoveProbe
         sb.AppendLine($"[Probe] CurrentSpeed={gc.CurrentSpeed:F3}  CurrentAnimSpeed={gc.CurrentAnimSpeed:F3}  AnimState={gc.CurrentAnimState}");
         sb.AppendLine($"[Probe] ProceduralAnimator present: {proc != null}");
 
-        var cam = Object.FindFirstObjectByType<FlightCamera>();
+        var cam = Object.FindAnyObjectByType<FlightCamera>();
         if (cam != null)
         {
             sb.AppendLine($"[Probe] FlightCamera found. groundTarget layer check: PlayerMask={LayerMask.GetMask("Player")}");
@@ -28,7 +28,7 @@ public class GroundMoveProbe
 
         // 씬에 있는 모든 레이어 목록
         sb.AppendLine("[Probe] All used layers in scene:");
-        foreach (var r in Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None))
+        foreach (var r in Object.FindObjectsByType<GameObject>())
         {
             string lname = LayerMask.LayerToName(r.layer);
             if (!string.IsNullOrEmpty(lname) && lname != "Default" && lname != "TransparentFX"

@@ -4,6 +4,7 @@ using UnityEngine.UI;
 /// <summary>
 /// 항공모함 어레스팅 와이어 시스템 (3-wire).
 /// 항공모함 루트 오브젝트에 부착.
+/// 비주얼은 ArrestingCable(펜던트 케이블 + 시브/서포트 하드웨어), 기체 쪽은 TailhookRig가 담당한다.
 /// </summary>
 public class ArrestingWireSystem : MonoBehaviour
 {
@@ -35,24 +36,20 @@ public class ArrestingWireSystem : MonoBehaviour
 
     public static ArrestingWireSystem Instance { get; private set; }
 
-    // ── 상수 ───────────────────────────────────────────────────────────────────
-    const int Segs = 20;
-
     // ── 내부 상태 ──────────────────────────────────────────────────────────────
     class WireState
     {
-        public Transform    root;
-        public Material     wireMat;    // 케이블 재질 (emission 으로 상태 표시)
-        public Renderer     disc;
-        public Material     discMat;
-        public Light        light;
-        public LineRenderer line;
-        public Material     lineMat;
+        public Transform      root;
+        public ArrestingCable cable;
+        public Renderer       disc;
+        public Material       discMat;
+        public Light          light;
 
-        public Vector3 apexPos;
-        public Vector3 apexVel;
-        public float   oscDecay;
         public float   wireWorldY;
+
+        // 케이블을 끌고 가는 기체 — 플레이어(caught) 또는 착함 중인 에스코트
+        public Transform   hookOwner;
+        public TailhookRig hook;
 
         // swept 감지 — 프레임 스킵 방지
         public float prevLocalX;
@@ -62,6 +59,7 @@ public class ArrestingWireSystem : MonoBehaviour
 
         // 스무스 착지
         public float deckTargetY;   // 체결 시점 Raycast로 탐지한 갑판 Y
+        public float landT;         // 체결 후 경과 시간
 
         public bool  caught;
         public bool  stopped;
@@ -70,7 +68,14 @@ public class ArrestingWireSystem : MonoBehaviour
 
     readonly WireState[] _wires = new WireState[3];
     PlayerController     _local;
-    Material             _deckMat; // Aircraft_carrier_Mesh_334 에서 가져온 갑판 재질
+    FlightCamera         _flightCam;
+
+    // 케이블/하드웨어 공유 재질
+    Material _cableMat, _paintMat, _steelMat, _darkMat;
+    float    _rigScanTimer;
+
+    // 체결 직후 기수 숙임 스프링 (도)
+    float _noseDip, _noseDipVel;
 
     // 플레이어 착함 시 에스코트 경로 설정용
     Vector3 _arrestApproachDir;
@@ -81,12 +86,30 @@ public class ArrestingWireSystem : MonoBehaviour
     // GameModeManager.TrapCoroutine이 플레이어 착함 Y를 맞출 때 참조
     public float LandingClearance => Cfg.landingClearance;
 
+    /// <summary>착함 진행 방향 (선미 → 선수, 사선 갑판 각 포함) — 테일훅 전개 판정용</summary>
+    public Vector3 LandingDirection => transform.rotation * Quaternion.Euler(0f, Cfg.deckAngleDeg, 0f) * Vector3.back;
+    /// <summary>가운데 와이어 위치</summary>
+    public Vector3 WireCenter => transform.TransformPoint(Cfg.wire2LocalPos);
+
     // ── 생명주기 ───────────────────────────────────────────────────────────────
-    void Awake() { Instance = this; }
+    void Awake()
+    {
+        // 중복 부착 방어 — 두 개가 모두 동작하면 와이어가 겹쳐 생성되고 체결도 이중으로 일어난다.
+        // WireSystemSO가 할당된 쪽을 남긴다 (Start 전이므로 비활성화하면 와이어를 만들지 않음).
+        if (Instance != null && Instance != this && Instance.isActiveAndEnabled)
+        {
+            var drop = (_config != null && Instance._config == null) ? Instance : this;
+            Debug.LogWarning($"[ArrestingWireSystem] 중복 컴포넌트 감지 — '{drop.name}'의 컴포넌트를 비활성화합니다. 씬에서 하나를 제거하세요.");
+            drop.enabled = false;
+            if (drop == this) return;
+        }
+        Instance = this;
+    }
 
     void Start()
     {
-        FindDeckMaterial();
+        BuildMaterials();
+        HideModelWires();
 
         Vector3[] pos = { Cfg.wire1LocalPos, Cfg.wire2LocalPos, Cfg.wire3LocalPos };
         for (int i = 0; i < 3; i++)
@@ -143,18 +166,43 @@ public class ArrestingWireSystem : MonoBehaviour
                        new Vector3(xzPos.x, deckY, xzPos.z)).y;
             ws.root.localPosition = lp;
             ws.wireWorldY         = deckY;
-            ws.apexPos            = ws.root.TransformPoint(Vector3.zero);
             Debug.Log($"[ArrestWire] Snapped to deck Y={deckY:F2} (localY={lp.y:F2})");
         }
     }
 
-    // ── 갑판 재질 탐색 ─────────────────────────────────────────────────────────
-    void FindDeckMaterial()
+    // 항모 모델에 들어 있는 샘플 와이어 메쉬를 끈다 — 런타임 와이어와 위치·개수가 달라 겹쳐 보임
+    void HideModelWires()
     {
-        var mrs = GetComponentsInChildren<MeshRenderer>(false);
-        foreach (var mr in mrs)
-            if (mr.gameObject.name == "Aircraft_carrier_Mesh_334")
-            { _deckMat = mr.sharedMaterial; break; }
+        if (Cfg.hideCarrierMeshes == null || Cfg.hideCarrierMeshes.Length == 0) return;
+        Transform carrier = transform.parent != null ? transform.parent : transform;
+        foreach (var r in carrier.GetComponentsInChildren<MeshRenderer>(true))
+            if (System.Array.IndexOf(Cfg.hideCarrierMeshes, r.gameObject.name) >= 0)
+                r.enabled = false;
+    }
+
+    // ── 재질 ──────────────────────────────────────────────────────────────────
+    void BuildMaterials()
+    {
+        Shader rope = Shader.Find("Custom/WireRope");
+        Shader lit  = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+        if (rope == null) Debug.LogWarning("[ArrestingWireSystem] Custom/WireRope 셰이더 없음 — URP Lit으로 대체");
+
+        _cableMat = new Material(rope != null ? rope : lit) { name = "PendantCable" };
+        if (rope == null) SetLit(_cableMat, new Color(0.5f, 0.49f, 0.47f), 1f, 0.6f);
+
+        _steelMat = Cfg.wireSteelMaterial != null
+            ? Cfg.wireSteelMaterial
+            : SetLit(new Material(lit) { name = "GearSteel" }, new Color(0.56f, 0.55f, 0.53f), 1f, 0.68f);
+        _paintMat = SetLit(new Material(lit) { name = "GearPaint" }, new Color(0.15f, 0.155f, 0.16f), 0.35f, 0.32f);
+        _darkMat  = SetLit(new Material(lit) { name = "GearDark" },  new Color(0.02f, 0.02f, 0.022f), 0f, 0.12f);
+    }
+
+    static Material SetLit(Material m, Color c, float metallic, float smoothness)
+    {
+        m.SetColor("_BaseColor", c);
+        m.SetFloat("_Metallic", metallic);
+        m.SetFloat("_Smoothness", smoothness);
+        return m;
     }
 
     // ── 와이어 한 줄 생성 ──────────────────────────────────────────────────────
@@ -166,155 +214,18 @@ public class ArrestingWireSystem : MonoBehaviour
         go.transform.localRotation = Quaternion.Euler(0f, Cfg.deckAngleDeg, 0f);
 
         var ws = new WireState { root = go.transform };
+        ws.cable = new ArrestingCable(go.transform, Cfg.wireWidth, _cableMat, _paintMat, _steelMat, _darkMat);
 
-        BuildWireCable(ws);     // 고급 케이블 비주얼
-        BuildWireRope(ws);      // V자 LineRenderer
-        BuildZoneDisc(ws);      // 보라 디스크
+        BuildZoneDisc(ws);      // 디버그용 존 디스크
         BuildZoneLabel(ws, idx);
 
-        ws.apexPos      = go.transform.TransformPoint(Vector3.zero);
-        ws.wireWorldY   = ws.apexPos.y;
+        ws.wireWorldY   = go.transform.position.y;
         ws.prevPosValid = false;
 
         return ws;
     }
 
-    // ── 고급 케이블 비주얼 ─────────────────────────────────────────────────────
-    // Aircraft_carrier_Mesh_334 의 재질을 기반으로 강철 케이블 외관 구성
-    void BuildWireCable(WireState ws)
-    {
-        // 재질 준비 — SO 슬롯 우선, 미할당 시 갑판 재질 복사 또는 새 머티리얼 합성
-        Material mat;
-        if (Cfg.wireSteelMaterial != null)
-        {
-            mat = new Material(Cfg.wireSteelMaterial);   // 인스턴스 복사 (와이어별 emission 독립 제어)
-        }
-        else if (_deckMat != null)
-        {
-            mat = new Material(_deckMat);
-            mat.SetFloat("_Metallic",    0.88f);
-            mat.SetFloat("_Smoothness",  0.72f);
-            mat.SetColor("_BaseColor",   new Color(0.60f, 0.58f, 0.55f, 1f)); // 강철 회색
-        }
-        else
-        {
-            Shader sh = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
-            mat = new Material(sh);
-            mat.SetColor("_BaseColor",  new Color(0.58f, 0.56f, 0.53f, 1f));
-            mat.SetFloat("_Metallic",   0.88f);
-            mat.SetFloat("_Smoothness", 0.72f);
-        }
-        mat.EnableKeyword("_EMISSION");
-        mat.SetColor("_EmissionColor", Cfg.emissionAvailable);
-        ws.wireMat = mat;
-
-        // ① 갑판 홈 (트러프) — 와이어가 박힌 채널, 갑판 재질 그대로 사용
-        var trough = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        trough.name = "WireTrough";
-        trough.transform.SetParent(ws.root, false);
-        trough.transform.localPosition = new Vector3(0f, -0.025f, 0f);
-        trough.transform.localScale    = new Vector3(Cfg.wireWidth + 0.80f, 0.055f, 0.32f);
-        Destroy(trough.GetComponent<Collider>());
-        var troughMr = trough.GetComponent<MeshRenderer>();
-        troughMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-        troughMr.receiveShadows    = false;
-        troughMr.material = _deckMat != null ? _deckMat : mat;
-
-        // ② 주 케이블 — 가느다란 수평 실린더 (Euler(0,0,90) → X 방향으로 눕힘)
-        var cable = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-        cable.name = "WireCable";
-        cable.transform.SetParent(ws.root, false);
-        cable.transform.localPosition = new Vector3(0f, 0.035f, 0f); // 갑판 홈 위로 올림
-        cable.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
-        // scale.y = halfLength → 총 길이 = Cfg.wireWidth, scale.x/z = 반지름 ≈ 4cm
-        cable.transform.localScale = new Vector3(0.042f, Cfg.wireWidth * 0.5f, 0.042f);
-        Destroy(cable.GetComponent<Collider>());
-        var cableMr = cable.GetComponent<MeshRenderer>();
-        cableMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-        cableMr.receiveShadows    = false;
-        cableMr.material = mat;
-
-        // ③ 양 끝단 볼라드 (와이어 고정 피팅) — 납작한 수직 실린더
-        for (int side = -1; side <= 1; side += 2)
-        {
-            float xPos = side * (Cfg.wireWidth * 0.5f + 0.22f);
-
-            var bollard = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            bollard.name = side < 0 ? "BollardL" : "BollardR";
-            bollard.transform.SetParent(ws.root, false);
-            bollard.transform.localPosition = new Vector3(xPos, 0.06f, 0f);
-            bollard.transform.localRotation = Quaternion.identity;
-            bollard.transform.localScale    = new Vector3(0.14f, 0.065f, 0.14f); // 납작 원통
-            Destroy(bollard.GetComponent<Collider>());
-            var bMr = bollard.GetComponent<MeshRenderer>();
-            bMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            bMr.receiveShadows    = false;
-            bMr.material = mat;
-
-            // 볼라드 위 작은 캡 링
-            var ring = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            ring.name = "BollardRing";
-            ring.transform.SetParent(ws.root, false);
-            ring.transform.localPosition = new Vector3(xPos, 0.12f, 0f);
-            ring.transform.localRotation = Quaternion.identity;
-            ring.transform.localScale    = new Vector3(0.10f, 0.025f, 0.10f);
-            Destroy(ring.GetComponent<Collider>());
-            var rMr = ring.GetComponent<MeshRenderer>();
-            rMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            rMr.receiveShadows    = false;
-            rMr.material = mat;
-        }
-    }
-
-    // ── V자 와이어 LineRenderer ────────────────────────────────────────────────
-    void BuildWireRope(WireState ws)
-    {
-        if (!Cfg.showLineRenderer) return;
-        var ropeGO = new GameObject("WireRope");
-        ropeGO.transform.SetParent(ws.root, false);
-
-        var lr = ropeGO.AddComponent<LineRenderer>();
-        lr.positionCount     = Segs + 1;
-        lr.useWorldSpace     = true;
-        lr.startWidth        = 0.07f;
-        lr.endWidth          = 0.07f;
-        lr.numCornerVertices = 5;
-        lr.alignment         = LineAlignment.View;
-        lr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-        lr.receiveShadows    = false;
-
-        Material mat;
-        if (Cfg.wireRopeMaterial != null)
-        {
-            mat = new Material(Cfg.wireRopeMaterial);   // 와이어별 색 독립 제어
-        }
-        else
-        {
-            // 빌드에서 셰이더 스트리핑으로 null 반환 가능 → null 가드 필수
-            Shader sh = Shader.Find("Universal Render Pipeline/Unlit")
-                     ?? Shader.Find("Universal Render Pipeline/Particles/Unlit")
-                     ?? Shader.Find("Unlit/Color")
-                     ?? Shader.Find("Standard")
-                     ?? Shader.Find("Sprites/Default");
-            if (sh == null)
-            {
-                Debug.LogWarning("[ArrestingWireSystem] 와이어 로프 셰이더를 찾지 못했습니다. " +
-                                 "WireSystemSO.wireRopeMaterial에 머티리얼을 할당하세요.");
-                Destroy(ropeGO);
-                return;
-            }
-            mat = new Material(sh);
-        }
-        mat.color = Cfg.lineColorAvailable;
-        lr.material = mat;
-
-        ws.line    = lr;
-        ws.lineMat = mat;
-
-        ApplyRestingLine(ws);
-    }
-
-    // ── 존 디스크 ──────────────────────────────────────────────────────────────
+    // ── 존 디스크 (디버그) ─────────────────────────────────────────────────────
     void BuildZoneDisc(WireState ws)
     {
         if (!Cfg.showZoneDisc) return;
@@ -376,91 +287,56 @@ public class ArrestingWireSystem : MonoBehaviour
         labelGO.AddComponent<ZoneLabelBillboard>();
     }
 
-    // ── LineRenderer 위치 계산 ─────────────────────────────────────────────────
-    void ApplyRestingLine(WireState ws)
+    // ── 케이블 갱신 ────────────────────────────────────────────────────────────
+    // 훅이 없는 기체(원격 등)는 기체 후방 하부를 훅 위치로 근사
+    static Vector3 HookPoint(WireState ws)
     {
-        if (ws.line == null) return;
-        Vector3 L = ws.root.TransformPoint(new Vector3(-Cfg.wireWidth * 0.5f, 0f, 0f));
-        Vector3 R = ws.root.TransformPoint(new Vector3( Cfg.wireWidth * 0.5f, 0f, 0f));
-        for (int i = 0; i <= Segs; i++)
-        {
-            float t   = (float)i / Segs;
-            Vector3 p = Vector3.Lerp(L, R, t);
-            p.y -= Mathf.Sin(t * Mathf.PI) * 0.15f;
-            ws.line.SetPosition(i, p);
-        }
+        if (ws.hook != null) return ws.hook.TipWorld;
+        return ws.hookOwner.position - ws.hookOwner.forward * 3.4f;
     }
 
-    void DrawWireV(WireState ws, Vector3 apex)
+    void Engage(WireState ws, Transform owner)
     {
-        if (ws.line == null) return;
-        int     half = Segs / 2;
-        Vector3 L    = ws.root.TransformPoint(new Vector3(-Cfg.wireWidth * 0.5f, 0f, 0f));
-        Vector3 R    = ws.root.TransformPoint(new Vector3( Cfg.wireWidth * 0.5f, 0f, 0f));
-
-        for (int i = 0; i <= half; i++)
-        {
-            float   t   = (float)i / half;
-            Vector3 p   = Vector3.Lerp(L, apex, t);
-            float   sag = t * (1f - t) * 2f;
-            float   osc = ws.oscDecay * 0.5f * t
-                        * Mathf.Sin(t * Mathf.PI * 5f
-                            + Time.time * Mathf.Lerp(5f, 22f, ws.oscDecay));
-            p.y -= sag + osc;
-            ws.line.SetPosition(i, p);
-        }
-
-        int rem = Segs - half;
-        for (int i = 0; i <= rem; i++)
-        {
-            float   t   = (float)i / rem;
-            Vector3 p   = Vector3.Lerp(apex, R, t);
-            float   sag = t * (1f - t) * 2f;
-            float   osc = ws.oscDecay * 0.5f * (1f - t)
-                        * Mathf.Sin(t * Mathf.PI * 5f
-                            + Time.time * Mathf.Lerp(5f, 22f, ws.oscDecay) + Mathf.PI);
-            p.y -= sag + osc;
-            ws.line.SetPosition(half + i, p);
-        }
+        ws.hookOwner = owner;
+        ws.hook      = TailhookRig.Ensure(owner);
+        if (ws.hook != null) ws.hook.SetEngaged(true);
+        ws.cable.Engage(HookPoint(ws));
     }
 
-    void UpdateWireRope(WireState ws)
+    void ReleaseCable(WireState ws)
     {
-        if (ws.line == null) return;
+        if (ws.hook != null) ws.hook.SetEngaged(false);
+        ws.hookOwner = null;
+        ws.hook      = null;
+        ws.cable.Release();
+    }
 
-        if (!ws.caught || ws.stopped)
-        {
-            Vector3 restPos = ws.root.TransformPoint(Vector3.zero);
-            if ((ws.apexPos - restPos).sqrMagnitude < 0.004f &&
-                ws.apexVel.sqrMagnitude              < 0.01f)
-            {
-                ws.apexPos = restPos;
-                ws.apexVel = Vector3.zero;
-                ApplyRestingLine(ws);
-                return;
-            }
-            Vector3 spring = (restPos - ws.apexPos) * 40f - ws.apexVel * 12f;
-            ws.apexVel += spring * Time.deltaTime;
-            ws.apexPos += ws.apexVel * Time.deltaTime;
-            ws.oscDecay = Mathf.MoveTowards(ws.oscDecay, 0f, Time.deltaTime * 0.8f);
-            DrawWireV(ws, ws.apexPos);
-            return;
-        }
+    void UpdateCable(WireState ws)
+    {
+        if (ws.cable.CurrentState == ArrestingCable.State.Engaged && ws.hookOwner == null)
+            ReleaseCable(ws);   // 끌고 가던 기체가 사라짐
+        Vector3 hook = ws.hookOwner != null ? HookPoint(ws) : Vector3.zero;
+        ws.cable.Tick(Time.deltaTime, hook);
+    }
 
-        Vector3 hookTarget = _local.transform.position;
-        hookTarget.y = ws.wireWorldY + 0.3f;
-
-        Vector3 force = (hookTarget - ws.apexPos) * 60f - ws.apexVel * 10f;
-        ws.apexVel += force * Time.deltaTime;
-        ws.apexPos += ws.apexVel * Time.deltaTime;
-        ws.oscDecay = Mathf.MoveTowards(ws.oscDecay, 0f, Time.deltaTime * 0.25f);
-
-        DrawWireV(ws, ws.apexPos);
+    // 항모 주변 항공기에 테일훅 리그 부착 (1초 간격 — 새로 스폰된 기체 대응)
+    void EnsureHookRigs()
+    {
+        _rigScanTimer -= Time.deltaTime;
+        if (_rigScanTimer > 0f) return;
+        _rigScanTimer = 1f;
+        foreach (var pc in PlayerController.All)
+            if (pc != null) TailhookRig.Ensure(pc.transform);
+        foreach (var e in EscortAI.AllEscorts)
+            if (e != null) TailhookRig.Ensure(e.transform);
     }
 
     // ── Update ─────────────────────────────────────────────────────────────────
     void Update()
     {
+        EnsureHookRigs();
+        UpdateEscortEngagements();
+
         if (_local == null || !_local.isLocalPlayer)
         {
             _local = null;
@@ -477,31 +353,27 @@ public class ArrestingWireSystem : MonoBehaviour
 
         float speed = _local.CurrentSpeed;
 
+        // 훅은 와이어 하나만 잡는다 — 감속 중 굴러가며 다음 와이어 위를 지나도 추가 체결 금지
+        bool anyCaught = false;
+        foreach (var w in _wires) if (w != null && w.caught) { anyCaught = true; break; }
+
         for (int i = 0; i < _wires.Length; i++)
         {
             var ws = _wires[i];
-
-            UpdateWireRope(ws);
-
-            if (ws.light != null)
-            {
-                float target = (ws.caught && !ws.stopped)
-                    ? Mathf.Lerp(5f, 12f, Mathf.Sin(Time.time * 8f) * 0.5f + 0.5f)
-                    : 3f;
-                ws.light.intensity = Mathf.Lerp(ws.light.intensity, target, Time.deltaTime * 5f);
-            }
 
             if (ws.caught)
             {
                 // 체결 중 스무스 착지 처리
                 if (!ws.stopped) SmoothLanding(ws);
 
-                if (!ws.stopped && speed < Cfg.stopThreshold)
+                // 감속 → 롤백까지 끝나 완전히 멈춰야 정지 처리 (EndArrest가 롤백을 끊지 않도록)
+                if (!ws.stopped && (_local.IsArrestSettled || !_local.IsArrested))
                 {
                     _local.EndArrest();
                     ws.stopped    = true;
                     ws.resetTimer = Cfg.resetDelay;
-                    SetColors(ws, Cfg.emissionStopped, Cfg.lineColorStopped, Cfg.zoneColorStopped);
+                    ReleaseCable(ws);
+                    SetColors(ws, Cfg.zoneColorStopped);
                     // 플레이어 경로 저장 후 GameModeManager에 착함 완료 통보
                     AIManager.Instance?.StoreArrestInfo(_arrestApproachDir, _arrestWirePos);
                     GameModeManager.Instance?.OnArrestWireStopped(_local.transform.position, ws.root);
@@ -515,7 +387,7 @@ public class ArrestingWireSystem : MonoBehaviour
                     {
                         ws.caught  = false;
                         ws.stopped = false;
-                        SetColors(ws, Cfg.emissionAvailable, Cfg.lineColorAvailable, Cfg.zoneColorAvailable);
+                        SetColors(ws, Cfg.zoneColorAvailable);
                         Debug.Log($"[ArrestWire] Wire {i + 1}: 리셋");
                     }
                 }
@@ -524,7 +396,7 @@ public class ArrestingWireSystem : MonoBehaviour
 
             // TrapCoroutine이 이미 감속 중(_arrested)이면 minCatchSpeed 무시 —
             // 캐리어 존 진입으로 먼저 감속이 시작된 경우에도 와이어가 체결되어야 한다.
-            if (speed < Cfg.minCatchSpeed && !_local.IsArrested)
+            if (anyCaught || (speed < Cfg.minCatchSpeed && !_local.IsArrested))
             {
                 // 속도 미달이어도 이전 위치는 갱신 (swept 감지 오작동 방지)
                 UpdatePrevPos(ws, ws.root.InverseTransformPoint(_local.transform.position));
@@ -536,7 +408,8 @@ public class ArrestingWireSystem : MonoBehaviour
             Vector3 lp = ws.root.InverseTransformPoint(_local.transform.position);
             bool inZone = false;
 
-            if (ws.prevPosValid)
+            // 한 프레임에 40m 이상 이동 = 순간이동(리스폰 등) — 스윕 판정에서 제외
+            if (ws.prevPosValid && Mathf.Abs(ws.prevLocalZ - lp.z) < 40f)
             {
                 float pz = ws.prevLocalZ;
                 float cz = lp.z;
@@ -567,14 +440,18 @@ public class ArrestingWireSystem : MonoBehaviour
             // ── 체결 ─────────────────────────────────────────────────────────
             ws.caught       = true;
             ws.stopped      = false;
+            anyCaught       = true;
             ws.wireWorldY   = ws.root.TransformPoint(Vector3.zero).y;
             ws.deckTargetY  = DetectDeckY(_local.transform.position, ws.wireWorldY + Cfg.landingClearance, _local.transform);
-            ws.apexPos      = ws.root.TransformPoint(Vector3.zero);
-            ws.apexVel      = _local.transform.forward * (speed * 0.25f);
-            ws.oscDecay     = 1.0f;
+            ws.landT        = 0f;
             ws.prevPosValid = false; // 체결 직후 스윕 오감지 방지
-            SetColors(ws, Cfg.emissionCaught, Cfg.lineColorCaught, Cfg.zoneColorCaught);
+            SetColors(ws, Cfg.zoneColorCaught);
+            Engage(ws, _local.transform);
             _local.BeginArrest();
+            // 체결 충격 — 짧고 강한 카메라 흔들림
+            if (_flightCam == null) _flightCam = FindAnyObjectByType<FlightCamera>();
+            if (_flightCam != null) _flightCam.TriggerShake(0.45f, 0.55f);
+            _noseDip = 0f; _noseDipVel = 0f;
             _arrestApproachDir = _local.transform.forward;
             _arrestWirePos     = ws.root.TransformPoint(Vector3.zero);
             // 와이어 체결 즉시 에스코트를 자유비행으로 전환 (TrapCoroutine 경로와 무관하게 보장)
@@ -591,6 +468,13 @@ public class ArrestingWireSystem : MonoBehaviour
             // ── 어레스팅 와이어 에스코트 체결 감지 ──────────────────────────
             if (!ws.caught) CheckEscortWire(ws, i);
         }
+    }
+
+    // 케이블은 모든 기체 이동이 끝난 뒤 갱신 — Update 순서에 따라 훅보다 한 프레임 뒤처지지 않게
+    void LateUpdate()
+    {
+        for (int i = 0; i < _wires.Length; i++)
+            if (_wires[i] != null) UpdateCable(_wires[i]);
     }
 
     // ── Swept 감지 헬퍼 ───────────────────────────────────────────────────────
@@ -685,35 +569,79 @@ public class ArrestingWireSystem : MonoBehaviour
     }
 
     // ── 스무스 착지 ──────────────────────────────────────────────────────────
-    // 체결 후 전투기 Y를 갑판에 부드럽게 닿도록 보간하고 피치/롤도 수평으로 복귀
+    // 체결 후 전투기를 갑판에 내려앉히고(주바퀴 → 앞바퀴 순으로 닿는 느낌),
+    // 감속 G에 비례해 앞바퀴 스트럿이 눌리며 기수가 숙여졌다가 롤백 때 살짝 들리는 반동을 준다.
     void SmoothLanding(WireState ws)
     {
         if (_local == null) return;
+        float dt = Time.deltaTime;
+        ws.landT += dt;
 
-        // Y 보간 — 속도에 따라 빠르게 수렴 (초반엔 빠르게, 후반 서서히)
-        float yLerpSpeed = Mathf.Lerp(4f, 10f, ws.oscDecay); // oscDecay 클수록 = 착함 직후 = 빠르게
+        // Y 보간 — 체결 직후 빠르게, 이후 서서히 수렴
+        float yLerpSpeed = Mathf.Lerp(10f, 4f, Mathf.Clamp01(ws.landT / 0.6f));
         var pos = _local.transform.position;
-        pos.y = Mathf.Lerp(pos.y, ws.deckTargetY, Time.deltaTime * yLerpSpeed);
+        pos.y = Mathf.Lerp(pos.y, ws.deckTargetY, dt * yLerpSpeed);
         _local.transform.position = pos;
 
-        // 회전 수평 복귀 — 피치(X)·롤(Z) → 0, 요(Y) 유지
+        // 기수 숙임 스프링: 목표 = 감속 G × 0.55° (최대 3°), 롤백 중엔 반대로 0.6° 들림
+        float g      = _local.ArrestDecel / 9.81f;
+        float target = Mathf.Min(g * 0.55f, 3f) - (_local.ArrestRollbackSpeed > 0.05f ? 0.6f : 0f);
+        _noseDipVel += ((target - _noseDip) * 90f - _noseDipVel * 11f) * dt;
+        _noseDip    += _noseDipVel * dt;
+
+        // 회전 수평 복귀 — 피치는 기수 숙임만 남기고, 롤 → 0, 요 유지.
+        // 착함 직후 기수가 들린 자세에서 앞바퀴가 내려앉는 데 약 0.4초.
         float yaw = _local.transform.eulerAngles.y;
-        Quaternion level = Quaternion.Euler(0f, yaw, 0f);
+        Quaternion level = Quaternion.Euler(_noseDip, yaw, 0f);
         _local.transform.rotation = Quaternion.Slerp(
             _local.transform.rotation, level,
-            Time.deltaTime * Mathf.Lerp(3f, 6f, ws.oscDecay)
+            1f - Mathf.Exp(-dt * Mathf.Lerp(5f, 14f, Mathf.Clamp01(ws.landT / 0.5f)))
         );
     }
 
-    // ── 색상 / 발광 일괄 적용 ───────────────────────────────────────────────────
-    void SetColors(WireState ws, Color emission, Color lineColor, Color zoneColor)
+    // ── 에스코트 체결 비주얼 ──────────────────────────────────────────────────
+    // 에스코트는 EscortAI가 스스로 감속하므로(와이어 존 통과 전 내부 판정으로 시작될 수도 있음),
+    // BeingArrested에 들어간 에스코트가 이미 지나친 와이어 중 가장 가까운 것을 끌고 가게 한다.
+    void UpdateEscortEngagements()
     {
-        if (ws.wireMat != null)
-            ws.wireMat.SetColor("_EmissionColor", emission);
+        // 감속이 끝난 에스코트는 케이블을 놓는다
+        foreach (var ws in _wires)
+        {
+            if (ws == null || ws.hookOwner == null || ws.caught) continue;
+            var e = ws.hookOwner.GetComponent<EscortAI>();
+            if (e == null || !e.IsBeingArrested) ReleaseCable(ws);
+        }
 
+        foreach (var escort in EscortAI.AllEscorts)
+        {
+            if (escort == null || !escort.IsBeingArrested) continue;
+            if (IsHookOwner(escort.transform)) continue;
+
+            WireState best = null;
+            float bestAlong = float.MaxValue;
+            Vector3 fwd = escort.transform.forward;
+            foreach (var ws in _wires)
+            {
+                if (ws == null || ws.caught || ws.hookOwner != null) continue;
+                if (ws.cable.CurrentState != ArrestingCable.State.Rest) continue;
+                float along = Vector3.Dot(escort.transform.position - ws.root.position, fwd);
+                if (along > 0f && along < 60f && along < bestAlong) { bestAlong = along; best = ws; }
+            }
+            if (best != null) Engage(best, escort.transform);
+        }
+    }
+
+    bool IsHookOwner(Transform t)
+    {
+        foreach (var ws in _wires) if (ws != null && ws.hookOwner == t) return true;
+        return false;
+    }
+
+    // ── 디버그 존 색상 ──────────────────────────────────────────────────────────
+    void SetColors(WireState ws, Color zoneColor)
+    {
         if (ws.discMat != null) ws.discMat.color = zoneColor;
-        if (ws.light   != null) ws.light.color    = zoneColor;
-        if (ws.lineMat != null) ws.lineMat.color  = lineColor;
+        if (ws.light   != null) ws.light.color   = zoneColor;
     }
 
     // 런타임에 SO 색상을 바꾸고 인스펙터 우클릭 → "Refresh Visual State" 호출하면
@@ -729,11 +657,7 @@ public class ArrestingWireSystem : MonoBehaviour
         foreach (var ws in _wires)
         {
             if (ws == null) continue;
-            Color emission, line, zone;
-            if (ws.stopped)      { emission = Cfg.emissionStopped;   line = Cfg.lineColorStopped;   zone = Cfg.zoneColorStopped; }
-            else if (ws.caught)  { emission = Cfg.emissionCaught;    line = Cfg.lineColorCaught;    zone = Cfg.zoneColorCaught; }
-            else                 { emission = Cfg.emissionAvailable; line = Cfg.lineColorAvailable; zone = Cfg.zoneColorAvailable; }
-            SetColors(ws, emission, line, zone);
+            SetColors(ws, ws.stopped ? Cfg.zoneColorStopped : ws.caught ? Cfg.zoneColorCaught : Cfg.zoneColorAvailable);
         }
     }
 
@@ -742,7 +666,7 @@ public class ArrestingWireSystem : MonoBehaviour
         if (Instance == this) Instance = null;
         if (_local == null) return;
         foreach (var ws in _wires)
-            if (ws.caught && !ws.stopped) _local.EndArrest();
+            if (ws != null && ws.caught && !ws.stopped) _local.EndArrest();
     }
 
     // 와이어 인덱스(0-based)로 월드 좌표 반환 — 에스코트 착함 목표 지정에 사용.

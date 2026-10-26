@@ -19,6 +19,13 @@ class Program
         Console.WriteLine("[TCP] Server started on port 5000");
 
         udpServer = new UdpClient(6000);
+        // Windows: 끊긴 클라이언트로 보낸 UDP가 ICMP Port Unreachable을 받으면 다음 Receive가
+        // ConnectionReset(10054)으로 실패한다. 수신 루프가 에러 로그를 쏟지 않도록 이 동작을 끈다.
+        if (OperatingSystem.IsWindows())
+        {
+            const int SIO_UDP_CONNRESET = -1744830452;
+            udpServer.Client.IOControl(SIO_UDP_CONNRESET, new byte[] { 0 }, null);
+        }
         Thread udpThread = new Thread(UdpReceiveLoop) { IsBackground = true };
         udpThread.Start();
         Console.WriteLine("[UDP] Server started on port 6000");

@@ -31,38 +31,26 @@ public class WireSystemSO : ScriptableObject
     [Header("체결 동작")]
     [Tooltip("이 속도 미만이면 와이어가 체결되지 않음 (너무 느리면 와이어 통과)")]
     public float minCatchSpeed = 15f;
-    [Tooltip("체결 후 이 속도 미만으로 떨어지면 정지 처리")]
-    public float stopThreshold = 0.5f;
     [Tooltip("정지 후 와이어가 다시 활성화될 때까지 대기 시간 (초)")]
     public float resetDelay = 4f;
 
     [Header("머티리얼 (미할당 시 런타임 합성 폴백)")]
-    [Tooltip("케이블 본체/볼라드 강철 머티리얼. 비워두면 갑판 머티리얼을 복사해 강철 조정")]
+    [Tooltip("시브 휠·볼트·터미널 강철 머티리얼. 비워두면 URP Lit 강철로 합성 (케이블은 Custom/WireRope 셰이더 고정)")]
     public Material wireSteelMaterial;
-    [Tooltip("V자 LineRenderer 머티리얼. 비워두면 Unlit 셰이더로 합성")]
-    public Material wireRopeMaterial;
     [Tooltip("존 디스크 투명 머티리얼. 비워두면 Transparent 셰이더로 합성")]
     public Material zoneDiscMaterial;
 
-    [Header("비주얼 표시 토글 (게임 외관 정리용)")]
-    [Tooltip("V자 LineRenderer를 표시할지. 와이어 케이블만 보이게 하려면 끔")]
-    public bool showLineRenderer = true;
+    [Header("항모 모델 내장 와이어 숨김")]
+    [Tooltip("항모 FBX에 포함된 샘플 와이어 메쉬(검은 홈·흰 막대·받침) 이름. 런타임 와이어와 겹치므로 시작 시 렌더러를 끈다. 비우면 모델 원본 그대로 표시")]
+    public string[] hideCarrierMeshes = { "Aircraft_carrier_Mesh_333", "Aircraft_carrier_Mesh_334", "Aircraft_carrier_Mesh_337" };
+
+    [Header("디버그 표시 토글")]
     [Tooltip("보라색 존 디스크를 표시할지. 게임 빌드에서는 보통 비활성")]
     public bool showZoneDisc = false;
     [Tooltip("와이어 위 텍스트 라벨을 표시할지. 디버깅용")]
     public bool showZoneLabel = false;
 
-    [Header("케이블 Emission 색 (HDR)")]
-    [ColorUsage(true, true)] public Color emissionAvailable = new Color(0.12f, 0.09f, 0.00f);
-    [ColorUsage(true, true)] public Color emissionCaught    = new Color(2.50f, 0.50f, 0.00f);
-    [ColorUsage(true, true)] public Color emissionStopped   = Color.black;
-
-    [Header("LineRenderer 색")]
-    public Color lineColorAvailable = new Color(0.90f, 0.80f, 0.55f);
-    public Color lineColorCaught    = new Color(1.00f, 0.35f, 0.00f);
-    public Color lineColorStopped   = new Color(0.45f, 0.45f, 0.45f);
-
-    [Header("Zone Disc 색")]
+    [Header("Zone Disc 색 (디버그)")]
     public Color zoneColorAvailable = new Color(0.10f, 0.10f, 0.10f, 0.10f);
     public Color zoneColorCaught    = new Color(1.00f, 0.40f, 1.00f, 1.00f);
     public Color zoneColorStopped   = new Color(0.50f, 0.50f, 0.50f, 0.35f);

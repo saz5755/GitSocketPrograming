@@ -294,11 +294,14 @@ public class MFDController : MonoBehaviour
     // ═══════════════════════════════════════════════════════════════════════════
     // 레이더 아이콘 갱신 (RadarMiniMap.UpdateIcons 구조 동일, Track-Up 좌표계)
     // ═══════════════════════════════════════════════════════════════════════════
+    readonly HashSet<string> _seen = new HashSet<string>();
+
     void UpdateRadarIcons()
     {
         if (_local == null || _radarContent == null) return;
         string targetNick = _targeting?.Target?.nickname ?? "";
-        var seen = new HashSet<string>();
+        var seen = _seen;
+        seen.Clear();
 
         foreach (var pc in PlayerController.All)
         {
@@ -339,7 +342,8 @@ public class MFDController : MonoBehaviour
             SetBlipActive(nick, true);
         }
 
-        foreach (var k in new List<string>(_blipRoots.Keys))
+        // SetBlipActive는 딕셔너리를 수정하지 않으므로 키 복사 없이 순회
+        foreach (var k in _blipRoots.Keys)
             if (!seen.Contains(k)) SetBlipActive(k, false);
     }
 

@@ -47,11 +47,69 @@ public class PlayerController : MonoBehaviour
     public float CurrentSpeed => currentSpeed;
 
     // ── 어레스팅 와이어 감속 ─────────────────────────────────────────────────
-    bool _arrested;
+    // 실제 MK-7 계열 어레스팅 엔진처럼 진입 속도와 무관하게 일정 런아웃 거리 안에서 세운다:
+    //   ① 케이블이 늘어나며 감속이 0.2초에 걸쳐 차오름 → ② 거의 일정한 감속(정속 런아웃)
+    //   ③ 저속에서 부드럽게 풀림 → ④ 정지 후 케이블 장력에 1m 남짓 뒤로 끌려가는 롤백
+    const float ArrestOnsetTime   = 0.2f;
+    const float ArrestTailSpeed   = 6f;
+    const float RollbackDuration  = 1.1f;
+    const float RollbackPeakSpeed = 1.5f;
 
-    public bool IsArrested    => _arrested;
-    public void BeginArrest() => _arrested = true;
-    public void EndArrest()   => _arrested = false;
+    bool  _arrested;
+    float _arrestT, _arrestV0, _arrestDecelNow;
+    float _rollbackT = -1f;      // < 0 이면 롤백 전
+    bool  _arrestSettled;
+
+    public bool  IsArrested      => _arrested;
+    /// <summary>롤백까지 끝나 기체가 완전히 멈춘 상태</summary>
+    public bool  IsArrestSettled => _arrested && _arrestSettled;
+    /// <summary>현재 어레스팅 감속도 (m/s²) — 기수 숙임 등 연출용</summary>
+    public float ArrestDecel     => _arrested ? _arrestDecelNow : 0f;
+    /// <summary>롤백 중 후진 속도 (m/s, 양수) — 연출용</summary>
+    public float ArrestRollbackSpeed { get; private set; }
+
+    public void BeginArrest()
+    {
+        if (_arrested) return;   // 와이어/트랩 경로 중복 호출 시 프로파일 리셋 방지
+        _arrested       = true;
+        _arrestT        = 0f;
+        _arrestV0       = Mathf.Max(currentSpeed, 1f);
+        _arrestDecelNow = 0f;
+        _rollbackT      = -1f;
+        _arrestSettled  = false;
+        ArrestRollbackSpeed = 0f;
+    }
+    public void EndArrest()
+    {
+        _arrested = false;
+        _arrestDecelNow = 0f;
+        ArrestRollbackSpeed = 0f;
+    }
+
+    // 어레스팅 감속 1스텝 — 이동량(전진 +, 롤백 -)을 반환
+    float StepArrest(float dt)
+    {
+        _arrestT += dt;
+
+        if (_rollbackT < 0f)
+        {
+            float a = Mathf.Min(_arrestV0 * _arrestV0 / (2f * Cfg.arrestRunout), Cfg.arrestDecel);
+            a *= Mathf.Lerp(0.3f, 1f, Mathf.SmoothStep(0f, 1f, _arrestT / ArrestOnsetTime));
+            a *= Mathf.Lerp(0.4f, 1f, Mathf.Clamp01(currentSpeed / ArrestTailSpeed));
+            _arrestDecelNow = a;
+
+            currentSpeed = Mathf.Max(0f, currentSpeed - a * dt);
+            if (currentSpeed <= 0.05f) { currentSpeed = 0f; _rollbackT = 0f; }
+            return currentSpeed * dt;
+        }
+
+        // 롤백: 늘어난 케이블이 기체를 뒤로 당겼다가 놓음 (사인 반주기 속도 프로파일)
+        _arrestDecelNow = 0f;
+        if (_rollbackT >= RollbackDuration) { ArrestRollbackSpeed = 0f; _arrestSettled = true; return 0f; }
+        _rollbackT += dt;
+        ArrestRollbackSpeed = RollbackPeakSpeed * Mathf.Sin(Mathf.Clamp01(_rollbackT / RollbackDuration) * Mathf.PI);
+        return -ArrestRollbackSpeed * dt;
+    }
 
     // ── 카타펄트 발진 ─────────────────────────────────────────────────────────
     bool  _catapulting;
@@ -139,6 +197,7 @@ public class PlayerController : MonoBehaviour
 
     void Awake()
     {
+        VaporTrailRig.Ensure(transform);   // 고속 유지 시 날개 끝 증기 꼬리 (KF21 기체만)
         anim = GetComponent<Animator>();
         if (anim != null)
         {
@@ -186,8 +245,11 @@ public class PlayerController : MonoBehaviour
         // 어레스팅 와이어 감속 중 — 입력 차단, 강제 감속
         if (_arrested)
         {
-            currentSpeed = Mathf.MoveTowards(currentSpeed, 0f, Cfg.arrestDecel * dt);
-            transform.position += transform.forward * currentSpeed * dt;
+            float step = StepArrest(dt);
+            // 롤백은 지면 방향(수평)으로만 — 수평 복귀 중인 피치가 끼어들지 않게
+            Vector3 fwd = transform.forward;
+            if (step < 0f) { fwd.y = 0f; fwd.Normalize(); }
+            transform.position += fwd * step;
             ConstrainToSurface();
 
             moveSendTimer += dt;

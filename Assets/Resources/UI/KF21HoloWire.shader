@@ -82,13 +82,19 @@ Shader "KF21/HoloWire"
 
                 // 격자 등고선 (3축)
                 float3 q = p / _Cell;
-                float3 g = abs(frac(q - 0.5) - 0.5) / max(fwidth(q), 1e-4);
-                float line_ = saturate(1.0 - min(min(g.x, g.y), g.z));
+                float3 fwq = max(fwidth(q), 1e-4);
+                float3 g = abs(frac(q - 0.5) - 0.5) / fwq;
+                float dens = max(max(fwq.x, fwq.y), fwq.z);
+                float line_ = saturate(1.0 - min(min(g.x, g.y), g.z)) * saturate(1.0 - (dens - 0.25) / 0.3);
 
                 // 면 꺾임 외곽선
-                float crease = saturate(length(fwidth(nrm)) * 14.0);
+                float crease = saturate((length(fwidth(nrm)) - 0.12) * 5.0);
 
-                float scan = pow(0.5 + 0.5 * sin(p.y * 6.0 + p.z * 2.0 - _Time.y * 2.2), 8.0);
+                // 5초에 한 번 기수 → 후미로 지나가는 펄스 (본체 HoloGlass 와 동기)
+                float ph   = frac(_Time.y / 5.0);
+                float wz   = _Range.y + 0.8 - saturate(ph / 0.45) * (_Range.y - _Range.x + 1.6);
+                float dz   = (p.z - wz) / 0.6;
+                float scan = exp(-dz * dz) * step(ph, 0.45) * 1.5;
 
                 float side = isFront ? 1.0 : 0.45;
                 float3 col = _Color.rgb * (_Fill + rim * 0.9 + line_ * 0.75 + scan * 0.22)

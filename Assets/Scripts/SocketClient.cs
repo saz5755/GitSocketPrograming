@@ -8,7 +8,6 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using UnityEngine;
 
 public class SocketClient : MonoBehaviour
@@ -68,6 +67,8 @@ public class SocketClient : MonoBehaviour
     public void Connect(string ip = null)
     {
         if (IsConnected()) return;
+        // 끊긴 이전 연결이 남아 있으면 정리 — 안 그러면 옛 UDP 소켓·수신 스레드가 누수된다
+        if (socket != null || udp != null) Disconnect();
 
         string host = ip
             ?? (GameManager.Instance != null ? GameManager.Instance.serverIP : null)
@@ -103,9 +104,7 @@ public class SocketClient : MonoBehaviour
                 byte[] dataBuf = new byte[length];
                 ReadFull(stream, dataBuf, length);
                 string json = Encoding.UTF8.GetString(dataBuf);
-                JObject obj  = JObject.Parse(json);
-                PacketType t = (PacketType)obj["type"].Value<int>();
-                HandleTCP(t, json);
+                HandleTCP(ReadPacketType(json), json);
             }
             catch (IOException)  { Debug.Log("[TCP] Disconnected"); break; }
             catch (SocketException) { Debug.Log("[TCP] Socket closed"); break; }
@@ -313,14 +312,14 @@ public class SocketClient : MonoBehaviour
     void UdpReceiveLoop()
     {
         IPEndPoint ep = new IPEndPoint(IPAddress.Any, 0);
-        while (isRunning)
+        var u = udp;   // 재접속 시 필드가 교체돼도 이 스레드는 자기 소켓만 사용
+        while (isRunning && u != null)
         {
             try
             {
-                byte[] data = udp.Receive(ref ep);
+                byte[] data = u.Receive(ref ep);
                 string json = Encoding.UTF8.GetString(data);
-                JObject obj = JObject.Parse(json);
-                var type = (PacketType)obj["type"].Value<int>();
+                var type = ReadPacketType(json);
 
                 switch (type)
                 {
@@ -381,10 +380,21 @@ public class SocketClient : MonoBehaviour
                 // 소켓 Dispose 이후 접근 — 정상 종료
                 break;
             }
+            catch (SocketException se) when (se.SocketErrorCode == SocketError.ConnectionReset)
+            {
+                // Windows: 직전 송신이 ICMP Port Unreachable(서버 재시작 등)을 받으면 다음 Receive가 10054로 실패.
+                // 소켓은 멀쩡하므로 계속 수신 — 여기서 break하면 이후 모든 원격 이동 동기화가 끊긴다.
+                continue;
+            }
+            catch (SocketException se)
+            {
+                if (isRunning) Debug.LogError($"[UDP] {se.Message}");
+                break;
+            }
             catch (Exception e)
             {
+                // 패킷 하나의 파싱 실패로 수신 스레드 전체가 죽지 않도록 로그만 남기고 계속
                 if (isRunning) Debug.LogError($"[UDP] {e.Message}");
-                break;
             }
         }
     }
@@ -427,7 +437,7 @@ public class SocketClient : MonoBehaviour
                          bool isBoardedInCockpit = false,
                          int  animState          = 0)
     {
-        byte[] data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(new MovePacket
+        SendUDP(new MovePacket
         {
             type = PacketType.MOVE, tick = tick,
             posX = posX, posY = posY, posZ = posZ,
@@ -435,9 +445,7 @@ public class SocketClient : MonoBehaviour
             isMove = isMove, isFlying = isFlying,
             isBoardedInCockpit = isBoardedInCockpit,
             animState          = animState
-        }));
-        try { udp?.Send(data, data.Length); }
-        catch { }
+        });
     }
 
     public void SendMissileSpawn(string id, string shooter, string target,
@@ -463,15 +471,13 @@ public class SocketClient : MonoBehaviour
 
     public void SendGunFire(string shooterNick, Vector3 muzzlePos, Vector3 dir)
     {
-        byte[] data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(new GunFirePacket
+        SendUDP(new GunFirePacket
         {
             type             = PacketType.GUN_FIRE,
             shooterNickname  = shooterNick,
             posX = muzzlePos.x, posY = muzzlePos.y, posZ = muzzlePos.z,
             dirX = dir.x,       dirY = dir.y,       dirZ = dir.z
-        }));
-        try { udp?.Send(data, data.Length); }
-        catch { }
+        });
     }
 
     public void SendQuestUpdate(string questId, string questName, int stepIndex, int totalSteps, bool isComplete)
@@ -496,15 +502,13 @@ public class SocketClient : MonoBehaviour
 
     public void SendAIMove(string nickname, Vector3 pos, Vector3 euler, float speed)
     {
-        byte[] data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(new AIMovePacket
+        SendUDP(new AIMovePacket
         {
             type = PacketType.AI_MOVE, nickname = nickname,
             posX = pos.x, posY = pos.y, posZ = pos.z,
             rotX = euler.x, rotY = euler.y, rotZ = euler.z,
             speed = speed, isMove = speed > 0.5f
-        }));
-        try { udp?.Send(data, data.Length); }
-        catch { }
+        });
     }
 
     public void SendCockpitStateTCP(bool boarded, Vector3 pos, Vector3 rot)
@@ -537,35 +541,91 @@ public class SocketClient : MonoBehaviour
 
     public void SendMissileMove(string id, Vector3 pos, Vector3 euler, float speed)
     {
-        byte[] data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(new MissileMovePacket
+        SendUDP(new MissileMovePacket
         {
             type = PacketType.MISSILE_MOVE, missileId = id,
             posX = pos.x, posY = pos.y, posZ = pos.z,
             rotX = euler.x, rotY = euler.y, rotZ = euler.z,
             speed = speed
-        }));
-        try { udp?.Send(data, data.Length); }
-        catch { }
+        });
     }
 
     public void SendUdpConnect()
     {
-        byte[] data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(
-            new UdpConnectPacket { type = PacketType.UDP_CONNECT, nickname = myNickname }));
-        try { udp?.Send(data, data.Length); }
-        catch { }
+        SendUDP(new UdpConnectPacket { type = PacketType.UDP_CONNECT, nickname = myNickname });
+    }
+
+    // ── 직렬화 버퍼 재사용 ──────────────────────────────────────────────────
+    // JsonConvert.SerializeObject는 호출마다 StringWriter·JsonTextWriter·string·byte[]를 새로 만든다
+    // (패킷당 ~2.4KB). 항공기 5대 × 20Hz 송신이면 초당 수백 KB 가비지 → 주기적 GC 스파이크.
+    // 직렬화기·StringBuilder·char/byte 버퍼를 재사용해 패킷 객체 외 할당을 없앤다. 출력 JSON은 동일.
+    static readonly JsonSerializer s_serializer = JsonSerializer.CreateDefault();
+    readonly StringBuilder _sb = new StringBuilder(256);
+    StringWriter _sw;
+    char[] _charBuf = new char[512];
+    byte[] _byteBuf = new byte[4 + 1024];
+
+    // _byteBuf[4..4+len) 에 UTF-8 JSON, [0..4) 에 길이 프리픽스를 채운다. sendLock 안에서만 호출.
+    int SerializeToBuffer(object packet)
+    {
+        _sb.Clear();
+        _sw ??= new StringWriter(_sb, System.Globalization.CultureInfo.InvariantCulture);
+        using (var jw = new JsonTextWriter(_sw) { CloseOutput = false })
+            s_serializer.Serialize(jw, packet);
+
+        int chars = _sb.Length;
+        if (_charBuf.Length < chars) _charBuf = new char[chars * 2];
+        _sb.CopyTo(0, _charBuf, 0, chars);
+
+        int maxBytes = Encoding.UTF8.GetMaxByteCount(chars) + 4;
+        if (_byteBuf.Length < maxBytes) _byteBuf = new byte[maxBytes * 2];
+        int len = Encoding.UTF8.GetBytes(_charBuf, 0, chars, _byteBuf, 4);
+
+        _byteBuf[0] = (byte)len;
+        _byteBuf[1] = (byte)(len >> 8);
+        _byteBuf[2] = (byte)(len >> 16);
+        _byteBuf[3] = (byte)(len >> 24);
+        return len;
     }
 
     void SendTCP(object packet)
     {
         if (stream == null) return;
-        byte[] json   = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(packet));
-        byte[] length = BitConverter.GetBytes(json.Length);
         lock (sendLock)
         {
-            stream.Write(length, 0, 4);
-            stream.Write(json, 0, json.Length);
+            int len = SerializeToBuffer(packet);
+            stream.Write(_byteBuf, 0, 4 + len);
         }
+    }
+
+    void SendUDP(object packet)
+    {
+        var u = udp;
+        if (u == null) return;
+        lock (sendLock)
+        {
+            int len = SerializeToBuffer(packet);
+            try { u.Client.Send(_byteBuf, 4, len, SocketFlags.None); }
+            catch { }
+        }
+    }
+
+    // 패킷 type 필드만 토큰 스캔으로 읽는다 — JObject 트리 전체를 만든 뒤 다시 역직렬화하던 이중 파싱 제거.
+    static PacketType ReadPacketType(string json)
+    {
+        using (var r = new JsonTextReader(new StringReader(json)))
+        {
+            while (r.Read())
+            {
+                if (r.TokenType == JsonToken.PropertyName && r.Depth == 1 && (string)r.Value == "type")
+                    return (PacketType)(r.ReadAsInt32() ?? 0);
+                if (r.TokenType == JsonToken.StartObject || r.TokenType == JsonToken.StartArray)
+                {
+                    if (r.Depth >= 1) r.Skip();
+                }
+            }
+        }
+        return 0;
     }
 
     static void ReadFull(NetworkStream stream, byte[] buf, int size)
@@ -583,7 +643,7 @@ public class SocketClient : MonoBehaviour
 
     public void Disconnect()
     {
-        if (!IsConnected()) return;
+        if (socket == null && udp == null) return;
         isRunning = false;
         lastTicks.Clear();
         string nick = myNickname;
