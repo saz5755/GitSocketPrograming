@@ -23,6 +23,8 @@ public class FlightCamera : MonoBehaviour
 
     bool isCockpit = false;
     public bool IsCockpit => isCockpit;
+    public Vector3 CockpitOffset => cockpitOffset;   // 조종사 눈 위치 (FlightHUD 가 HUD 유리를 시선 앞에 배치할 때 사용)
+    public float   CockpitDownTilt => cockpitDownTilt;
     PlayerController localPlayer;
     MFDController    mfdController;
     FlightHUD        _flightHUD;
