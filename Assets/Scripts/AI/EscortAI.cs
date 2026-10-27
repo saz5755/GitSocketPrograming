@@ -97,6 +97,20 @@ public class EscortAI : MonoBehaviour
     // 자연 비행 자세 (NavigateTo) — 선회율 제한 + 협조선회 뱅크
     float _navHeading, _navPitch, _navBank;
 
+    // 편대 기준 좌표계의 up (롤 제외) — zero 면 다음 프레임에 수평으로 초기화
+    Vector3 _formUp;
+    bool    _formMirror;    // 루프 후 좌우 슬롯 맞바꿈 상태
+    bool    _formFlipped;   // 이번 프레임 기준이 반전됨 (롤 추종 보정용)
+
+    // 리더 롤 추종 — 편대 기준 대비 연속(언랩) 각도
+    bool    _rollInit;
+    float   _rollTarget, _rollCurrent, _lastLeaderRel;
+    readonly List<Vector2> _rollHistory = new();   // (시각, 리더 롤) — 롤 웨이브 지연용
+    bool    _formationTurnRate;   // 봇 회전 한계를 편대비행용으로 올린 상태
+
+    // 현재 편대 슬롯 (좌우 맞바꿈 반영)
+    Vector3 SlotOffset => _formMirror ? new Vector3(-_formationOffset.x, _formationOffset.y, _formationOffset.z) : _formationOffset;
+
     // 마셜 대기 선회
     Vector3 _marshalCenter;
     float   _marshalAlt, _marshalRadius;
@@ -174,6 +188,8 @@ public class EscortAI : MonoBehaviour
     {
         _leader   = newLeader;
         _leaderPC = newLeader != null ? newLeader.GetComponent<PlayerController>() : null;
+        _formUp     = Vector3.zero;
+        _formMirror = false;
     }
 
     // EnableAICombat() → 플레이어 발진 직후 순차 호출
@@ -415,6 +431,18 @@ public class EscortAI : MonoBehaviour
             }
         }
 
+        // 편대 기준 좌표계는 편대 비행·합류 중에만 이어간다 — 다시 편대에 들어올 때 수평에서 새로 시작
+        if (_phase != Phase.Escorting && _phase != Phase.Rejoin) { _formUp = Vector3.zero; _formMirror = false; }
+        if (_phase != Phase.Escorting) _rollInit = false;
+
+        // 편대비행 중에는 리더 배럴롤을 따라잡도록 기체 회전 한계를 올리고, 그 외 단계는 기본값
+        bool fastTurn = _phase == Phase.Escorting;
+        if (fastTurn != _formationTurnRate && _bot != null)
+        {
+            _formationTurnRate = fastTurn;
+            _bot.SetTurnRate(fastTurn ? Mathf.Max(Cfg.turnRateOverride, Cfg.formationRollRate + 60f) : Cfg.turnRateOverride);
+        }
+
         switch (_phase)
         {
             case Phase.Launching:       UpdateLaunching();       break;
@@ -481,9 +509,26 @@ public class EscortAI : MonoBehaviour
             return;
         }
 
-        bool    isLeft      = IsLeftSide;
-        Vector3 localOffset = _formationOffset;
-        Vector3 targetPos   = _leader.TransformPoint(localOffset);
+        Quaternion frame       = FormationFrame();
+        Vector3    localOffset = SlotOffset;
+        bool       isLeft      = localOffset.x < 0f;
+
+        if (_formFlipped)
+        {
+            // 루프 후 기준 반전 — 같은 실제 자세를 뒤집힌 기준으로 다시 표현할 뿐이므로
+            // 기수 기준 자세·롤 추종값 모두 180° 보정해 기체가 실제로는 돌지 않게 한다
+            // (보정 없이 두면 기수 기준 슬러프가 최단 경로로 180° 를 돌아 엉뚱한 반 바퀴 롤이 생긴다).
+            if (_rollInit)
+            {
+                _smoothFormationRot *= Quaternion.Euler(0f, 0f, 180f);
+                _rollTarget    += 180f;
+                _rollCurrent   += 180f;
+                _lastLeaderRel  = Mathf.DeltaAngle(0f, _lastLeaderRel + 180f);
+                for (int i = 0; i < _rollHistory.Count; i++) _rollHistory[i] += new Vector2(0f, 180f);
+            }
+            _formFlipped = false;
+        }
+        Vector3    targetPos   = _leader.position + frame * localOffset;
 
         float leaderSpeed = _leaderPC != null ? _leaderPC.CurrentSpeed : 62f;
         float baseSpeed   = Mathf.Max(leaderSpeed, 40f);
@@ -491,7 +536,7 @@ public class EscortAI : MonoBehaviour
         // ── 속도: 종방향(Z) 오차 비례 제어 ──────────────────────────────────
         // 앞서면 감속, 뒤처지면 가속 (리더 속도 ×0.75~×1.2). 지터는 기체별 고정 오프셋이라
         // 슬롯 앞뒤 ±1m 정도의 자연스러운 간격 차이만 만든다.
-        Vector3 selfLocal = _leader.InverseTransformPoint(transform.position);
+        Vector3 selfLocal = Quaternion.Inverse(frame) * (transform.position - _leader.position);
         float   zError    = selfLocal.z - localOffset.z;   // +: 슬롯보다 앞, -: 뒤
         float   targetSpeed = Mathf.Clamp(baseSpeed - zError * Cfg.formationSpeedGain + _speedJitter * 0.2f,
                                           baseSpeed * 0.75f, baseSpeed * 1.2f);
@@ -501,15 +546,20 @@ public class EscortAI : MonoBehaviour
         // 매 프레임 좌우로 급반전한다. 대신 리더 진행 방향으로 자기 위치보다 L 만큼 앞,
         // 슬롯의 횡·수직 위치에 있는 점을 겨눈다 — 목표 방향은 항상 전방이고,
         // 횡·수직 오차는 시정수 L/V 로 부드럽게 수렴, 종방향 오차는 위 속도 제어가 맡는다.
+        // 슬롯은 롤을 뺀 편대 좌표계 기준 — 리더가 뒤집혀도 슬롯은 제자리, 기체만 그 자리에서 롤한다.
         float   lead     = Mathf.Max(baseSpeed * Cfg.formationLeadTime, 80f);
-        Vector3 aimPoint = _leader.TransformPoint(new Vector3(localOffset.x, localOffset.y, selfLocal.z + lead));
-        Quaternion rot   = Quaternion.LookRotation(aimPoint - transform.position, _leader.up)
-                         * Quaternion.Euler(0f, 0f, Cfg.GetBankOffset(isLeft));
+        Vector3 aimPoint = _leader.position + frame * new Vector3(localOffset.x, localOffset.y, selfLocal.z + lead);
+        Vector3 frameUp  = frame * Vector3.up;
+        Quaternion heading = Quaternion.LookRotation(aimPoint - transform.position, frameUp);
 
-        // 목표 회전을 매 프레임 즉시 적용하지 않고 서서히 추종 — 급반전에 의한 좌우 떨림 방지
-        _smoothFormationRot = Quaternion.Slerp(_smoothFormationRot, rot, Cfg.rotSmoothSpeed * Time.deltaTime);
+        // 기수 방향(요·피치)만 서서히 추종 — 급반전에 의한 좌우 떨림 방지.
+        // 롤은 아래에서 따로 붙인다: 슬러프는 최단 경로를 택해 롤이 180° 넘게 뒤처지면 반대로 돌기 때문.
+        if (!_rollInit) _smoothFormationRot = Quaternion.LookRotation(transform.forward, frameUp);
+        _smoothFormationRot = Quaternion.Slerp(_smoothFormationRot, heading, Cfg.rotSmoothSpeed * Time.deltaTime);
+
+        float roll = FollowLeaderRoll(frame, Cfg.GetBankOffset(isLeft));
         _bot.PositionOverride = false;
-        _bot.SetTarget(targetPos, _smoothFormationRot, targetSpeed);
+        _bot.SetTarget(targetPos, _smoothFormationRot * Quaternion.Euler(0f, 0f, roll + Cfg.GetBankOffset(isLeft)), targetSpeed);
 
         // ── 리더 정지 감지 → 자동 착함 시작 ────────────────────────────────────
         // FreeFlightZone과 동일한 보호 로직 — Escorting 상태에서도 leader가 멈추면
@@ -529,6 +579,91 @@ public class EscortAI : MonoBehaviour
             _leaderStopTimer  = 0f;
             _landingRequested = false;
         }
+    }
+
+    // ── 편대 기준 좌표계 (롤 제외) ───────────────────────────────────────────
+    // forward 는 항상 리더 기수 방향. up 은 직전 up 을 새 forward 에 직교화해 이어가므로
+    // 리더의 피치·요(선회·루프)는 편대가 함께 따라가고, 기수 축 회전(롤)은 따라가지 않는다.
+    // 수직 비행 근처가 아니면 up 을 수평 기준으로 제한 속도로 되돌려 — 루프·Immelmann 뒤에도 수평 편대로 복귀.
+    Quaternion FormationFrame()
+    {
+        Vector3 fwd   = _leader.forward;
+        Vector3 level = Vector3.ProjectOnPlane(Vector3.up, fwd);
+        bool nearVertical = level.sqrMagnitude < 0.19f;   // 수직에서 ±25° 이내
+
+        Vector3 up = _formUp.sqrMagnitude > 0.5f ? Vector3.ProjectOnPlane(_formUp, fwd) : Vector3.zero;
+        if (up.sqrMagnitude < 1e-4f)
+            up = nearVertical ? Vector3.ProjectOnPlane(_leader.up, fwd) : level;
+        up.Normalize();
+
+        if (!nearVertical)
+        {
+            // 루프로 리더를 따라 넘어가면 기준이 하늘 기준으로 뒤집힌다. 180° 를 돌려 세우면 편대 전체가
+            // 리더 축을 돌아 휩쓸므로, 기준만 즉시 뒤집고 좌우 슬롯을 맞바꾼다 — 각 기체는 지금 있는
+            // 쪽을 유지하고 슬롯은 상하로 몇 m 만 옮겨간다.
+            if (Vector3.Dot(up, level) < 0f)
+            {
+                up           = -up;
+                _formMirror  = !_formMirror;
+                _formFlipped = true;
+            }
+            up = Vector3.RotateTowards(up, level.normalized, Cfg.formationRelevelRate * Mathf.Deg2Rad * Time.deltaTime, 0f);
+            up = Vector3.ProjectOnPlane(up, fwd).normalized;
+        }
+        _formUp = up;
+        return Quaternion.LookRotation(fwd, up);
+    }
+
+    // ── 리더 롤 추종 (항상 리더와 같은 방향) ─────────────────────────────────
+    // 리더의 편대 기준 대비 롤을 프레임 차이로 누적해 랩어라운드 없는 연속 각도로 만들고,
+    // 기체 롤은 그 값을 최대 formationRollRate 로 쫓는다. 최단 경로 보간을 쓰지 않으므로
+    // 연속 배럴롤에서도 절대 반대로 돌지 않고, 추종 속도가 배럴롤(240°/s)보다 빨라 뒤처짐이 쌓이지 않는다.
+    // 반환값: 편대 기준 대비 기체 롤 (deg, 편대 뱅크 오프셋 제외).
+    float FollowLeaderRoll(Quaternion frame, float bankOffset)
+    {
+        float leaderRel = Mathf.DeltaAngle(0f, (Quaternion.Inverse(frame) * _leader.rotation).eulerAngles.z);
+        if (!_rollInit)
+        {
+            float selfRel  = Mathf.DeltaAngle(0f, (Quaternion.Inverse(frame) * transform.rotation).eulerAngles.z) - bankOffset;
+            _rollTarget    = leaderRel;
+            _rollCurrent   = _rollTarget + Mathf.DeltaAngle(leaderRel, selfRel);
+            _lastLeaderRel = leaderRel;
+            _rollInit      = true;
+            _formFlipped   = false;
+            _rollHistory.Clear();
+        }
+        _rollTarget   += Mathf.DeltaAngle(_lastLeaderRel, leaderRel);
+        _lastLeaderRel = leaderRel;
+
+        // 롤 웨이브: 리더에 가까운 열부터 rollWaveDelay 씩 늦게 시작 — 편대 바깥으로 롤이 물결처럼 번진다
+        float target = DelayedRollTarget(WaveRank * Cfg.rollWaveDelay);
+
+        // 한 바퀴 이상 벌어지면 온전한 바퀴 수만큼 건너뜀 (360° 단위라 자세는 동일)
+        float gap = target - _rollCurrent;
+        if (Mathf.Abs(gap) > 360f) _rollCurrent += 360f * Mathf.Sign(gap) * Mathf.Floor(Mathf.Abs(gap) / 360f);
+
+        _rollCurrent = Mathf.MoveTowards(_rollCurrent, target, Cfg.formationRollRate * Time.deltaTime);
+        return _rollCurrent;
+    }
+
+    // 편대 열 (리더 뒤 40m 간격 기준 — 안쪽 쌍 1, 바깥쪽 쌍 2 …). 좌우 대칭 기체는 같은 열이라 동시에 롤한다.
+    int WaveRank => Mathf.Max(1, Mathf.RoundToInt(Mathf.Abs(_formationOffset.z) / 40f));
+
+    // delay 초 전의 리더 롤 (연속 각도). 기록을 시간순으로 쌓고 두 샘플 사이를 보간한다.
+    float DelayedRollTarget(float delay)
+    {
+        float now = Time.time;
+        _rollHistory.Add(new Vector2(now, _rollTarget));
+        if (delay <= 0f) return _rollTarget;
+
+        float tq = now - delay;
+        // tq 이전 샘플은 보간용으로 하나만 남기고 정리
+        while (_rollHistory.Count >= 2 && _rollHistory[1].x <= tq) _rollHistory.RemoveAt(0);
+
+        Vector2 a = _rollHistory[0];
+        if (a.x >= tq || _rollHistory.Count < 2) return a.y;   // 기록이 delay 보다 짧으면 가장 오래된 값
+        Vector2 b = _rollHistory[1];
+        return Mathf.Lerp(a.y, b.y, (tq - a.x) / Mathf.Max(b.x - a.x, 1e-5f));
     }
 
     // ── 항모 존 내 자유비행 (웨이포인트 순찰) ────────────────────────────────
@@ -819,13 +954,14 @@ public class EscortAI : MonoBehaviour
             return;
         }
 
-        Vector3 slot = _leader.TransformPoint(_formationOffset);
+        Quaternion frame = FormationFrame();
+        Vector3 slot = _leader.position + frame * SlotOffset;
         float   dist = Vector3.Distance(transform.position, slot);
         float   leaderSpeed = Mathf.Max(_leaderPC != null ? _leaderPC.CurrentSpeed : 62f, 40f);
 
         // 슬롯보다 리더 진행 방향으로 앞선 점을 겨눠 비스듬히 따라붙는다 (거리가 줄수록 리드 감소)
         Vector3 aim  = slot + _leader.forward * Mathf.Clamp(dist * 0.4f, 0f, 800f);
-        float   zErr = _leader.InverseTransformPoint(transform.position).z - _formationOffset.z;
+        float   zErr = (Quaternion.Inverse(frame) * (transform.position - _leader.position)).z - SlotOffset.z;
         float   speed = zErr > 0f
             ? leaderSpeed * 0.85f
             : leaderSpeed + Mathf.Clamp(dist * 0.08f, 0f, Cfg.rejoinMaxOvertake);

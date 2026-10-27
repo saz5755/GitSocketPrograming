@@ -15,6 +15,13 @@ public class EscortBehaviorSO : ScriptableObject
     public float formationLeadTime = 1.5f;
     [Tooltip("슬롯 앞뒤 오차 1m 당 속도 보정량 (m/s)")]
     public float formationSpeedGain = 0.6f;
+    [Tooltip("편대 기준 좌표계를 수평으로 되돌리는 속도 (deg/s). 리더 롤은 따라가지 않고(제자리 롤), " +
+             "루프 등으로 기준이 기울어지면 이 속도로 다시 수평 편대를 갖춘다")]
+    public float formationRelevelRate = 45f;
+    [Tooltip("편대비행 중 리더 롤 추종 최대 속도 (deg/s). 리더 배럴롤(240°/s)보다 커야 연속 롤에서도 뒤처지지 않는다")]
+    public float formationRollRate = 300f;
+    [Tooltip("롤 웨이브: 편대 한 열(리더 뒤 40m) 당 롤 시작 지연 (초). 0 이면 전 기체 동시 롤")]
+    [Range(0f, 0.5f)] public float rollWaveDelay = 0.1f;
     [Tooltip("편대 비행 회전 보간 속도. 낮을수록 부드럽지만 선회 반응이 느림. 좌우 떨림 발생 시 줄임 (4~8 권장)")]
     [Range(2f, 15f)] public float rotSmoothSpeed = 6f;
 
