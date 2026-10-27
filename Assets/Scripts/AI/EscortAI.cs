@@ -3,6 +3,8 @@ using UnityEngine;
 
 // 에스코트 편대 AI — 상태 머신 기반.
 // OnDeck → Launching → Escorting ↔ FreeFlightZone → LandingApproach → BeingArrested / Landed
+// 리더 사망: Escorting → Marshal(상공 대기) → Recovery(Case I 패턴) → LandingApproach(그루브) → …
+// 리더 재출격: Marshal/Recovery → Rejoin → Escorting, 갑판 기체는 재발진
 public class EscortAI : MonoBehaviour
 {
     enum Phase
@@ -12,8 +14,14 @@ public class EscortAI : MonoBehaviour
         FreeFlight,         // 타이머 기반 자유비행 (폴백 — 존 외부에서 착함 지시 시)
         LandingApproach,    // 파이널 어프로치 (웨이포인트 → 갑판)
         BeingArrested,      // 어레스팅 와이어 체결 후 감속 중
-        Landed
+        Landed,
+        Marshal,            // 리더 사망 — 항모 상공 좌선회 대기 (기체별 고도·반경 스택)
+        Recovery,           // 회수 패턴 비행 (이니셜 → 브레이크 → 다운윈드 → 그루브)
+        Rejoin              // 재출격한 리더에게 리드 추적으로 합류
     }
+
+    // 패턴 진입 간격 — 앞 기체와 패턴 위에서 겹치지 않도록 전 에스코트 공유
+    static float s_nextPatternEntryTime;
 
     // 어레스팅 와이어 시스템이 접근 중인 에스코트를 탐색할 수 있도록 전역 목록 노출
     public static readonly List<EscortAI> AllEscorts = new();
@@ -86,7 +94,27 @@ public class EscortAI : MonoBehaviour
     // 편대 비행 회전 보간 — 매 프레임 raw 목표 회전을 즉시 적용하면 좌우 진동 발생
     Quaternion _smoothFormationRot;
 
+    // 자연 비행 자세 (NavigateTo) — 선회율 제한 + 협조선회 뱅크
+    float _navHeading, _navPitch, _navBank;
+
+    // 마셜 대기 선회
+    Vector3 _marshalCenter;
+    float   _marshalAlt, _marshalRadius;
+    bool    _marshalPending;        // 발진 중 리더 사망 — 발진 완료 후 마셜로
+    bool    _rejoinRequested;       // 리더 재출격 — 리더가 항모 존을 벗어나면 합류
+    bool    _relaunchAfterLanding;  // 그루브·체결 중 재출격 요청 — 착함 후 재발진
+    float   _relaunchTimer;
+
+    // 회수 패턴
+    Vector3 _recoverySlot, _recoveryDir;
+    bool    _patternEntered;
+    readonly List<Vector3> _path      = new();
+    readonly List<float>   _pathSpeed = new();
+    int     _pathIdx;
+
     public Vector3 FormationOffset => _formationOffset;
+    public bool    CanLaunch       => _phase == Phase.OnDeck || _phase == Phase.Landed;
+    public bool    IsHolding       => _phase == Phase.Marshal && !_rejoinRequested;
     public bool    IsLeftSide      => _formationOffset.x < 0f;
     public void    SetFormationOffset(Vector3 offset) => _formationOffset = offset;
     public bool    IsLaunching     => _phase == Phase.Launching;
@@ -224,9 +252,100 @@ public class EscortAI : MonoBehaviour
         }
     }
 
+    // ── 리더 사망 → 마셜 대기 ────────────────────────────────────────────────
+    // AIManager.OnLeaderDown 에서 호출. 공중 기체는 편대를 풀고 항모 상공 대기 선회로,
+    // 발진 중이면 발진을 마친 뒤 합류. 갑판·착함 진행 중인 기체는 그대로 둔다.
+    public void BeginMarshal(Vector3 center, float altitude, float radius)
+    {
+        SetMarshal(center, altitude, radius);
+        _rejoinRequested      = false;
+        _relaunchAfterLanding = false;
+        switch (_phase)
+        {
+            case Phase.Launching:
+                _marshalPending = true;
+                break;
+            case Phase.Escorting:
+            case Phase.FreeFlightZone:
+            case Phase.FreeFlight:
+            case Phase.Rejoin:
+            case Phase.Recovery:
+            case Phase.Marshal:
+                EnterMarshal();
+                break;
+        }
+    }
+
+    // ── 대기 → 회수 패턴 착함 ────────────────────────────────────────────────
+    // 대기 선회를 계속하다 우현 후방에서 착함 방향으로 날고 있을 때 패턴에 진입한다.
+    public void BeginRecovery(Vector3 slotPos, Vector3 landingDir)
+    {
+        if (_phase != Phase.Marshal || _rejoinRequested) return;
+        landingDir.y = 0f;
+        _recoverySlot   = slotPos;
+        _recoveryDir    = landingDir.sqrMagnitude > 0.01f ? landingDir.normalized : Vector3.forward;
+        _landingSlot    = slotPos;
+        _patternEntered = false;
+        _phase          = Phase.Recovery;
+        DevLog.Log($"[EscortAI] {name}: Marshal → Recovery  slot={slotPos}");
+    }
+
+    // ── 리더 재출격 → 재합류 ─────────────────────────────────────────────────
+    // AIManager.EnableAICombat 에서 갑판 기체 외 전부에 호출.
+    public void RequestRejoin(Vector3 center, float altitude, float radius)
+    {
+        switch (_phase)
+        {
+            case Phase.Marshal:
+                _rejoinRequested = true;
+                break;
+            case Phase.Launching:
+                _marshalPending = false;
+                break;
+            case Phase.Recovery:
+            case Phase.FreeFlight:
+                WaveOff(center, altitude, radius);
+                break;
+            case Phase.LandingApproach:
+                // 그루브 깊숙이 들어온 기체는 그대로 착함 후 재발진, 그 외엔 웨이브오프
+                if (_waypointReached && Vector3.Distance(transform.position, _landingSpot) < 600f)
+                    _relaunchAfterLanding = true;
+                else
+                    WaveOff(center, altitude, radius);
+                break;
+            case Phase.BeingArrested:
+                _relaunchAfterLanding = true;
+                break;
+        }
+    }
+
+    void WaveOff(Vector3 center, float altitude, float radius)
+    {
+        SetMarshal(center, altitude, radius);
+        EnterMarshal();
+        _rejoinRequested = true;
+        DevLog.Log($"[EscortAI] {name}: wave off → rejoin");
+    }
+
+    void SetMarshal(Vector3 center, float altitude, float radius)
+    {
+        _marshalCenter = center;
+        _marshalAlt    = altitude;
+        _marshalRadius = radius;
+    }
+
+    void EnterMarshal()
+    {
+        InitNav();
+        _marshalPending       = false;
+        _bot.PositionOverride = false;
+        _phase                = Phase.Marshal;
+    }
+
     // EscortZoneTrigger — 플레이어가 존에 진입할 때 호출 (Escorting/Launching → FreeFlightZone)
     public void OnLeaderEnteredZone()
     {
+        if (_marshalPending) return;
         if (_phase == Phase.Escorting || _phase == Phase.Launching)
         {
             _bot.PositionOverride  = false;
@@ -305,6 +424,9 @@ public class EscortAI : MonoBehaviour
             case Phase.LandingApproach: UpdateLandingApproach(); break;
             case Phase.BeingArrested:   UpdateBeingArrested();   break;
             case Phase.Landed:          UpdateLanded();          break;
+            case Phase.Marshal:         UpdateMarshal();         break;
+            case Phase.Recovery:        UpdateRecovery();        break;
+            case Phase.Rejoin:          UpdateRejoin();          break;
         }
     }
 
@@ -338,7 +460,8 @@ public class EscortAI : MonoBehaviour
         if (clearedCarrier || _launchTimer >= Cfg.launchDuration * 3f)
         {
             // PositionOverride는 발진 시작 시 이미 false — 유지
-            _phase = Phase.Escorting;
+            if (_marshalPending) EnterMarshal();
+            else                 _phase = Phase.Escorting;
         }
     }
 
@@ -361,65 +484,27 @@ public class EscortAI : MonoBehaviour
         bool    isLeft      = IsLeftSide;
         Vector3 localOffset = _formationOffset;
         Vector3 targetPos   = _leader.TransformPoint(localOffset);
-        Vector3 toTarget    = targetPos - transform.position;
-        float   dist        = toTarget.magnitude;
 
         float leaderSpeed = _leaderPC != null ? _leaderPC.CurrentSpeed : 62f;
         float baseSpeed   = Mathf.Max(leaderSpeed, 40f);
 
-        // ── 속도: 종방향(Z) 오차 기반 제어 ──────────────────────────────────
-        // 단순 거리 기반 2배속은 앞지름 → 오버슈트를 유발.
-        // 플레이어 로컬 Z 오차로 "앞서 나감/뒤처짐" 을 구분해 부드럽게 조정.
+        // ── 속도: 종방향(Z) 오차 비례 제어 ──────────────────────────────────
+        // 앞서면 감속, 뒤처지면 가속 (리더 속도 ×0.75~×1.2). 지터는 기체별 고정 오프셋이라
+        // 슬롯 앞뒤 ±1m 정도의 자연스러운 간격 차이만 만든다.
         Vector3 selfLocal = _leader.InverseTransformPoint(transform.position);
         float   zError    = selfLocal.z - localOffset.z;   // +: 슬롯보다 앞, -: 뒤
+        float   targetSpeed = Mathf.Clamp(baseSpeed - zError * Cfg.formationSpeedGain + _speedJitter * 0.2f,
+                                          baseSpeed * 0.75f, baseSpeed * 1.2f);
 
-        float targetSpeed;
-        if (zError > Cfg.slotAheadThreshold)
-        {
-            // 에스코트가 슬롯보다 앞서 나간 경우 → 감속해서 플레이어가 통과하게 함
-            float t = Mathf.Clamp01(zError / 60f);
-            targetSpeed = baseSpeed * Mathf.Lerp(1f, 0.75f, t);
-        }
-        else
-        {
-            // 뒤처지거나 정렬된 경우 → 거리에 비례한 완만한 가속 (최대 +20%)
-            float t = Mathf.SmoothStep(0f, 0.2f, Mathf.Clamp01(dist / 100f));
-            targetSpeed = baseSpeed * (1f + t);
-        }
-        // 슬롯 6m 이내: 완전히 리더 속도에 맞춤 (미세 진동 방지)
-        if (dist < 6f)
-            targetSpeed = baseSpeed + _speedJitter * (dist / 6f);
-
-        // ── 기수 방향: 슬롯이 등 뒤일 때 U턴 금지 ────────────────────────────
-        Quaternion leaderRot = _leader.rotation * Quaternion.Euler(0f, 0f, Cfg.GetBankOffset(isLeft));
-
-        Quaternion rot;
-        if (toTarget.sqrMagnitude < 0.01f)
-        {
-            rot = leaderRot;
-        }
-        else
-        {
-            // 슬롯이 현재 기수 기준 뒤쪽(dot < 0)이고 충분히 멀면
-            // → 선회 없이 리더 방향으로 직진. 속도 차이로 위치가 자연히 보정됨.
-            // → 루프/U턴을 방지하는 핵심 로직.
-            float forwardDot = Vector3.Dot(transform.forward, toTarget.normalized);
-            if (forwardDot < 0f && dist > 15f)
-            {
-                rot = leaderRot;
-            }
-            else
-            {
-                // 리더 로컬 좌표로 변환 후 횡방향(X) 성분을 줄임
-                // — X 오차를 그대로 두면 오버슈트 → 반대 방향 수정 → 좌우 진동 반복
-                Vector3 toTargetLocal = _leader.InverseTransformDirection(toTarget);
-                toTargetLocal.x *= 0.25f;
-                Quaternion lookRot = Quaternion.LookRotation(
-                    _leader.TransformDirection(toTargetLocal).normalized, _leader.up);
-                float blend = Mathf.Clamp01(1f - dist / Cfg.snapDistance);
-                rot = Quaternion.Slerp(lookRot, leaderRot, blend);
-            }
-        }
+        // ── 기수 방향: 리드 포인트 추종 ─────────────────────────────────────
+        // 슬롯 자체를 바라보면 슬롯이 몇 m 뒤로 처질 때 목표 방향이 뒤로 뒤집혀(LookRotation ≈ 180°)
+        // 매 프레임 좌우로 급반전한다. 대신 리더 진행 방향으로 자기 위치보다 L 만큼 앞,
+        // 슬롯의 횡·수직 위치에 있는 점을 겨눈다 — 목표 방향은 항상 전방이고,
+        // 횡·수직 오차는 시정수 L/V 로 부드럽게 수렴, 종방향 오차는 위 속도 제어가 맡는다.
+        float   lead     = Mathf.Max(baseSpeed * Cfg.formationLeadTime, 80f);
+        Vector3 aimPoint = _leader.TransformPoint(new Vector3(localOffset.x, localOffset.y, selfLocal.z + lead));
+        Quaternion rot   = Quaternion.LookRotation(aimPoint - transform.position, _leader.up)
+                         * Quaternion.Euler(0f, 0f, Cfg.GetBankOffset(isLeft));
 
         // 목표 회전을 매 프레임 즉시 적용하지 않고 서서히 추종 — 급반전에 의한 좌우 떨림 방지
         _smoothFormationRot = Quaternion.Slerp(_smoothFormationRot, rot, Cfg.rotSmoothSpeed * Time.deltaTime);
@@ -532,6 +617,228 @@ public class EscortAI : MonoBehaviour
     {
         _bot.PositionOverride = true;
         _bot.SetTarget(transform.position, transform.rotation, 0f);
+
+        // 착함 도중 리더가 재출격했으면 잠시 뒤 다시 캐터펄트 발진
+        if (_relaunchAfterLanding && LeaderFlying)
+        {
+            _relaunchTimer += Time.deltaTime;
+            if (_relaunchTimer >= Cfg.relaunchDelay)
+            {
+                _relaunchAfterLanding = false;
+                _relaunchTimer        = 0f;
+                BeginLaunchSequence();
+            }
+        }
+    }
+
+    bool LeaderFlying => _leaderPC != null && _leaderPC.enabled && _leaderPC.CurrentSpeed > 20f;
+
+    // ── 자연 비행 조종 ───────────────────────────────────────────────────────
+    // 목표 지점으로 기수를 선회율 제한 안에서 비례 조향하고, 선회율에 맞는 협조선회 뱅크를 준다.
+    // 위치는 봇이 기수 방향으로 이동시킨다 — MoveTowards 로 미끄러지듯 끌려가는 기계적 움직임 제거.
+    void InitNav()
+    {
+        Vector3 e  = transform.eulerAngles;
+        _navHeading = e.y;
+        _navPitch   = -Mathf.DeltaAngle(0f, e.x);
+        _navBank    = -Mathf.DeltaAngle(0f, e.z);
+    }
+
+    void NavigateTo(Vector3 target, float speed, float maxTurnRate)
+    {
+        float   dt   = Time.deltaTime;
+        Vector3 to   = target - transform.position;
+        Vector3 flat = new Vector3(to.x, 0f, to.z);
+        float   flatDist = flat.magnitude;
+
+        float yawErr  = flatDist > 1f ? Mathf.DeltaAngle(_navHeading, Mathf.Atan2(flat.x, flat.z) * Mathf.Rad2Deg) : 0f;
+        float yawRate = Mathf.Clamp(yawErr * 0.9f, -maxTurnRate, maxTurnRate);
+        _navHeading  += yawRate * dt;
+
+        float climb = Mathf.Clamp(Mathf.Atan2(to.y, Mathf.Max(flatDist, 1f)) * Mathf.Rad2Deg, -15f, 15f);
+        _navPitch   = Mathf.MoveTowards(_navPitch, climb, 8f * dt);
+
+        // 협조선회: tan(bank) = v·ω / g  (우선회 = 오른쪽 날개 아래 = Unity 에선 -Z 롤)
+        float v    = Mathf.Max(_bot.Speed, 30f);
+        float bank = Mathf.Atan(v * yawRate * Mathf.Deg2Rad / 9.81f) * Mathf.Rad2Deg;
+        _navBank   = Mathf.MoveTowards(_navBank, Mathf.Clamp(bank, -Cfg.maxBankDeg, Cfg.maxBankDeg), 45f * dt);
+
+        _bot.PositionOverride = false;
+        _bot.SetTarget(target, Quaternion.Euler(-_navPitch, _navHeading, -_navBank), speed);
+    }
+
+    // ── 마셜: 항모 상공 좌선회(반시계) 대기 ──────────────────────────────────
+    void UpdateMarshal()
+    {
+        if (_rejoinRequested && LeaderFlying &&
+            (EscortZoneTrigger.Instance == null || !EscortZoneTrigger.Instance.IsInsideXZ(_leader.position)))
+        {
+            InitNav();
+            _rejoinRequested = false;
+            _phase           = Phase.Rejoin;
+            DevLog.Log($"[EscortAI] {name}: Marshal → Rejoin");
+            return;
+        }
+        FlyMarshalOrbit();
+    }
+
+    void FlyMarshalOrbit()
+    {
+        Vector3 rel = transform.position - _marshalCenter;
+        rel.y = 0f;
+        float ang = Mathf.Atan2(rel.z, rel.x);
+        // 멀리 있으면 원 위 가장 가까운 점으로 진입, 가까우면 진행 방향(반시계) 앞쪽 점을 추적
+        if (rel.magnitude < _marshalRadius * 1.6f) ang += 25f * Mathf.Deg2Rad;
+        Vector3 target = new Vector3(_marshalCenter.x + Mathf.Cos(ang) * _marshalRadius,
+                                     _marshalAlt,
+                                     _marshalCenter.z + Mathf.Sin(ang) * _marshalRadius);
+        NavigateTo(target, Cfg.marshalSpeed, Cfg.navTurnRateMax);
+    }
+
+    // ── 회수 패턴 ────────────────────────────────────────────────────────────
+    void UpdateRecovery()
+    {
+        if (!_patternEntered)
+        {
+            // 대기 선회 유지 — 우현 후방에서 착함 방향으로 날고 있고 앞 기체와 간격이 확보되면 진입
+            FlyMarshalOrbit();
+            Vector3 right = Vector3.Cross(Vector3.up, _recoveryDir);
+            Vector3 rel   = transform.position - _recoverySlot;
+            float   lx    = Vector3.Dot(rel, right);
+            float   lz    = Vector3.Dot(rel, _recoveryDir);
+            Vector3 flatFwd = transform.forward; flatFwd.y = 0f;
+            bool inWindow = lx > Cfg.patternLaneOffset && lz < 0f && lz > -2000f &&
+                            Vector3.Dot(flatFwd.normalized, _recoveryDir) > 0.3f;
+            if (inWindow && Time.time >= s_nextPatternEntryTime)
+            {
+                s_nextPatternEntryTime = Time.time + Cfg.patternSpacing;
+                BuildRecoveryPath();
+                _patternEntered = true;
+                DevLog.Log($"[EscortAI] {name}: pattern entry ({_path.Count} pts)");
+            }
+            return;
+        }
+
+        // 경로 추적 — 전방 lookahead 점을 따라가며 코너는 자연스럽게 깎아 돈다.
+        // 이미 등 뒤로 지나친 점도 건너뛴다 — 목표점이 최소 선회원 안에 들어오면 그 점을 끝없이 맴돌기 때문.
+        float   look = Mathf.Max(_bot.Speed, 40f) * 2.2f;
+        Vector3 pos  = transform.position;
+        Vector3 fwd  = transform.forward;
+        while (_pathIdx < _path.Count - 1 &&
+               ((_path[_pathIdx] - pos).sqrMagnitude < look * look || Vector3.Dot(_path[_pathIdx] - pos, fwd) < 0f))
+            _pathIdx++;
+
+        if (_pathIdx >= _path.Count - 1 && (_path[_path.Count - 1] - pos).sqrMagnitude < look * look)
+        {
+            // 그루브 정렬 완료 → 기존 최종 활공·와이어 체결 단계로 인계
+            _landingSpot          = _recoverySlot + Vector3.up * 0.5f;
+            _hasApproachInfo      = true;
+            _waypointReached      = true;
+            _currentSpeed         = _bot.Speed;
+            if (_carrier == null) _carrier = _cachedCarrier != null ? _cachedCarrier.transform : ArrestingWireSystem.Instance?.transform.parent;
+            _bot.PositionOverride = true;
+            _phase                = Phase.LandingApproach;
+            DevLog.Log($"[EscortAI] {name}: groove → final");
+            return;
+        }
+        NavigateTo(_path[_pathIdx], _pathSpeed[_pathIdx], Cfg.navTurnRateMax);
+    }
+
+    // 착함 슬롯 기준 Case I 패턴 경로 (x=우현, z=착함 방향, h=갑판 위 고도)
+    void BuildRecoveryPath()
+    {
+        _path.Clear();
+        _pathSpeed.Clear();
+        _pathIdx = 0;
+
+        var     c      = Cfg;
+        Vector3 f      = _recoveryDir;
+        Vector3 r      = Vector3.Cross(Vector3.up, f);
+        Vector3 s      = _recoverySlot;
+        Vector3 W(float x, float z, float h) => s + r * x + f * z + Vector3.up * h;
+
+        float lane     = c.patternLaneOffset;
+        float breakZ   = c.patternBreakAhead;
+        float rb       = c.patternBreakRadius;
+        float downX    = lane - 2f * rb;          // 다운윈드 레인 (좌현)
+        float rf       = -downX * 0.5f;           // 그루브 정렬 선회 반경
+        float groove   = c.patternGrooveLength;
+        float tanGs    = Mathf.Tan(c.glideSlopeDeg * Mathf.Deg2Rad);
+        float hBreak   = c.patternAltitude;
+        float hDown0   = (c.patternAltitude + c.downwindAltitude) * 0.5f;
+        float hGroove  = groove * tanGs;
+        float handoff  = 250f;
+
+        // 이니셜 (현재 위치 → 브레이크 지점)
+        AddLine(transform.position, W(lane, breakZ, hBreak), c.patternSpeed);
+        // 브레이크: 함수 상공 좌선회 180°
+        AddArc(W(lane - rb, breakZ, 0f), r, f, rb, 0f, 180f, hBreak, hDown0, c.patternSpeed);
+        // 다운윈드
+        AddLine(W(downX, breakZ, hDown0), W(downX, -groove, c.downwindAltitude), c.patternSpeed - 5f);
+        // 하강 180° 선회 → 그루브 정렬
+        AddArc(W(downX * 0.5f, -groove, 0f), r, f, rf, 180f, 360f, c.downwindAltitude, hGroove,
+               (c.patternSpeed + c.grooveSpeed) * 0.5f);
+        // 그루브 (활공각 유지)
+        AddLine(W(0f, -groove, hGroove), W(0f, -handoff, handoff * tanGs), c.grooveSpeed);
+    }
+
+    void AddLine(Vector3 a, Vector3 b, float speed)
+    {
+        int n = Mathf.Max(1, Mathf.CeilToInt(Vector3.Distance(a, b) / 20f));
+        for (int i = 1; i <= n; i++)
+        {
+            _path.Add(Vector3.Lerp(a, b, i / (float)n));
+            _pathSpeed.Add(speed);
+        }
+    }
+
+    // center 기준 반시계(좌선회) 호 — 각도 0 = 우현(+r), 90 = 전방(+f)
+    void AddArc(Vector3 center, Vector3 r, Vector3 f, float radius, float fromDeg, float toDeg,
+                float h0, float h1, float speed)
+    {
+        float baseY = _recoverySlot.y;
+        int   n     = Mathf.Max(4, Mathf.CeilToInt(radius * (toDeg - fromDeg) * Mathf.Deg2Rad / 20f));
+        for (int i = 1; i <= n; i++)
+        {
+            float t = i / (float)n;
+            float a = Mathf.Lerp(fromDeg, toDeg, t) * Mathf.Deg2Rad;
+            Vector3 p = center + r * (Mathf.Cos(a) * radius) + f * (Mathf.Sin(a) * radius);
+            p.y = baseY + Mathf.Lerp(h0, h1, t);
+            _path.Add(p);
+            _pathSpeed.Add(speed);
+        }
+    }
+
+    // ── 재합류: 리드 추적으로 편대 슬롯에 접근 ───────────────────────────────
+    void UpdateRejoin()
+    {
+        if (_leader == null)
+        {
+            _hasPatrolWaypoint = false;
+            _phase             = Phase.FreeFlightZone;
+            return;
+        }
+
+        Vector3 slot = _leader.TransformPoint(_formationOffset);
+        float   dist = Vector3.Distance(transform.position, slot);
+        float   leaderSpeed = Mathf.Max(_leaderPC != null ? _leaderPC.CurrentSpeed : 62f, 40f);
+
+        // 슬롯보다 리더 진행 방향으로 앞선 점을 겨눠 비스듬히 따라붙는다 (거리가 줄수록 리드 감소)
+        Vector3 aim  = slot + _leader.forward * Mathf.Clamp(dist * 0.4f, 0f, 800f);
+        float   zErr = _leader.InverseTransformPoint(transform.position).z - _formationOffset.z;
+        float   speed = zErr > 0f
+            ? leaderSpeed * 0.85f
+            : leaderSpeed + Mathf.Clamp(dist * 0.08f, 0f, Cfg.rejoinMaxOvertake);
+        NavigateTo(aim, speed, Cfg.rejoinTurnRateMax);
+
+        if (dist < Cfg.rejoinCompleteDistance && Vector3.Angle(transform.forward, _leader.forward) < 30f)
+        {
+            _smoothFormationRot = transform.rotation;
+            _leaderStopTimer    = 0f;
+            _landingRequested   = false;
+            _phase              = Phase.Escorting;
+            DevLog.Log($"[EscortAI] {name}: Rejoin → Escorting");
+        }
     }
 
     // ── 파이널 어프로치 & 착함 ───────────────────────────────────────────────

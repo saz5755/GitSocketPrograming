@@ -38,6 +38,11 @@ public class AIManager : MonoBehaviour
     [Tooltip("에스코트 간 착함 시작 시차 (초) — 플레이어 F키 하차 후 1번기부터 이 간격으로 순차 착함")]
     [SerializeField] float _escortLandingStagger = 5f;
 
+    [Header("조종사 사망 시 에스코트")]
+    [Tooltip("리더 사망 후 항모 상공 대기 시간 (초) — 이 안에 재출격하지 않으면 패턴 비행으로 착함")]
+    [SerializeField] float _marshalHoldTime = 45f;
+    Coroutine _recoveryCoroutine;
+
     bool      _isHost;
     bool      _initialized;
     bool      _escortLandingStarted;
@@ -521,11 +526,93 @@ public class AIManager : MonoBehaviour
     {
         _escortLandingStarted = false;
         _hasArrestInfo        = false;
+        if (_recoveryCoroutine != null) { StopCoroutine(_recoveryCoroutine); _recoveryCoroutine = null; }
         // 적 전투 활성
         foreach (var bot in _bots)
             bot?.GetComponent<EnemyAI>()?.EnableCombat();
 
-        // 에스코트 순차 발진 (Slot_01 → Slot_02 → ... spawn 순서대로, 4초 간격)
+        // 갑판 기체는 순차 발진 (Slot_01 → Slot_02 → ... spawn 순서대로, 4초 간격),
+        // 공중 기체(대기·패턴 중)는 리더가 항모 존을 벗어나면 재합류
+        var escorts = GetEscorts();
+        int launchIdx = 0;
+        for (int i = 0; i < escorts.Count; i++)
+        {
+            var e = escorts[i];
+            if (e.CanLaunch)
+            {
+                if (launchIdx == 0) e.BeginLaunchSequence();
+                else                StartCoroutine(DelayedLaunch(e, launchIdx * 4f));
+                launchIdx++;
+            }
+            else
+            {
+                GetMarshalStation(i, out var c, out float alt, out float rad);
+                e.RequestRejoin(c, alt, rad);
+            }
+        }
+    }
+
+    // ── 리더(로컬 조종사) 사망 ───────────────────────────────────────────────
+    // 에스코트는 편대를 풀고 항모 상공에 고도·반경을 달리해 대기 선회한다.
+    // 대기 시간 안에 재출격하면 재합류, 아니면 Case I 패턴으로 차례로 착함.
+    public void OnLeaderDown()
+    {
+        if (!_isHost) return;
+        if (_landingCoroutine != null) { StopCoroutine(_landingCoroutine); _landingCoroutine = null; }
+        _escortLandingStarted = true;   // 리더 정지 감지 폴백 착함(BeginEscortLanding) 차단
+
+        var escorts = GetEscorts();
+        for (int i = 0; i < escorts.Count; i++)
+        {
+            GetMarshalStation(i, out var c, out float alt, out float rad);
+            escorts[i].BeginMarshal(c, alt, rad);
+        }
+
+        if (_recoveryCoroutine != null) StopCoroutine(_recoveryCoroutine);
+        _recoveryCoroutine = StartCoroutine(MarshalRecoveryCoroutine());
+        DevLog.Log($"[AIManager] Leader down — {escorts.Count} escort(s) to marshal");
+    }
+
+    System.Collections.IEnumerator MarshalRecoveryCoroutine()
+    {
+        yield return new WaitForSeconds(_marshalHoldTime);
+
+        var aws    = ArrestingWireSystem.Instance;
+        var anchor = CarrierAnchor;
+        Vector3 dir = aws != null ? aws.LandingDirection : (anchor != null ? anchor.forward : Vector3.forward);
+        var slots   = CollectEscortSlots();
+        var escorts = GetEscorts();
+        for (int i = 0; i < escorts.Count; i++)
+        {
+            var e = escorts[i];
+            if (!e.IsHolding) continue;
+            // 기체마다 자기 주기 슬롯으로 — 재출격한 플레이어 기체(자기 networkId 슬롯)와 겹치지 않는다
+            int id = e.GetComponent<NetworkAircraft>()?.networkId ?? -1;
+            Vector3 slot;
+            if (TryGetDeckPose(id, out var p, out _)) slot = p;
+            else if (i < slots.Count)                slot = slots[i].transform.position;
+            else                                     slot = aws != null ? aws.WireCenter : (anchor != null ? anchor.position : Vector3.zero);
+            e.BeginRecovery(slot, dir);
+        }
+        _recoveryCoroutine = null;
+    }
+
+    Transform CarrierAnchor => _cachedCarrier != null ? _cachedCarrier.transform : ArrestingWireSystem.Instance?.transform.parent;
+
+    // 대기 선회 스테이션 — 항모(와이어 중심) 상공, 기체 i 마다 고도·반경을 한 칸씩 쌓아 충돌 방지
+    void GetMarshalStation(int i, out Vector3 center, out float altitude, out float radius)
+    {
+        var aws    = ArrestingWireSystem.Instance;
+        var anchor = CarrierAnchor;
+        center   = aws != null ? aws.WireCenter : (anchor != null ? anchor.position : Vector3.zero);
+        var cfg  = _escortBehavior != null ? _escortBehavior : s_defaultBehavior ??= ScriptableObject.CreateInstance<EscortBehaviorSO>();
+        altitude = center.y + cfg.marshalBaseAltitude + cfg.marshalAltitudeStep * i;
+        radius   = cfg.marshalRadius + cfg.marshalRadiusStep * i;
+    }
+    static EscortBehaviorSO s_defaultBehavior;
+
+    System.Collections.Generic.List<EscortAI> GetEscorts()
+    {
         var escorts = new System.Collections.Generic.List<EscortAI>();
         foreach (var bot in _bots)
         {
@@ -533,13 +620,7 @@ public class AIManager : MonoBehaviour
             var escort = bot.GetComponent<EscortAI>();
             if (escort != null) escorts.Add(escort);
         }
-
-        for (int i = 0; i < escorts.Count; i++)
-        {
-            var e = escorts[i];
-            if (i == 0) e.BeginLaunchSequence();
-            else        StartCoroutine(DelayedLaunch(e, i * 4f));
-        }
+        return escorts;
     }
 
     System.Collections.IEnumerator DelayedLaunch(EscortAI escort, float delay)

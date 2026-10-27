@@ -11,10 +11,10 @@ public class EscortBehaviorSO : ScriptableObject
     [Range(0f, 10f)] public float speedJitterRange = 3f;
     [Tooltip("리더 기준 측면 뱅크각 (좌/우 자동 부호 적용)")]
     public float bankOffsetDeg = 12f;
-    [Tooltip("슬롯 z오차가 이 값을 넘으면 감속해서 리더를 통과시킴")]
-    public float slotAheadThreshold = 5f;
-    [Tooltip("슬롯 거리 이 값 이내에서 보간 가중치 1로 수렴")]
-    public float snapDistance = 40f;
+    [Tooltip("리드 포인트 거리 = 리더 속도 × 이 값 (초). 클수록 횡·수직 오차를 느긋하게 메운다 (최소 80m)")]
+    public float formationLeadTime = 1.5f;
+    [Tooltip("슬롯 앞뒤 오차 1m 당 속도 보정량 (m/s)")]
+    public float formationSpeedGain = 0.6f;
     [Tooltip("편대 비행 회전 보간 속도. 낮을수록 부드럽지만 선회 반응이 느림. 좌우 떨림 발생 시 줄임 (4~8 권장)")]
     [Range(2f, 15f)] public float rotSmoothSpeed = 6f;
 
@@ -77,6 +77,51 @@ public class EscortBehaviorSO : ScriptableObject
     public float arrestYSnapRate = 20f;
     [Tooltip("정지 판정 속도 (이 값 미만이면 Landed 전환)")]
     public float arrestStopSpeed = 0.2f;
+
+    [Header("자연 비행 (마셜·회수 패턴·재합류 공통)")]
+    [Tooltip("선회 중 최대 뱅크각 — 선회율에서 협조선회 뱅크를 역산해 이 값으로 제한")]
+    public float maxBankDeg      = 65f;
+    [Tooltip("마셜·회수 패턴 최대 선회율 (deg/s) — 낮을수록 크게 도는 완만한 선회")]
+    public float navTurnRateMax  = 15f;
+    [Tooltip("재합류 최대 선회율 (deg/s)")]
+    public float rejoinTurnRateMax = 24f;
+
+    [Header("마셜 (조종사 사망 시 항모 상공 대기 선회)")]
+    [Tooltip("1번기 대기 고도 (갑판 기준 m) — 기체마다 marshalAltitudeStep 씩 위로 쌓는다")]
+    public float marshalBaseAltitude = 400f;
+    public float marshalAltitudeStep = 80f;
+    [Tooltip("1번기 대기 선회 반경 (m) — 기체마다 marshalRadiusStep 씩 넓힌다")]
+    public float marshalRadius       = 1000f;
+    public float marshalRadiusStep   = 120f;
+    public float marshalSpeed        = 75f;
+
+    [Header("회수 패턴 (Case I — 우현 이니셜 → 좌선회 브레이크 → 다운윈드 → 그루브)")]
+    [Tooltip("이니셜 레인: 착함 슬롯 기준 우현 오프셋 (m)")]
+    public float patternLaneOffset   = 300f;
+    [Tooltip("브레이크 시작 지점: 슬롯 기준 전방 거리 (m)")]
+    public float patternBreakAhead   = 600f;
+    [Tooltip("브레이크 선회 반경 (m) — 다운윈드 레인 = 레인 오프셋 - 2×반경 (좌현)")]
+    public float patternBreakRadius  = 600f;
+    [Tooltip("그루브(최종 직선) 길이 (m)")]
+    public float patternGrooveLength = 700f;
+    [Tooltip("이니셜·브레이크 고도 (갑판 기준 m)")]
+    public float patternAltitude     = 300f;
+    [Tooltip("다운윈드 끝 고도 (갑판 기준 m)")]
+    public float downwindAltitude    = 180f;
+    [Tooltip("최종 활공각 (deg)")]
+    public float glideSlopeDeg       = 3.5f;
+    public float patternSpeed        = 70f;
+    public float grooveSpeed         = 52f;
+    [Tooltip("앞 기체가 패턴에 진입한 뒤 다음 기체 진입까지 최소 간격 (초)")]
+    public float patternSpacing      = 18f;
+
+    [Header("재합류")]
+    [Tooltip("편대 슬롯 이 거리 이내 + 기수 정렬 시 편대비행으로 전환")]
+    public float rejoinCompleteDistance = 150f;
+    [Tooltip("재합류 시 리더보다 최대 얼마나 빨리 따라붙는지 (m/s)")]
+    public float rejoinMaxOvertake   = 70f;
+    [Tooltip("착함을 마친 뒤 리더가 비행 중이면 재발진까지 대기 (초)")]
+    public float relaunchDelay       = 3f;
 
     public float GetBankOffset(bool isLeft) => isLeft ? bankOffsetDeg : -bankOffsetDeg;
     public float GetSideOffset(bool isLeft) => isLeft ? -landingSideOffset : landingSideOffset;

@@ -207,6 +207,7 @@ public class PilotStatus : MonoBehaviour
 
         GM.EnterDeathState();
         pc.enabled = false;   // 조종 입력·이동 송신 중지 — 이후 위치는 잔해가 송신
+        AIManager.Instance?.OnLeaderDown();   // 에스코트: 편대 해제 → 항모 상공 대기
 
         var fc = FindAnyObjectByType<FlightCamera>();
         fc?.BeginDeathCam(pc.transform);
