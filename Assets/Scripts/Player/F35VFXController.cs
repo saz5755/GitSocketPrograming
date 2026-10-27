@@ -196,6 +196,7 @@ public class F35VFXController : MonoBehaviour
     Light          _idleLight;
     bool           _engineIdleOn;
     float          _catapultBoostTimer;
+    bool           _flightVfxStopped;
 
     PlayerController playerController;
     Vector3 lastForward;
@@ -483,12 +484,37 @@ public class F35VFXController : MonoBehaviour
         _catapultBoostTimer = duration >= 0f ? duration : catapultCfg.boostDuration;
     }
 
+    // 하차·재출격 시 GameModeManager 가 이 컴포넌트를 끈다 — Update 가 멈추면 마지막 애프터버너 상태가
+    // 그대로 남아 꺼진 기체 꼬리에서 불꽃이 계속 타므로, 비활성 시점에 반드시 소등한다.
+    void OnDisable()
+    {
+        StopFlightVFX();
+    }
+
+    void StopFlightVFX()
+    {
+        _catapultBoostTimer = 0f;
+        if (leftContrail  != null) leftContrail.emitting  = false;
+        if (rightContrail != null) rightContrail.emitting = false;
+        _afterburnerAssembly?.ForceOff();
+        _flightVfxStopped = true;
+    }
+
     void Update()
     {
         if (playerController == null) return;
 
         float dt = Time.deltaTime;
         if (dt <= 0) return;
+
+        // 조종 중이 아닐 때(콕핏 탑승 대기·사망 잔해) 는 비행 VFX 를 끈다 — 엔진 IDLE 배기는 별도 제어
+        if (!playerController.enabled)
+        {
+            if (!_flightVfxStopped) StopFlightVFX();
+            lastForward = transform.forward;
+            return;
+        }
+        _flightVfxStopped = false;
 
         float angle    = Vector3.Angle(lastForward, transform.forward);
         float turnRate = angle / dt;

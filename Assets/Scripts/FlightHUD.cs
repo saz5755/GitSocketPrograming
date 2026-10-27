@@ -251,9 +251,6 @@ public class FlightHUD : MonoBehaviour
     // 모든 비행 계기(AH/FPV/Speed/Alt/Hdg/Status/Boresight)를 이 유리면 위에 렌더링.
     void BuildHUDGlass(Transform playerTransform)
     {
-        Vector3 eye  = flightCamera != null ? flightCamera.CockpitOffset   : new Vector3(0f, 1.75f, 2.45f);
-        float   tilt = flightCamera != null ? flightCamera.CockpitDownTilt : 8f;
-
         if (_hudGlassCanvas == null)
         {
             var go = new GameObject("HUD_GlassCanvas");
@@ -262,12 +259,8 @@ public class FlightHUD : MonoBehaviour
             canvas.sortingOrder = 15;
             _hudGlassCanvas = canvas;
         }
+        AttachHUDGlass(playerTransform);
         Transform p = _hudGlassCanvas.transform;
-        p.SetParent(playerTransform, false);
-        p.localPosition = eye + Vector3.forward * _glassDistance;
-        p.localRotation = Quaternion.Euler(tilt, 0f, 0f);   // 시선(하향 틸트)과 평행 — 원근 사다리꼴 왜곡 제거
-        p.localScale    = Vector3.one * _glassScale;
-        ((RectTransform)p).sizeDelta = _glassSizeDelta;
 
         BuildHUDGlassCorners(p);
         BuildArtificialHorizon(p);
@@ -281,6 +274,33 @@ public class FlightHUD : MonoBehaviour
 
         _hudGlassBuilt = true;
         _hudGlassCanvas.gameObject.SetActive(false);
+    }
+
+    // HUD 유리는 기체 자식 — 조종사 눈 앞에 고정
+    void AttachHUDGlass(Transform playerTransform)
+    {
+        Vector3 eye  = flightCamera != null ? flightCamera.CockpitOffset   : new Vector3(0f, 1.75f, 2.45f);
+        float   tilt = flightCamera != null ? flightCamera.CockpitDownTilt : 8f;
+
+        Transform p = _hudGlassCanvas.transform;
+        p.SetParent(playerTransform, false);
+        p.localPosition = eye + Vector3.forward * _glassDistance;
+        p.localRotation = Quaternion.Euler(tilt, 0f, 0f);   // 시선(하향 틸트)과 평행 — 원근 사다리꼴 왜곡 제거
+        p.localScale    = Vector3.one * _glassScale;
+        ((RectTransform)p).sizeDelta = _glassSizeDelta;
+    }
+
+    /// <summary>
+    /// 로컬 조종 기체 지정 — 재출격 후 다른 기체(갑판의 에스코트 등)에 탑승하면 계기 값과
+    /// HUD 유리가 이전 기체에 남아 C키 콕핏 시점에서 HUD 가 보이지 않으므로 새 기체로 옮긴다.
+    /// </summary>
+    public void BindLocalPlayer(PlayerController pc)
+    {
+        if (pc == null || pc == localPlayer) return;
+        localPlayer = pc;
+        if (flightCamera == null) flightCamera = FindAnyObjectByType<FlightCamera>();
+        if (_hudGlassBuilt && _hudGlassCanvas != null && _hudGlassCanvas.transform.parent != pc.transform)
+            AttachHUDGlass(pc.transform);
     }
 
     void OnCMSDeploy(CountermeasureType type)
@@ -301,6 +321,10 @@ public class FlightHUD : MonoBehaviour
 
     void Update()
     {
+        // 기체 교체(에스코트 인계·재출격) 추적 — GameModeManager 가 현재 조종 기체의 기준
+        var gmPc = GameModeManager.Instance != null ? GameModeManager.Instance.LocalPC : null;
+        if (gmPc != null && gmPc != localPlayer) BindLocalPlayer(gmPc);
+
         if (localPlayer == null || flightCamera == null)
         {
             _findRefsCooldown -= Time.deltaTime;

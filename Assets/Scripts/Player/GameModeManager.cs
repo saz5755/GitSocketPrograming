@@ -315,6 +315,7 @@ public class GameModeManager : MonoBehaviour
 
         // 카메라·HUD 전환
         _fc?.SetFlightTarget(_pc);
+        _hud?.BindLocalPlayer(_pc);
         _hud?.SetVisible(true);
 
         Cursor.lockState = CursorLockMode.Locked;

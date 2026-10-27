@@ -45,6 +45,15 @@ public class EngineExhaustAssembly : MonoBehaviour
         _lightLerpSpeed    = lightLerpSpeed;
     }
 
+    // 즉시 소등 — 남은 화염 입자까지 지운다. 하차·사망·재출격처럼 매 프레임 SetActive(false) 가
+    // 더 이상 호출되지 않는 시점(컨트롤러 비활성)에 쓴다.
+    public void ForceOff()
+    {
+        if (_outerGlow != null) _outerGlow.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+        if (_innerCore != null) _innerCore.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+        if (_light     != null) { _light.intensity = 0f; _light.enabled = false; }
+    }
+
     // F35VFXController/EscortVFXController가 매 프레임 호출.
     // dt는 Time.deltaTime — Lerp 시 사용.
     public void SetActive(bool active, float dt)
