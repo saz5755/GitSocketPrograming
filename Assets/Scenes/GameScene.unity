@@ -9591,6 +9591,7 @@ MonoBehaviour:
   _enemyRespawnDelay: 40
   _botMaxHP: 100
   _escortLandingStagger: 1.5
+  _marshalHoldTime: 45
 --- !u!1 &1275978150
 GameObject:
   m_ObjectHideFlags: 0
@@ -9913,6 +9914,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerManager
   playerPrefab: {fileID: 6036812862657962760, guid: 7cccd4623a96e8646b2aed594e1dd140, type: 3}
   groundCharPrefab: {fileID: 813151242183748994, guid: a6e171917c554d14abc04b6f6fbd20a7, type: 3}
+  rescueCrewPrefab: {fileID: 3244104646821017810, guid: a62eae782ab97884c9a5808e2be7fffb, type: 3}
 --- !u!1 &1311544891
 GameObject:
   m_ObjectHideFlags: 0
@@ -12808,6 +12810,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1851575454}
   - component: {fileID: 1851575455}
+  - component: {fileID: 1851575456}
   m_Layer: 0
   m_Name: Ground
   m_TagString: Untagged
@@ -12847,10 +12850,32 @@ BoxCollider:
   m_LayerOverridePriority: 0
   m_IsTrigger: 0
   m_ProvidesContacts: 0
-  m_Enabled: 1
+  m_Enabled: 0
   serializedVersion: 3
   m_Size: {x: 1, y: 1, z: 1}
   m_Center: {x: 0, y: 0, z: 0}
+--- !u!64 &1851575456
+MeshCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1851575453}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 5
+  m_Convex: 0
+  m_CookingOptions: 30
+  m_Mesh: {fileID: 4300000, guid: 46ee12c34e1b48f45a569f0dbef94742, type: 2}
 --- !u!1 &1912016429
 GameObject:
   m_ObjectHideFlags: 0
@@ -14365,12 +14390,22 @@ MonoBehaviour:
   foamColor: {r: 0.92, g: 0.95, b: 0.97, a: 1}
   skyZenithColor: {r: 0.24, g: 0.42, b: 0.68, a: 1}
   carrier: {fileID: 1059067955}
-  sternLocal: {x: 0, y: 0, z: 94}
   forwardLocal: {x: 0, y: 0, z: -1}
-  hullHalfSize: {x: 94, y: 13}
+  hullCenterLocal: {x: -4.66, y: 0, z: 0}
+  hullHalfLength: 87
+  hullHalfBeam: 11.77
+  bowEntryLength: 60
+  sternRunLength: 55
+  draft: 8.6
   virtualSpeed: 12
-  wakeLength: 650
+  wakeExtent: 2500
   wakeStrength: 1
+  kelvinHeight: 1.2
+  bowWave: 0.3
+  foamLifetime: 35
+  bubbleLifetime: 45
+  slickLifetime: 400
+  aeratedColor: {r: 0.05, g: 0.24, b: 0.24, a: 1}
   autoHazeFromSky: 1
   hazeColor: {r: 0.66, g: 0.75, b: 0.82, a: 1}
   hazeStart: 600

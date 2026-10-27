@@ -307,7 +307,10 @@ public class PlayerController : MonoBehaviour
             if (Input.GetKey(KeyCode.D) || (Input.GetKey(KeyCode.E) && !SimInput.Modifier)) rollC = -Cfg.rollSpeed * dt;
             transform.Rotate(pitchC, yawC, rollC, Space.Self);
 
+            float yBeforeC = transform.position.y;
             transform.position += transform.forward * currentSpeed * dt;
+            // 사출 중 기수를 내려도 갑판을 뚫지 않도록 (기존: 이 분기만 갑판 검사가 없어 그대로 관통)
+            ConstrainToSurface(yBeforeC);
             if (anim != null) anim.SetBool(s_hashMove, true);
 
             moveSendTimer += dt;
@@ -453,6 +456,7 @@ public class PlayerController : MonoBehaviour
         }
 
         transform.Rotate(pitch, yaw, roll, Space.Self);
+        float yBefore = transform.position.y;
         transform.position += transform.forward * currentSpeed * dt;
 
         // 스톨 중: 중력 하강 추가 적용
@@ -470,7 +474,7 @@ public class PlayerController : MonoBehaviour
         }
         if (flying) ClampAboveSea();
 
-        if (currentSpeed > 0.1f) ConstrainToSurface();
+        if (currentSpeed > 0.1f) ConstrainToSurface(yBefore);
 
         if (anim != null) anim.SetBool(s_hashMove, currentSpeed > 0.5f);
 
@@ -538,11 +542,16 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    void ConstrainToSurface()
+    // yBefore: 이번 프레임 이동 전 높이. 이동 전~후 구간을 훑어 한 프레임에 크게 내려가도 갑판을 놓치지 않는다
+    // (기존: 현재 위치 위 3m 에서만 쏴서, 그보다 깊이 들어간 뒤에는 다시 올라오지 못하고 항모 밑으로 빠졌다).
+    // 이동 전 높이보다 위에 있는 면(주기된 기체 등)은 지나온 면이 아니므로 무시한다.
+    void ConstrainToSurface(float yBefore = float.NaN)
     {
+        float top = Mathf.Max(float.IsNaN(yBefore) ? transform.position.y : yBefore, transform.position.y) + 3f;
+        var origin = transform.position; origin.y = top;
         int count = Physics.RaycastNonAlloc(
-            transform.position + Vector3.up * 3f, Vector3.down,
-            _groundHits, 7f,
+            origin, Vector3.down,
+            _groundHits, top - transform.position.y + 4f,
             Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
 
         float bestY = float.MinValue;
@@ -550,6 +559,7 @@ public class PlayerController : MonoBehaviour
         for (int i = 0; i < count; i++)
         {
             if (_groundHits[i].transform.IsChildOf(transform)) continue;
+            if (_groundHits[i].point.y > top - 2.5f) continue;
             if (_groundHits[i].point.y > bestY) { bestY = _groundHits[i].point.y; found = true; }
         }
         if (!found) return;
@@ -558,6 +568,14 @@ public class PlayerController : MonoBehaviour
         if (transform.position.y < floor)
         {
             var p = transform.position; p.y = floor; transform.position = p;
+            // 갑판에 닿은 채 기수가 아래를 향하면 수평으로 눌러 준다 (계속 갑판을 파고들며 미끄러지지 않게)
+            Vector3 fwd = transform.forward;
+            if (fwd.y < 0f)
+            {
+                Vector3 flat = new Vector3(fwd.x, 0f, fwd.z);
+                if (flat.sqrMagnitude > 1e-4f)
+                    transform.rotation = Quaternion.FromToRotation(fwd, flat.normalized) * transform.rotation;
+            }
         }
     }
 

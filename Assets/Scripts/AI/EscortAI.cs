@@ -153,6 +153,41 @@ public class EscortAI : MonoBehaviour
     {
         if (_cachedCarrier == null)
             _cachedCarrier = Object.FindAnyObjectByType<CarrierController>();
+        _ocean = Object.FindAnyObjectByType<OceanSurface>();
+    }
+
+    // ── 해면 안전 고도 ───────────────────────────────────────────────────────
+    OceanSurface _ocean;
+    float SeaFloorY => (_ocean != null ? _ocean.seaLevel : -1e6f) + Cfg.minAltitudeAboveSea;
+
+    // 목표점을 해면 안전 고도 위로 — 리더가 바다에 붙어 날면 편대는 한 층 위에서 따라간다
+    Vector3 LiftAboveSea(Vector3 p)
+    {
+        float min = SeaFloorY + Cfg.seaAvoidMargin;
+        if (p.y < min) p.y = min;
+        return p;
+    }
+
+    // 실제로 해수면 아래로 파고들지 않게 하는 최종 방어 (봇 이동 뒤 LateUpdate)
+    bool AirbornePhase => _phase == Phase.Escorting || _phase == Phase.FreeFlightZone || _phase == Phase.FreeFlight
+                       || _phase == Phase.Marshal  || _phase == Phase.Recovery       || _phase == Phase.Rejoin;
+
+    void LateUpdate()
+    {
+        if (!AirbornePhase || _ocean == null) return;
+        Vector3 pos = transform.position;
+        float floor = SeaFloorY;
+        if (pos.y >= floor) return;
+        pos.y = floor;
+        transform.position = pos;
+        // 기수가 바다를 향하고 있으면 수평으로 세운다 (다음 프레임 조향이 다시 끌어내리지 않도록 자세 상태도 갱신)
+        Vector3 fwd = transform.forward;
+        if (fwd.y < 0f)
+        {
+            fwd.y = 0f;
+            if (fwd.sqrMagnitude > 1e-4f) transform.rotation = Quaternion.LookRotation(fwd.normalized, Vector3.up);
+            _navPitch = Mathf.Max(_navPitch, 0f);
+        }
     }
 
     // ── 외부 API ──────────────────────────────────────────────────────────────
@@ -548,7 +583,8 @@ public class EscortAI : MonoBehaviour
         // 횡·수직 오차는 시정수 L/V 로 부드럽게 수렴, 종방향 오차는 위 속도 제어가 맡는다.
         // 슬롯은 롤을 뺀 편대 좌표계 기준 — 리더가 뒤집혀도 슬롯은 제자리, 기체만 그 자리에서 롤한다.
         float   lead     = Mathf.Max(baseSpeed * Cfg.formationLeadTime, 80f);
-        Vector3 aimPoint = _leader.position + frame * new Vector3(localOffset.x, localOffset.y, selfLocal.z + lead);
+        Vector3 aimPoint = LiftAboveSea(_leader.position + frame * new Vector3(localOffset.x, localOffset.y, selfLocal.z + lead));
+        targetPos = LiftAboveSea(targetPos);
         Vector3 frameUp  = frame * Vector3.up;
         Quaternion heading = Quaternion.LookRotation(aimPoint - transform.position, frameUp);
 
@@ -781,6 +817,8 @@ public class EscortAI : MonoBehaviour
 
     void NavigateTo(Vector3 target, float speed, float maxTurnRate)
     {
+        // 회수 패턴의 그루브는 갑판 높이로 내려가야 하므로 들어올리지 않는다 (LateUpdate 의 최저 고도는 유지)
+        if (_phase != Phase.Recovery) target = LiftAboveSea(target);
         float   dt   = Time.deltaTime;
         Vector3 to   = target - transform.position;
         Vector3 flat = new Vector3(to.x, 0f, to.z);

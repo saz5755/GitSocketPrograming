@@ -7,6 +7,12 @@ public class PlayerManager : MonoBehaviour
 
     [Tooltip("지상 캐릭터용 FBX 프리팹 (Humanoid 리그). 비워두면 임시 프로시저럴 모델 사용.")]
     [SerializeField] GameObject groundCharPrefab;
+    /// <summary>지상 캐릭터 프리팹 공유 (구조정 승조원 등 연출용 인물에 같은 모델 사용)</summary>
+    public static GameObject SharedGroundCharPrefab { get; private set; }
+
+    [Tooltip("구조정 승조원 모델 (비워두면 지상 캐릭터 모델 사용)")]
+    [SerializeField] GameObject rescueCrewPrefab;
+    public static GameObject SharedRescueCrewPrefab { get; private set; }
 
     readonly Dictionary<string, PlayerController>  players        = new();
     readonly Dictionary<string, RemoteMissileView> remoteMissiles = new();
@@ -29,6 +35,8 @@ public class PlayerManager : MonoBehaviour
 
     void Start()
     {
+        SharedGroundCharPrefab = groundCharPrefab;
+        SharedRescueCrewPrefab = rescueCrewPrefab;
         SocketClient sc = NetworkManager.Instance?.socketClient;
         if (sc == null) { Debug.LogWarning("[PlayerManager] SocketClient not found"); return; }
         sc.OnSpawn          += HandleSpawn;

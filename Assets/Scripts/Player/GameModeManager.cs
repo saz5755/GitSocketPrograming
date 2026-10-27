@@ -79,6 +79,9 @@ public class GameModeManager : MonoBehaviour
         // 조종사 생존 상태 (피격 귀속·추락·사출·재출격)
         if (GetComponent<PilotStatus>() == null)
             gameObject.AddComponent<PilotStatus>();
+        // 익수자 구조 (갑판 밖으로 떨어지면 구조정 출동)
+        if (GetComponent<ManOverboardRescue>() == null)
+            gameObject.AddComponent<ManOverboardRescue>();
         // 킬 피드·사망 화면·스코어보드
         if (CombatFeedUI.Instance == null)
             new GameObject("CombatFeed_Canvas").AddComponent<CombatFeedUI>();
@@ -565,6 +568,21 @@ public class GameModeManager : MonoBehaviour
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible   = false;
         Debug.Log("[GameMode] → Respawned on carrier deck");
+    }
+
+    /// <summary>바다에 빠진 지상 캐릭터를 구조 후 갑판(최초 스폰 위치)으로 복귀시킨다.</summary>
+    public void RescueCharacterToDeck()
+    {
+        if (_gc == null) return;
+        var carrier = ArrestingWireSystem.Instance != null ? ArrestingWireSystem.Instance.transform.parent : null;
+        _gc.EndSwim();
+        // CharacterController 가 순간이동을 되돌리지 않도록 잠시 끈 채 옮긴다
+        var cc = _gc.GetComponent<CharacterController>();
+        if (cc != null) cc.enabled = false;
+        if (carrier != null) _gc.transform.SetParent(carrier, true);
+        ApplyGroundMode(_respawnPos, 0f);
+        if (cc != null) cc.enabled = true;
+        Debug.Log("[GameMode] → Rescued, back on deck");
     }
 
     void ApplyGroundMode(Vector3 charPos, float yaw)

@@ -37,6 +37,73 @@ public class GroundController : MonoBehaviour
     float _sendTimer;
     const float SendInterval = 0.05f;
 
+    // ── 수영 (바다에 빠졌을 때) ─────────────────────────────────────────────
+    [Header("Swimming")]
+    [SerializeField] float swimSpeed     = 1.2f;   // 입영 중 평영 속도 (m/s)
+    [SerializeField] float swimFastSpeed = 1.9f;
+    [SerializeField] float swimDepth     = 1.45f;  // 수면 아래 발 위치 (모델 키를 못 잴 때 기본값) — 머리만 물 위로
+
+    /// <summary>바다에 빠지는 순간 (입수 위치, 입수 속도 m/s). 구조 절차가 구독한다.</summary>
+    public static event System.Action<GroundController, Vector3, float> EnteredWater;
+    public bool    Swimming    { get; private set; }
+    /// <summary>수영 중 외부 속도 (해류 등, 월드)</summary>
+    public Vector3 Drift       { get; set; }
+    /// <summary>설정되면 입력 대신 이 지점으로 헤엄친다 (구명환 잡기·보트로 끌려가기)</summary>
+    public Vector3? SwimTarget { get; set; }
+    public float    SwimTargetSpeed { get; set; } = 1.6f;
+    float _swimTime;
+
+    public void BeginSwim()
+    {
+        Swimming = true;
+        _swimTime = 0f;
+        _vy = 0f;
+        _currentSpeed = 0f;
+        // 모델마다 키·자세가 달라 고정 깊이로는 몸이 드러난다 — 머리 뼈 높이를 매 프레임 따라가 머리만 물 위에 남긴다
+        if (_headBone == null) _headBone = FindBone(transform, "head");
+        if (_shoulderBone == null) _shoulderBone = FindBone(transform, "RightArm");
+        _swimDepthActual = 0f;
+        // 수영 클립이 없어 Idle 위에 절차 입영 자세를 덮는다
+        if (_swimPose == null && !TryGetComponent(out _swimPose)) _swimPose = gameObject.AddComponent<SwimPose>();
+        _swimPose.Active = true;
+    }
+    float     _swimDepthActual;
+    Transform _headBone, _shoulderBone;
+    SwimPose  _swimPose;
+
+    static Transform FindBone(Transform root, string name)
+    {
+        foreach (var t in root.GetComponentsInChildren<Transform>(true))
+            if (string.Equals(t.name, name, System.StringComparison.OrdinalIgnoreCase)) return t;
+        return null;
+    }
+
+    // 수면에서 발(피벗)까지 깊이: 입영 시 물은 턱~목 높이 — 머리 관절(얼굴 아래쪽)이 수면 위 3cm, 단 어깨 관절은 물 위로 나오지 않게.
+    // (머리 관절 높이는 리그마다 달라 DrStrange 는 어깨와 거의 같은 높이 — 둘 중 깊은 쪽을 쓴다)
+    // 뼈가 없으면 렌더러 꼭대기 기준, 그것도 없으면 기본값
+    float SwimDepthTarget()
+    {
+        if (_headBone != null)
+        {
+            float headH = _headBone.position.y - transform.position.y;
+            if (_shoulderBone != null) headH = Mathf.Max(headH - 0.03f, _shoulderBone.position.y - transform.position.y);
+            else headH -= 0.03f;
+            if (headH > 0.6f) return headH;
+        }
+        float top = 0f;
+        foreach (var r in GetComponentsInChildren<Renderer>())
+            if (r.enabled && !(r is ParticleSystemRenderer)) top = Mathf.Max(top, r.bounds.max.y - transform.position.y);
+        return top > 0.6f ? Mathf.Max(1.2f, top - 0.4f) : swimDepth;
+    }
+
+    public void EndSwim()
+    {
+        Swimming = false;
+        SwimTarget = null;
+        Drift = Vector3.zero;
+        if (_swimPose != null) { _swimPose.Active = false; _swimPose.Speed = 0f; }
+    }
+
     public float CameraYaw       => _cameraYaw;
     public float CurrentSpeed    => _currentSpeed;
     public float CurrentAnimSpeed => _currentAnimSpeed;
@@ -129,6 +196,24 @@ public class GroundController : MonoBehaviour
         _characterYaw = Mathf.MoveTowardsAngle(_characterYaw, targetYaw, turnSpeed * Time.deltaTime);
         transform.rotation = Quaternion.Euler(0f, _characterYaw, 0f);
 
+        var ocean = OceanSurface.Instance;
+        if (Swimming)
+        {
+            UpdateSwim(ocean, dir, moving, run);
+            SendNetworkUpdate();
+            return;
+        }
+        // 갑판 밖으로 떨어져 실제 파면 아래로 들어가면 입수
+        if (ocean != null && !_cc.isGrounded && _vy < 0f)
+        {
+            Vector3 pos = transform.position;
+            if (pos.y < ocean.SampleHeight(pos.x, pos.z) - 0.2f)
+            {
+                EnteredWater?.Invoke(this, pos, -_vy);
+                if (Swimming) { SendNetworkUpdate(); return; }
+            }
+        }
+
         // 점프 / 중력
         if (_cc.isGrounded)
         {
@@ -166,6 +251,50 @@ public class GroundController : MonoBehaviour
         }
 
         SendNetworkUpdate();
+    }
+
+    // 입영: 머리·어깨만 물 위로 내놓고 파도를 따라 오르내리며, 해류에 떠내려간다
+    void UpdateSwim(OceanSurface ocean, Vector3 inputDir, bool moving, bool fast)
+    {
+        float dt = Time.deltaTime;
+        _swimTime += dt;
+        Vector3 pos = transform.position;
+
+        Vector3 swim = Vector3.zero;
+        if (SwimTarget.HasValue)
+        {
+            Vector3 to = SwimTarget.Value - pos; to.y = 0f;
+            if (to.sqrMagnitude > 0.04f)
+            {
+                swim = to.normalized * Mathf.Min(SwimTargetSpeed, to.magnitude / Mathf.Max(dt, 1e-3f));
+                _characterYaw = Mathf.MoveTowardsAngle(_characterYaw, Mathf.Atan2(to.x, to.z) * Mathf.Rad2Deg, 240f * dt);
+                transform.rotation = Quaternion.Euler(0f, _characterYaw, 0f);
+            }
+        }
+        else if (moving) swim = inputDir * (fast ? swimFastSpeed : swimSpeed);
+        _currentSpeed = Mathf.Lerp(_currentSpeed, swim.magnitude, dt * 4f);
+        if (_swimPose != null) _swimPose.Speed = _currentSpeed;
+
+        // 입수 직후 가라앉았다 떠오르는 움직임은 목표 깊이로 부드럽게 수렴시켜 표현
+        float surface = ocean != null ? ocean.SampleHeight(pos.x, pos.z) : pos.y;
+        float bob = Mathf.Sin(_swimTime * 2.1f) * 0.04f;
+        float depth = SwimDepthTarget();
+        _swimDepthActual = _swimDepthActual <= 0f ? depth : Mathf.Lerp(_swimDepthActual, depth, dt * 3f);
+        float targetY = surface - _swimDepthActual + bob;
+        // 입수 직후엔 천천히 떠오르고, 그 뒤엔 파고를 그대로 탄다 (지연 추종하면 너울 오르막에서 머리가 잠기고 내리막에서 가슴이 드러난다)
+        float dy = (targetY - pos.y) * (_swimTime < 1.5f ? Mathf.Min(1f, dt * 2.5f) : Mathf.Min(1f, dt * 2.5f + (_swimTime - 1.5f)));
+
+        Vector3 delta = (swim + Drift) * dt;
+        delta.y = dy;
+        _cc.Move(delta);
+
+        CurrentAnimState  = GroundAnimState.Idle;
+        _currentAnimSpeed = 0f;
+        if (_anim != null)
+        {
+            if (_hasStateParam) _anim.SetInteger(s_hashState, (int)GroundAnimState.Idle);
+            if (_hasSpeedParam) _anim.SetFloat(s_hashSpeed, 0f, 0.08f, dt);
+        }
     }
 
     void SendNetworkUpdate()

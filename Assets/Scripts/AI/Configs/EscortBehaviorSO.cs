@@ -85,6 +85,12 @@ public class EscortBehaviorSO : ScriptableObject
     [Tooltip("정지 판정 속도 (이 값 미만이면 Landed 전환)")]
     public float arrestStopSpeed = 0.2f;
 
+    [Header("해면 안전 고도")]
+    [Tooltip("공중 단계(편대·대기·패턴·재합류 등)에서 해수면 위 최저 고도 (m). 리더가 바다에 붙어 날아도 이 아래로는 내려가지 않는다")]
+    public float minAltitudeAboveSea = 12f;
+    [Tooltip("최저 고도 위 이 높이부터 목표점을 서서히 끌어올린다 (m)")]
+    public float seaAvoidMargin = 8f;
+
     [Header("자연 비행 (마셜·회수 패턴·재합류 공통)")]
     [Tooltip("선회 중 최대 뱅크각 — 선회율에서 협조선회 뱅크를 역산해 이 값으로 제한")]
     public float maxBankDeg      = 65f;
