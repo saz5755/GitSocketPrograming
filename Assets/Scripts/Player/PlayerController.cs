@@ -144,6 +144,80 @@ public class PlayerController : MonoBehaviour
     public bool StallWarning => _stallWarning;
     public bool IsStalling   => _isStalling;
 
+    // ── 에너지 비행 모델 / G ──────────────────────────────────────────────────
+    float _throttle01;   // 스로틀 레버 위치 0..1
+    float _rawG = 1f;    // 이번 프레임 수직 하중 배수 (G 제한 적용 후)
+    float _pilotG = 1f;  // 조종사 체감 G (저역통과)
+    bool  _gLimited;
+    float _lastAccel;    // 이번 프레임 속도 변화율 — 재조정 재생용
+    const float Gravity = 9.81f;
+
+    public float Throttle01     => _throttle01;
+    /// <summary>조종사 체감 수직 G (1 = 수평 비행)</summary>
+    public float PilotG         => _pilotG;
+    /// <summary>FCS/공력 한계에 걸려 선회율이 깎이는 중</summary>
+    public bool  GLimiterActive => _gLimited;
+    /// <summary>현재 속도에서 낼 수 있는 최대 G — 공력 한계 (v/vs)² 와 FCS 한계 중 작은 쪽</summary>
+    public float AvailableG     => Mathf.Min(Cfg.gLimit, Sq(currentSpeed / Mathf.Max(1f, Cfg.stallSpeed)));
+    /// <summary>G-LOC 등으로 조종 불능 (GLocSystem 이 설정)</summary>
+    public bool  ControlsLocked { get; set; }
+
+    static float Sq(float x) => x * x;
+
+    // 피치(기수 올림)·요 각속도를 수직 하중으로 환산해 한계를 넘는 만큼 깎는다.
+    // 마우스 요 선회는 협조선회로 간주해 양의 G 로 계산한다.
+    void ApplyGLimit(ref float pitch, ref float yaw, float dt)
+    {
+        if (dt <= 0f) return;
+        float v   = Mathf.Max(currentSpeed, 1f);
+        float up  = transform.up.y;                               // 1G 성분 (수평 1, 배면 -1)
+        float wp  = -pitch / dt * Mathf.Deg2Rad;                  // 기수 올림 +
+        float wy  = Mathf.Abs(yaw) / dt * Mathf.Deg2Rad;
+        float pos = v * (Mathf.Max(wp, 0f) + wy) / Gravity;
+        float neg = v * Mathf.Min(wp, 0f) / Gravity;
+
+        float aero = Sq(v / Mathf.Max(1f, Cfg.stallSpeed));       // 실속 속도에서 1G
+        float nMax = Mathf.Max(Mathf.Min(Cfg.gLimit, aero), up + 0.3f);   // 저속에서도 최소 조종 권한은 남긴다
+        float nMin = Mathf.Min(Mathf.Max(Cfg.negGLimit, -aero), up - 0.3f);
+
+        float n = up + pos + neg;
+        _gLimited = false;
+        if (n > nMax && pos > 1e-4f)
+        {
+            float s = Mathf.Clamp01((nMax - up - neg) / pos);
+            if (pitch < 0f) pitch *= s;
+            yaw *= s;
+            n = up + pos * s + neg;
+            _gLimited = true;
+        }
+        else if (n < nMin && neg < -1e-4f)
+        {
+            float s = Mathf.Clamp01((nMin - up - pos) / neg);
+            if (pitch > 0f) pitch *= s;
+            n = up + pos + neg * s;
+            _gLimited = true;
+        }
+        _rawG = n;
+    }
+
+    // 속도 방향 가속도 (m/s²) = 추력 − 유해항력 − 유도항력(∝ n²/v²) − 중력 성분.
+    // 유해항력 계수는 밀리터리 추력과 maxSpeed 에서 균형이 맞도록 역산한다.
+    float EnergyAccel(float v, float lever, bool brake, bool noThrust, float n, float sinGamma)
+    {
+        float thrust = noThrust ? 0f : (AfterburnerActive ? Cfg.thrustAB : Cfg.thrustMil * lever);
+        if (IsEngineDamaged) thrust *= Cfg.engineDamageSpeedMult;
+
+        float vMil2 = Sq(Cfg.maxSpeed);
+        float cI    = Cfg.inducedDragK;
+        float c0    = Mathf.Max(1e-5f, (Cfg.thrustMil - cI / vMil2) / vMil2);
+        float vEff  = Mathf.Max(v, Cfg.stallSpeed);
+
+        float a = thrust - c0 * v * v - cI * n * n / (vEff * vEff) - Gravity * Cfg.gravityScale * sinGamma;
+        if (!AfterburnerActive) a -= Cfg.idleDrag * (1f - lever);
+        if (brake) a -= Cfg.speedBrakeDecel;
+        return a;
+    }
+
     // ── 데미지 ─────────────────────────────────────────────────────────────────
     float _currentHP = -1f;
     public float CurrentHP => _currentHP < 0f ? Cfg.maxHP : _currentHP;
@@ -169,6 +243,9 @@ public class PlayerController : MonoBehaviour
         currentSpeed   = 0f;
         _catapulting   = false;
         _afterburner   = false;
+        _throttle01    = 0f;
+        _rawG = _pilotG = 1f;
+        ControlsLocked = false;
         _stallWarning  = false;
         _isStalling    = false;
         _barrelRollDir = 0;
@@ -299,12 +376,12 @@ public class PlayerController : MonoBehaviour
                     _catapulting = false;
             }
 
-            bool freeLookC = Input.GetMouseButton(1);
-            float pitchC   = freeLookC ? 0f : -Input.GetAxis("Mouse Y") * Cfg.pitchSensitivity * dt;
-            float yawC     = freeLookC ? 0f :  Input.GetAxis("Mouse X") * Cfg.yawSensitivity   * dt;
-            float rollC    = 0f;
-            if (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.Q)) rollC =  Cfg.rollSpeed * dt;
-            if (Input.GetKey(KeyCode.D) || (Input.GetKey(KeyCode.E) && !SimInput.Modifier)) rollC = -Cfg.rollSpeed * dt;
+            float pitchC   = -SimInput.Pitch * Cfg.pitchSensitivity * dt;
+            float yawC     =  SimInput.Yaw   * Cfg.yawSensitivity   * dt;
+            float rollIn   = SimInput.Roll;
+            if (SimInput.Held(SimAction.BarrelRollLeft))  rollIn = -1f;
+            if (SimInput.Held(SimAction.BarrelRollRight) && !SimInput.Modifier) rollIn = 1f;
+            float rollC    = -rollIn * Cfg.rollSpeed * dt;
             transform.Rotate(pitchC, yawC, rollC, Space.Self);
 
             float yBeforeC = transform.position.y;
@@ -338,14 +415,15 @@ public class PlayerController : MonoBehaviour
         int newBarrelDir = 0;
         if (canStartManeuver && _cobraPhase == CobraInactive)
         {
-            if      (Input.GetKey(KeyCode.Q)) newBarrelDir = +1;  // 좌
-            else if (Input.GetKey(KeyCode.E) && !SimInput.Modifier) newBarrelDir = -1;  // 우 (Ctrl+E 는 사출 핸들)
+            if      (SimInput.Held(SimAction.BarrelRollLeft))  newBarrelDir = +1;  // 좌
+            else if (SimInput.Held(SimAction.BarrelRollRight) && !SimInput.Modifier) newBarrelDir = -1;  // 우 (Ctrl+E 는 사출 핸들)
         }
+        if (ControlsLocked) newBarrelDir = 0;
         if (newBarrelDir != 0 && _barrelRollDir == 0) _barrelFlareTimer = 0f; // 홀드 시작 시 즉시 첫 플레어
         _barrelRollDir = newBarrelDir;
 
         // B 입력: 홀드 중 재입력이면 Phase 2로, 비활성이면 Phase 0 시작
-        if (Input.GetKeyDown(KeyCode.B) && canStartManeuver && _barrelRollDir == 0)
+        if (SimInput.Pressed(SimAction.Immelmann) && canStartManeuver && !ControlsLocked && _barrelRollDir == 0)
         {
             if (_cobraPhase == 1)           // 수직 유지 중 재입력 → Immelmann flip
             {
@@ -393,56 +471,75 @@ public class PlayerController : MonoBehaviour
         if (_currentFuel < 0f) _currentFuel = Cfg.maxFuel;
         if (_currentHP   < 0f) _currentHP   = Cfg.maxHP;
 
-        // ── 애프터버너 입력 (Shift 홀드), 연료 있어야 작동 ───────────────────
-        bool abRequested = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
-        _afterburner = abRequested && !IsFuelEmpty && GameModeManager.Instance != null && GameModeManager.Instance.IsFlying;
+        bool flying = GameModeManager.Instance != null && GameModeManager.Instance.IsFlying;
+        // G-LOC 등으로 조종사가 의식이 없으면 스틱은 중립, 스로틀·AB 는 마지막 위치 그대로
+        bool locked = ControlsLocked;
 
-        float throttle = 0f;
-        if (Input.GetKey(KeyCode.W))      throttle =  1f;
-        else if (Input.GetKey(KeyCode.S)) throttle = -1f;
+        // ── 스로틀 / 애프터버너 / 스피드 브레이크 ─────────────────────────────
+        float lever = locked ? _throttle01 : SimInput.Throttle;
+        bool  brake = !locked && SimInput.SpeedBrake;
+        bool abRequested = locked ? _afterburner : SimInput.Afterburner;
+        _afterburner = abRequested && !IsFuelEmpty && flying;
+        _throttle01  = lever;
 
-        // ── 최대속도·가속: 엔진 손상·AB 반영 ────────────────────────────────
-        float maxSpeedEff = Cfg.maxSpeed;
-        if (IsEngineDamaged) maxSpeedEff *= Cfg.engineDamageSpeedMult;
-        float accelEff = Cfg.acceleration;
-        if (AfterburnerActive)
-        {
-            maxSpeedEff *= Cfg.afterburnerMultiplier;
-            accelEff    *= Cfg.afterburnerAccelMult;
-        }
+        float throttle = brake ? -1f : lever;   // 재조정(TickRecord)용
 
-        // 연료 고갈: 추력 없음, drag만 작용
+        // 연료 고갈·파괴: 추력 없음
         bool noThrust = IsFuelEmpty || IsDestroyed;
-
-        if (noThrust)
-            currentSpeed = Mathf.MoveTowards(currentSpeed, 0f, Cfg.drag * dt);
-        else if (throttle > 0f)
-            currentSpeed = Mathf.MoveTowards(currentSpeed, maxSpeedEff, accelEff * dt);
-        else if (throttle < 0f)
-            currentSpeed = Mathf.MoveTowards(currentSpeed, 0f, Cfg.acceleration * dt);
-        else
-            currentSpeed = Mathf.MoveTowards(currentSpeed, 0f, Cfg.drag * dt);
+        float speedBefore = currentSpeed;
 
         // ── 연료 소비 (비행 중에만) ──────────────────────────────────────────
-        bool flying = GameModeManager.Instance != null && GameModeManager.Instance.IsFlying;
         if (flying && !IsFuelEmpty)
         {
-            float consume = AfterburnerActive ? Cfg.fuelConsumptionAB : Cfg.fuelConsumption;
+            float consume = AfterburnerActive ? Cfg.fuelConsumptionAB : Cfg.fuelConsumption * Mathf.Lerp(0.35f, 1f, lever);
             _currentFuel = Mathf.Max(0f, _currentFuel - consume * dt);
         }
 
-        bool freeLook = Input.GetMouseButton(1);
-        float pitch = freeLook ? 0f : -Input.GetAxis("Mouse Y") * Cfg.pitchSensitivity * dt;
-        float yaw   = freeLook ? 0f :  Input.GetAxis("Mouse X") * Cfg.yawSensitivity   * dt;
+        float pitch = locked ? 0f : -SimInput.Pitch * Cfg.pitchSensitivity * dt;
+        float yaw   = locked ? 0f :  SimInput.Yaw   * Cfg.yawSensitivity   * dt;
 
-        // 수동 롤: A=좌, D=우 (Q/E는 자동 배럴롤 전용으로 분리)
-        float roll = 0f;
-        if (Input.GetKey(KeyCode.A)) roll =  Cfg.rollSpeed * dt;
-        if (Input.GetKey(KeyCode.D)) roll = -Cfg.rollSpeed * dt;
+        // 수동 롤: A=좌, D=우 (+ = 좌 회전) — Q/E 는 자동 배럴롤 전용
+        float roll = locked ? 0f : -SimInput.Roll * Cfg.rollSpeed * dt;
 
         // 자동 배럴롤: Q(+1)=좌, E(-1)=우. 사용자 A/D와 덧붙음 (반대 입력으로 자전 느려짐)
         // 플레어는 아래 Rotate 이후 Interval 간격으로 자동 발사
         if (_barrelRollDir != 0) roll += _barrelRollDir * GCfg.barrelRollRate * dt;
+
+        bool airborne = flying && !HasSurfaceBelow(4f);
+        if (Cfg.useEnergyModel && airborne)
+        {
+            // 에너지 비행 모델: G 한계(FCS + 공력)로 선회율을 제한하고, 추력·항력·중력으로 속도를 적분
+            ApplyGLimit(ref pitch, ref yaw, dt);
+            float a = EnergyAccel(currentSpeed, lever, brake, noThrust, _rawG, transform.forward.y);
+            float vMax = Cfg.maxSpeed * Cfg.afterburnerMultiplier * Cfg.diveSpeedMult;
+            currentSpeed = Mathf.Clamp(currentSpeed + a * dt, 0f, vMax);
+        }
+        else
+        {
+            _rawG = flying ? transform.up.y : 1f;
+            _gLimited = false;
+
+            // ── 최대속도·가속: 엔진 손상·AB 반영 (갑판 주행·에너지 모델 꺼짐) ──
+            float maxSpeedEff = Cfg.maxSpeed;
+            if (IsEngineDamaged) maxSpeedEff *= Cfg.engineDamageSpeedMult;
+            float accelEff = Cfg.acceleration;
+            if (AfterburnerActive)
+            {
+                maxSpeedEff *= Cfg.afterburnerMultiplier;
+                accelEff    *= Cfg.afterburnerAccelMult;
+            }
+
+            if (noThrust)
+                currentSpeed = Mathf.MoveTowards(currentSpeed, 0f, Cfg.drag * dt);
+            else if (brake)
+                currentSpeed = Mathf.MoveTowards(currentSpeed, 0f, Cfg.acceleration * dt);
+            else if (lever > 0.01f)
+                currentSpeed = Mathf.MoveTowards(currentSpeed, maxSpeedEff * Mathf.Max(lever, AfterburnerActive ? 1f : 0f), accelEff * dt);
+            else
+                currentSpeed = Mathf.MoveTowards(currentSpeed, 0f, Cfg.drag * dt);
+        }
+        _pilotG = Mathf.Lerp(_pilotG, _rawG, 1f - Mathf.Exp(-dt / 0.25f));
+        _lastAccel = dt > 0f ? (currentSpeed - speedBefore) / dt : 0f;
 
         // ── 스톨 체크: 저속 + 과도 피치업 → 자동 노우즈다운 + 중력 하강 ──────
         // 피치각 (수평 기준 노우즈 각도, +값=상승)
@@ -501,6 +598,7 @@ public class PlayerController : MonoBehaviour
                 tick       = localTick,
                 dt         = Cfg.sendInterval,
                 throttle   = throttle,
+                accel      = _lastAccel,
                 pitch      = pitch, yaw = yaw, roll = roll,
                 velAfter   = transform.forward * currentSpeed,
                 posAfter   = transform.position
@@ -618,7 +716,9 @@ public class PlayerController : MonoBehaviour
 
         foreach (var r in _reconScratch)
         {
-            if (r.throttle > 0.5f)
+            if (Cfg.useEnergyModel)
+                spd = Mathf.Max(0f, spd + r.accel * r.dt);
+            else if (r.throttle > 0.5f)
                 spd = Mathf.MoveTowards(spd, Cfg.maxSpeed, Cfg.acceleration * r.dt);
             else if (r.throttle < -0.5f)
                 spd = Mathf.MoveTowards(spd, 0f, Cfg.acceleration * r.dt);

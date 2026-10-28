@@ -891,10 +891,9 @@ public class FlightHUD : MonoBehaviour
         Vector3 vel=(t.position-prevPos)/dt;
         float kph=vel.magnitude*3.6f, mach=vel.magnitude/343f;
 
-        Vector3 accel=dt>0f?(vel-prevVel)/dt:Vector3.zero;
-        float g=(accel-Physics.gravity).magnitude/9.81f;
+        // G 는 비행 모델이 계산한 조종사 체감 수직 G (위치 미분은 텔레포트·시점 전환에 튐)
         if(_gSettle>0) _gSettle--;
-        else smoothG=Mathf.Lerp(smoothG,g,dt*4f);
+        smoothG=localPlayer.PilotG;
 
         float aoa=0f;
         if(vel.magnitude>0.5f)
@@ -923,7 +922,7 @@ public class FlightHUD : MonoBehaviour
         UpdateTape(spdLabels,spdLabelRTs,kph,SPD_STEP,SPD_PX,SPD_LINES);
         if(spdCurrent!=null) spdCurrent.text=$"{kph:F0}";
         if(machText  !=null) machText.text  =$"M  {mach:F3}";
-        float thr=Mathf.Clamp01(localPlayer.CurrentSpeed/80f);
+        float thr=localPlayer.AfterburnerActive?1f:Mathf.Clamp01(localPlayer.Throttle01);
         if(throttleBar!=null) throttleBar.sizeDelta=new Vector2(4f,thr*SPD_LINES*SPD_PX);
 
         UpdateTape(altLabels,altLabelRTs,t.position.y,ALT_STEP,ALT_PX,ALT_LINES);
@@ -944,7 +943,7 @@ public class FlightHUD : MonoBehaviour
         if(hdgCurrent!=null) hdgCurrent.text=$"{((int)yaw%360+360)%360:D3}°";
 
         if(aoaText!=null) aoaText.text=$"AOA  {(aoa>=0?"+":"")}{aoa:F1}°";
-        if(gText  !=null){gText.text=$"G  {smoothG:F1}";gText.color=smoothG>7f?CRIT:smoothG>4f?WARN:HG;}
+        if(gText  !=null){gText.text=$"G  {smoothG:F1}";gText.color=(smoothG>7f||smoothG<-2f)?CRIT:(smoothG>4f||localPlayer.GLimiterActive)?WARN:HG;}
 
         // 비행 상태 플래그 — PlayerController가 실제 fuel/stall/damage 상태 소유
         bool stallWarn    = localPlayer.StallWarning;
@@ -954,7 +953,8 @@ public class FlightHUD : MonoBehaviour
         bool fuelEmpty    = localPlayer.IsFuelEmpty;
         bool engineDmg    = localPlayer.IsEngineDamaged;
         bool critDmg      = localPlayer.IsCriticalDamage;
-        bool gWarn        = smoothG > 7f;
+        var  gloc         = GLocSystem.Instance;
+        bool gWarn        = gloc != null && gloc.Stress > 0.55f;
 
         // 통합 경고 메시지 — 우선순위: 자동기동 > destroyed > critical > ...
         if (warnText != null)
@@ -965,7 +965,7 @@ public class FlightHUD : MonoBehaviour
             else if (localPlayer.IsCobraRising)          { msg = "ZOOM UP   [B TO FLIP]"; col = ExhGlow; }
             else if (localPlayer.IsDestroyed) { msg = "DESTROYED";       col = CRIT; }
             else if (critDmg)                 { msg = "CRITICAL DAMAGE"; col = CRIT; }
-            else if (gWarn)                   { msg = "G-LOCK WARNING";  col = CRIT; }
+            else if (gWarn)                   { msg = "OVER G";          col = CRIT; }
             else if (stallActive)             { msg = "STALL";           col = CRIT; }
             else if (fuelEmpty)               { msg = "FUEL EMPTY";      col = CRIT; }
             else if (stallWarn)               { msg = "STALL WARN";      col = WARN; }

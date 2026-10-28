@@ -7,7 +7,6 @@ public class TargetingSystem : MonoBehaviour
 
     [SerializeField] float   detectRange    = 20000f;
     [SerializeField] float   lockOnDuration = 2.5f;
-    [SerializeField] KeyCode lockKey        = KeyCode.Tab;
     [SerializeField] float   fireAngle      = 20f;   // 발사 허용 반각 (degrees)
 
     public enum LockState { None, Searching, Locked }
@@ -53,7 +52,7 @@ public class TargetingSystem : MonoBehaviour
         _scanTimer += Time.deltaTime;
         if (_scanTimer >= 0.4f) { _scanTimer = 0f; RefreshEnemies(); }
 
-        if (Input.GetKeyDown(lockKey)) HandleLockInput();
+        if (SimInput.Pressed(SimAction.LockTarget)) HandleLockInput();
 
         UpdateLock();
         if (Target != null) UpdateTargetData();

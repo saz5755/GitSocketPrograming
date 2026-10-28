@@ -2,7 +2,6 @@ using UnityEngine;
 
 public class MissileLauncher : MonoBehaviour
 {
-    [SerializeField] KeyCode fireKey     = KeyCode.Space;
     [SerializeField] float   cooldown    = 1.5f;
     [SerializeField] int     maxMissiles = 6;
 
@@ -31,7 +30,7 @@ public class MissileLauncher : MonoBehaviour
     {
         if (_cooldownTimer > 0f) _cooldownTimer -= Time.deltaTime;
         if (GameModeManager.Instance?.IsFlying != true) return;
-        if (Input.GetKeyDown(fireKey)) TryFire();
+        if (SimInput.Pressed(SimAction.FireMissile)) TryFire();
 
         // 타겟 락온 상태 네트워크 경고 브로드캐스트
         BroadcastLockState();

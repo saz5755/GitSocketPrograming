@@ -5,8 +5,6 @@ using Random = UnityEngine.Random;   // insideUnitSphere 등 로컬 VFX 전용
 
 public class CountermeasureSystem : MonoBehaviour
 {
-    KeyCode flareKey = KeyCode.X;
-    KeyCode chaffKey = KeyCode.Z;
 
     // 모든 수치는 GameplayConfigSO (Resources/GameplayConfig.asset)에서 중앙 관리.
     // 재고, 쿨다운, 수명, 자동 발사 간격/burst, 분산 등 모두 Config에서 조정.
@@ -58,9 +56,9 @@ public class CountermeasureSystem : MonoBehaviour
         if (_flareCd > 0f) _flareCd -= Time.deltaTime;
         if (_chaffCd > 0f) _chaffCd -= Time.deltaTime;
 
-        if (Input.GetKeyDown(flareKey) && FlareRemaining > 0 && _flareCd <= 0f)
+        if (SimInput.Pressed(SimAction.Flare) && FlareRemaining > 0 && _flareCd <= 0f)
             Deploy(CountermeasureType.Flare);
-        if (Input.GetKeyDown(chaffKey) && ChaffRemaining > 0 && _chaffCd <= 0f)
+        if (SimInput.Pressed(SimAction.Chaff) && ChaffRemaining > 0 && _chaffCd <= 0f)
             Deploy(CountermeasureType.Chaff);
     }
 

@@ -530,7 +530,7 @@ public class F35VFXController : MonoBehaviour
         // 폴백: 기존 로직 (고속 + W 홀드).
         bool isAfterburnerActive = catapultBoosting
             || playerController.AfterburnerActive
-            || (playerController.CurrentSpeed > catapultCfg.afterburnerMinSpeed && Input.GetKey(KeyCode.W));
+            || (playerController.CurrentSpeed > catapultCfg.afterburnerMinSpeed && SimInput.Throttle > 0.5f);
         _afterburnerAssembly?.SetActive(isAfterburnerActive, dt);
     }
 }

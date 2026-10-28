@@ -71,6 +71,30 @@ public class AircraftStatsSO : ScriptableObject
     [Tooltip("스톨 중 중력 하강 가속 (m/s²)")]
     public float stallFallAccel = 9.8f;
 
+    [Header("에너지 비행 모델 (v4.1)")]
+    [Tooltip("끄면 기존 속도 스칼라 모델 (가속/감속만)")]
+    public bool useEnergyModel = true;
+    [Tooltip("밀리터리 추력 가속 (m/s²). 중력(9.81)보다 작아야 수직 상승 시 감속한다")]
+    public float thrustMil = 8f;
+    [Tooltip("애프터버너 추력 가속 (m/s²). 9.81 초과 → 수직 상승 유지 가능")]
+    public float thrustAB = 14.5f;
+    [Tooltip("유도항력 계수 — 감속 = k·n²/v². 클수록 고G 선회에서 에너지를 많이 잃는다")]
+    public float inducedDragK = 790f;
+    [Tooltip("아이들 시 엔진 브레이크·구름 저항 (m/s²)")]
+    public float idleDrag = 1.5f;
+    [Tooltip("스피드 브레이크 감속 (m/s²)")]
+    public float speedBrakeDecel = 9f;
+    [Tooltip("상승·강하 시 중력 성분 배율 (1 = 실제)")]
+    [Range(0f, 1.5f)] public float gravityScale = 1f;
+    [Tooltip("강하 가속의 속도 상한 = 최대속도(AB) × 이 배수")]
+    public float diveSpeedMult = 1.25f;
+
+    [Header("G 제한 (FCS)")]
+    [Tooltip("양의 G 한계 — F-35 FCS 9G")]
+    public float gLimit = 9f;
+    [Tooltip("음의 G 한계")]
+    public float negGLimit = -3f;
+
     [Header("데미지")]
     [Tooltip("최대 체력")]
     public float maxHP = 100f;

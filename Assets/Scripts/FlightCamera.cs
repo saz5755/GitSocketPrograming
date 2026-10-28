@@ -18,8 +18,6 @@ public class FlightCamera : MonoBehaviour
     [SerializeField] float freeLookReturnSpeed = 8f;
     [SerializeField] float freeLookMaxPitch    = 80f;
 
-    [Header("Toggle")]
-    [SerializeField] KeyCode toggleKey = KeyCode.C;
 
     bool isCockpit = false;
     public bool IsCockpit => isCockpit;
@@ -250,10 +248,10 @@ public class FlightCamera : MonoBehaviour
             return;
         }
 
-        if (Input.GetKeyDown(toggleKey))
+        if (SimInput.Pressed(SimAction.ViewToggle))
             SetCockpit(!isCockpit);
 
-        bool freeLook = Input.GetMouseButton(1);
+        bool freeLook = SimInput.FreeLook;
         if (freeLook)
         {
             freeLookYaw   += Input.GetAxis("Mouse X") * freeLookSensitivity;

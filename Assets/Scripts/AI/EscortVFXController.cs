@@ -150,7 +150,7 @@ public class EscortVFXController : MonoBehaviour
             active = _playerFallback != null
                   && _playerFallback.isLocalPlayer
                   && _playerFallback.CurrentSpeed > 60f
-                  && Input.GetKey(KeyCode.W);
+                  && SimInput.Throttle > 0.5f;
         }
         _afterburnerAssembly?.SetActive(active, Time.deltaTime);
     }

@@ -24,6 +24,7 @@ public class FlightAudioSystem : MonoBehaviour
     AudioClip _chaffClip;
 
     PlayerController _local;
+    float            _engineRpm;
 
     void Awake()
     {
@@ -71,9 +72,12 @@ public class FlightAudioSystem : MonoBehaviour
 
         float throttle = Mathf.Clamp01(_local.CurrentSpeed / 80f);
 
-        // 엔진: 스로틀에 따라 피치·볼륨 변화
-        _engineSrc.pitch  = Mathf.Lerp(0.55f, 1.85f, throttle);
-        _engineSrc.volume = Mathf.Lerp(0.10f, 0.48f, throttle);
+        // 엔진: 스로틀 레버(RPM)에 따라 피치·볼륨 — 강하로 속도만 붙을 때는 엔진음이 오르지 않는다
+        _engineRpm = Mathf.MoveTowards(_engineRpm,
+            Mathf.Max(_local.Throttle01, throttle * 0.35f) + (_local.AfterburnerActive ? 0.15f : 0f),
+            Time.deltaTime * 0.8f);   // 스풀업/다운 지연
+        _engineSrc.pitch  = Mathf.Lerp(0.55f, 1.85f, Mathf.Clamp01(_engineRpm));
+        _engineSrc.volume = Mathf.Lerp(0.10f, 0.48f, Mathf.Clamp01(_engineRpm));
 
         // 바람: 속도 제곱 비례 (고속 시 급격히 커짐)
         float tSq = throttle * throttle;
