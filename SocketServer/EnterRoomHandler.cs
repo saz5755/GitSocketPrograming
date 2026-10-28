@@ -124,7 +124,8 @@ class EnterRoomHandler
             type         = PacketType.ENTER_ROOM_RESULT,
             success      = true,
             roomId       = room.roomId,
-            hostNickname = room.hostNickname
+            hostNickname = room.hostNickname,
+            mode         = room.mode
         });
 
         // 3. 입장 처리

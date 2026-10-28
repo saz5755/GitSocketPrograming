@@ -4,6 +4,9 @@ public class Room
     public string roomName = "Unknown Zone";
     public int maxPlayers = 8;
     public string hostNickname = string.Empty;
+    /// <summary>방 모드 — 생성 시 정해지고 바뀌지 않는다 (RoomModes)</summary>
+    public string mode = RoomModes.Combat;
+    public bool   IsCombat => mode == RoomModes.Combat;
 
     List<Player> players = new();
 
@@ -191,4 +194,14 @@ public class Room
         };
         Broadcast(packet);
     }
+}
+
+/// <summary>방 모드 상수 — 클라이언트 RoomModeSO 이름과 같다</summary>
+public static class RoomModes
+{
+    public const string Airshow = "AIRSHOW";
+    public const string Combat  = "COMBAT";
+
+    public static string Normalize(string? m)
+        => string.Equals(m, Airshow, StringComparison.OrdinalIgnoreCase) ? Airshow : Combat;
 }

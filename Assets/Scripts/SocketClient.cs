@@ -36,6 +36,7 @@ public class SocketClient : MonoBehaviour
 
     // 현재 방의 호스트 닉네임 — ENTER_ROOM_RESULT 수신 즉시 세팅 (씬 전환 전에도 참조 가능)
     public string roomHostNickname = "";
+    public string roomMode = "";          // 현재 방 모드 (RoomModeSO.Airshow / Combat) — ENTER_ROOM_RESULT 로 수신
     public ScoreboardPacket LastScoreboard;
 
     // ── 이벤트 (Unity 메인스레드에서 발행) ──────────────────────────────
@@ -214,7 +215,7 @@ public class SocketClient : MonoBehaviour
             {
                 var p = JsonConvert.DeserializeObject<EnterRoomResultPacket>(json);
                 // 씬 전환 전(수신 스레드)에 즉시 저장 — AIManager.TryInitializeAsHost가 씬 로드 후 참조
-                if (p.success) roomHostNickname = p.hostNickname ?? "";
+                if (p.success) { roomHostNickname = p.hostNickname ?? ""; roomMode = p.mode ?? ""; }
                 UnityMainThreadDispatcher.Instance.Enqueue(() => OnEnterRoomResult?.Invoke(p));
                 break;
             }
@@ -448,6 +449,7 @@ public class SocketClient : MonoBehaviour
     {
         lastTicks.Clear();
         roomHostNickname = "";
+        roomMode         = "";
         _outTick = 0;
         SendTCP(new LeaveRoomPacket { type = PacketType.LEAVE_ROOM });
     }
@@ -455,8 +457,8 @@ public class SocketClient : MonoBehaviour
     public void RequestRoomList()
         => SendTCP(new Packet { type = PacketType.ROOM_LIST_REQUEST });
 
-    public void SendCreateRoom(string roomName, int maxPlayers = 8)
-        => SendTCP(new CreateRoomPacket { type = PacketType.CREATE_ROOM, roomName = roomName, maxPlayers = maxPlayers });
+    public void SendCreateRoom(string roomName, int maxPlayers = 8, string mode = RoomModeSO.Combat)
+        => SendTCP(new CreateRoomPacket { type = PacketType.CREATE_ROOM, roomName = roomName, maxPlayers = maxPlayers, mode = mode });
 
     public void SendMove(float posX, float posY, float posZ,
                          float rotX, float rotY, float rotZ,

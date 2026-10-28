@@ -52,7 +52,7 @@ public class TargetingSystem : MonoBehaviour
         _scanTimer += Time.deltaTime;
         if (_scanTimer >= 0.4f) { _scanTimer = 0f; RefreshEnemies(); }
 
-        if (SimInput.Pressed(SimAction.LockTarget)) HandleLockInput();
+        if (SimInput.Pressed(SimAction.LockTarget) && RoomModeSO.WeaponsEnabled) HandleLockInput();
 
         UpdateLock();
         if (Target != null) UpdateTargetData();

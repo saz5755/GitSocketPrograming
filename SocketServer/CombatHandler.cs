@@ -49,9 +49,10 @@ class CombatHandler
         if (victimIsBot ? player.nickname != room.hostNickname : p.victim != player.nickname)
             return;
 
-        room.RecordKill(p.victim, p.killer, victimIsBot);
+        // 에어쇼 방은 점수를 매기지 않는다 — 추락·사출은 알림만 중계
+        if (room.IsCombat) room.RecordKill(p.victim, p.killer, victimIsBot);
         room.Broadcast(p);
-        room.BroadcastScoreboard();
+        if (room.IsCombat) room.BroadcastScoreboard();
         Console.WriteLine($"[Kill] {p.killer} -> {p.victim} ({p.weapon} {p.cause})");
     }
 

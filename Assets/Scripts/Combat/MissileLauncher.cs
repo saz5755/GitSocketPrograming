@@ -30,7 +30,7 @@ public class MissileLauncher : MonoBehaviour
     {
         if (_cooldownTimer > 0f) _cooldownTimer -= Time.deltaTime;
         if (GameModeManager.Instance?.IsFlying != true) return;
-        if (SimInput.Pressed(SimAction.FireMissile)) TryFire();
+        if (SimInput.Pressed(SimAction.FireMissile) && RoomModeSO.WeaponsEnabled) TryFire();
 
         // 타겟 락온 상태 네트워크 경고 브로드캐스트
         BroadcastLockState();

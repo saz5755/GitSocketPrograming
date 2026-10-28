@@ -210,7 +210,7 @@ public class CombatFeedUI : MonoBehaviour
         }
 
         // 스코어보드 (홀드)
-        bool showBoard = SimInput.ScoreboardHeld;
+        bool showBoard = SimInput.ScoreboardHeld && RoomModeSO.ScoreboardShown;
         if (showBoard != _board.gameObject.activeSelf)
         {
             _board.gameObject.SetActive(showBoard);
@@ -222,6 +222,7 @@ public class CombatFeedUI : MonoBehaviour
     // ── 킬 피드 행 ─────────────────────────────────────────────────────────────
     void AddFeedRow(PlayerKilledPacket p, string me)
     {
+        if (!RoomModeSO.CombatFeedShown) return;   // 에어쇼: 킬 피드 없음
         string victim = Colored(p.victim, me);
         string line;
         if (!string.IsNullOrEmpty(p.killer) && p.killer != p.victim)

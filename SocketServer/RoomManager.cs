@@ -20,7 +20,7 @@ public class RoomManager
     }
 
     // 플레이어 요청으로 룸 동적 생성
-    public static Room CreateRoom(string roomName, int maxPlayers)
+    public static Room CreateRoom(string roomName, int maxPlayers, string mode = RoomModes.Combat)
     {
         lock (_lock)
         {
@@ -30,9 +30,9 @@ public class RoomManager
                 : roomName.Trim();
             int cap = Math.Clamp(maxPlayers <= 0 ? 8 : maxPlayers, 2, 16);
 
-            var room = new Room { roomId = id, roomName = name, maxPlayers = cap };
+            var room = new Room { roomId = id, roomName = name, maxPlayers = cap, mode = RoomModes.Normalize(mode) };
             _rooms.Add(id, room);
-            Console.WriteLine($"[Room] Created #{id} \"{name}\" (max={cap})");
+            Console.WriteLine($"[Room] Created #{id} \"{name}\" (max={cap}, mode={room.mode})");
             return room;
         }
     }
@@ -94,7 +94,8 @@ public class RoomManager
                 roomId      = r.roomId,
                 roomName    = r.roomName,
                 playerCount = r.GetPlayerCount(),
-                maxPlayers  = r.maxPlayers
+                maxPlayers  = r.maxPlayers,
+                mode        = r.mode
             }).ToList()
         };
     }

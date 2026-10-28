@@ -20,6 +20,7 @@ public class LobbyUI : MonoBehaviour
     Text _emptyText;
     GameObject _createModal;
     InputField _roomNameInput;
+    string     _createMode = RoomModeSO.Combat;   // 방 생성 모달에서 고른 모드
 
     void Awake()
     {
@@ -433,14 +434,14 @@ public class LobbyUI : MonoBehaviour
 
         // 룸 이름
         var nameGO = MakeRect("Name", row.transform, Vector2.zero, Vector2.zero);
-        nameGO.anchorMin = new Vector2(0.11f, 0f); nameGO.anchorMax = new Vector2(0.46f, 1);
+        nameGO.anchorMin = new Vector2(0.11f, 0f); nameGO.anchorMax = new Vector2(0.38f, 1);
         nameGO.offsetMin = new Vector2(12, 0); nameGO.offsetMax = new Vector2(-8, 0);
         AddTextFill(nameGO, room.roomName.ToUpper(), t.textM, t.textPrimary, FontStyle.Bold)
             .alignment = TextAnchor.MiddleLeft;
 
         // 상태 칩
         var statArea = MakeRect("Stat", row.transform, Vector2.zero, Vector2.zero);
-        statArea.anchorMin = new Vector2(0.46f, 0); statArea.anchorMax = new Vector2(0.64f, 1);
+        statArea.anchorMin = new Vector2(0.38f, 0); statArea.anchorMax = new Vector2(0.64f, 1);
         statArea.offsetMin = new Vector2(8, 0); statArea.offsetMax = Vector2.zero;
         var chip = MakeRect("Chip", statArea, Vector2.zero, new Vector2(104, 26));
         chip.anchorMin = chip.anchorMax = new Vector2(0, 0.5f); chip.pivot = new Vector2(0, 0.5f);
@@ -448,6 +449,16 @@ public class LobbyUI : MonoBehaviour
         UIShapes.Round(AddImg(chip, new Color(chipCol.r, chipCol.g, chipCol.b, active ? 0.14f : 0.10f)), 13);
         UIShapes.AddBorder(chip, 13, new Color(chipCol.r, chipCol.g, chipCol.b, active ? 0.45f : 0.30f));
         AddTextFill(chip, active ? "ACTIVE" : "STANDBY", 11, chipCol, FontStyle.Bold);
+
+        // 모드 배지
+        bool airshow = room.mode == RoomModeSO.Airshow;
+        var badge = MakeRect("Mode", statArea, Vector2.zero, new Vector2(92, 26));
+        badge.anchorMin = badge.anchorMax = new Vector2(0, 0.5f); badge.pivot = new Vector2(0, 0.5f);
+        badge.anchoredPosition = new Vector2(112, 0);
+        Color modeCol = airshow ? t.accentCyan : t.warning;
+        UIShapes.Round(AddImg(badge, new Color(modeCol.r, modeCol.g, modeCol.b, 0.12f)), 13);
+        UIShapes.AddBorder(badge, 13, new Color(modeCol.r, modeCol.g, modeCol.b, 0.45f));
+        AddTextFill(badge, airshow ? "AIRSHOW" : "COMBAT", 11, modeCol, FontStyle.Bold);
 
         // 파일럿 수
         var pilotGO = MakeRect("Pilots", row.transform, Vector2.zero, Vector2.zero);
@@ -506,7 +517,7 @@ public class LobbyUI : MonoBehaviour
         overlay.AddComponent<Image>().color = new Color(0.01f, 0.03f, 0.07f, 0.72f);
         _createModal = overlay;
 
-        var panel = MakeRect("Panel", overlay.transform, Vector2.zero, new Vector2(540, 310));
+        var panel = MakeRect("Panel", overlay.transform, Vector2.zero, new Vector2(540, 420));
         panel.anchorMin = panel.anchorMax = new Vector2(0.5f, 0.5f);
         UIShapes.AddPanelSkin(panel, 16,
             new Color(t.panelBG.r * 0.9f, t.panelBG.g * 0.9f, t.panelBG.b * 0.95f, 0.98f),
@@ -518,7 +529,7 @@ public class LobbyUI : MonoBehaviour
         AddTextFill(titleGO, "전투 구역 생성", t.textL + 4, t.textPrimary, FontStyle.Bold);
 
         // 레이블
-        var lblGO = MakeRect("Lbl", panel, new Vector2(-180, 12), new Vector2(220, 20));
+        var lblGO = MakeRect("Lbl", panel, new Vector2(-230, 98), new Vector2(220, 20));
         lblGO.anchorMin = lblGO.anchorMax = new Vector2(0.5f, 0.5f);
         lblGO.pivot = new Vector2(0, 0.5f);
         AddTextFill(lblGO, "구역 이름", t.textXS, t.textSecondary, FontStyle.Bold).alignment = TextAnchor.MiddleLeft;
@@ -528,7 +539,7 @@ public class LobbyUI : MonoBehaviour
         inputGO.transform.SetParent(panel, false);
         var inputRT = inputGO.AddComponent<RectTransform>();
         inputRT.anchorMin = inputRT.anchorMax = new Vector2(0.5f, 0.5f);
-        inputRT.anchoredPosition = new Vector2(0, -22);
+        inputRT.anchoredPosition = new Vector2(0, 64);
         inputRT.sizeDelta        = new Vector2(460, 46);
         UIShapes.Round(AddImg(inputRT, new Color(0f, 0f, 0f, 0.35f)), 10);
         UIShapes.AddBorder(inputRT, 10, new Color(t.border.r, t.border.g, t.border.b, 0.9f));
@@ -557,25 +568,52 @@ public class LobbyUI : MonoBehaviour
         _roomNameInput.placeholder    = ph;
         _roomNameInput.characterLimit = 24;
 
+        // 방 모드 — 입장 후에는 바꿀 수 없다
+        var modeLbl = MakeRect("ModeLbl", panel, new Vector2(-230, 18), new Vector2(220, 20));
+        modeLbl.anchorMin = modeLbl.anchorMax = new Vector2(0.5f, 0.5f);
+        modeLbl.pivot = new Vector2(0, 0.5f);
+        AddTextFill(modeLbl, "비행 모드", t.textXS, t.textSecondary, FontStyle.Bold).alignment = TextAnchor.MiddleLeft;
+
+        var descGO = MakeRect("ModeDesc", panel, new Vector2(0, -78), new Vector2(460, 36));
+        descGO.anchorMin = descGO.anchorMax = new Vector2(0.5f, 0.5f);
+        var desc = AddTextFill(descGO, "", t.textXS, t.textSecondary, FontStyle.Normal);
+        desc.alignment = TextAnchor.UpperCenter;
+
+        UIThemedButton airBtn = null, cmbBtn = null;
+        void SelectMode(string m)
+        {
+            _createMode = m;
+            if (airBtn != null) airBtn.Selected = m == RoomModeSO.Airshow;
+            if (cmbBtn != null) cmbBtn.Selected = m == RoomModeSO.Combat;
+            desc.text = m == RoomModeSO.Airshow
+                ? "에스코트 편대와 함께 비행 — 무장·점수 없음"
+                : "적 기체와 교전 — 격추·재출격, 킬 피드·스코어보드";
+        }
+        airBtn = BuildModalBtn(panel, "AIRSHOW", new Vector2(-117, -24), new Vector2(226, 44),
+            UIThemedButton.Style.Outline, () => SelectMode(RoomModeSO.Airshow));
+        cmbBtn = BuildModalBtn(panel, "COMBAT", new Vector2(117, -24), new Vector2(226, 44),
+            UIThemedButton.Style.Outline, () => SelectMode(RoomModeSO.Combat));
+        SelectMode(_createMode);
+
         // 버튼 행
-        BuildModalBtn(panel, "생성", new Vector2(-110, -112), new Vector2(200, 48),
+        BuildModalBtn(panel, "생성", new Vector2(-110, -150), new Vector2(200, 48),
             UIThemedButton.Style.Primary, () =>
             {
                 string name = _roomNameInput?.text?.Trim() ?? "";
                 if (string.IsNullOrEmpty(name))
                     name = $"{GameManager.Instance?.myNickname ?? "Unknown"}'s Zone";
                 SetStatus("전투 구역 생성 중...", false);
-                NetworkManager.Instance?.socketClient.SendCreateRoom(name, 8);
+                NetworkManager.Instance?.socketClient.SendCreateRoom(name, 8, _createMode);
                 CloseCreateModal();
             });
 
-        BuildModalBtn(panel, "취소", new Vector2(110, -112), new Vector2(200, 48),
+        BuildModalBtn(panel, "취소", new Vector2(110, -150), new Vector2(200, 48),
             UIThemedButton.Style.Secondary, CloseCreateModal);
 
         overlay.AddComponent<UIFadeIn>().Configure(0f, t.panelTransition, 0f);
     }
 
-    void BuildModalBtn(RectTransform parent, string label, Vector2 pos, Vector2 size,
+    UIThemedButton BuildModalBtn(RectTransform parent, string label, Vector2 pos, Vector2 size,
                        UIThemedButton.Style style, System.Action onClick)
     {
         var t = UITheme.Instance;
@@ -598,6 +636,7 @@ public class LobbyUI : MonoBehaviour
         var btn = go.AddComponent<UIThemedButton>();
         btn.ButtonStyle = style;
         btn.OnClick = onClick;
+        return btn;
     }
 
     void CloseCreateModal()

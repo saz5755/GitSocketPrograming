@@ -23,7 +23,7 @@ class CreateRoomHandler
             : packet.roomName.Trim();
         int    maxPlayers  = packet.maxPlayers <= 0 ? 8 : packet.maxPlayers;
 
-        var room = RoomManager.CreateRoom(roomName, maxPlayers);
+        var room = RoomManager.CreateRoom(roomName, maxPlayers, packet.mode ?? RoomModes.Combat);
 
         // 생성자에게 성공 응답 (roomId 전달)
         ServerSender.SendPacket(session, new CreateRoomResultPacket

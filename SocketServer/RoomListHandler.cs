@@ -12,7 +12,8 @@ class RoomListHandler
                 roomId      = r.roomId,
                 roomName    = r.roomName,
                 playerCount = r.GetPlayerCount(),
-                maxPlayers  = r.maxPlayers
+                maxPlayers  = r.maxPlayers,
+                mode        = r.mode
             })
             .ToList();
 

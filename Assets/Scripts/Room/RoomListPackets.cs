@@ -6,6 +6,7 @@ public class RoomInfo
     public string roomName;
     public int    playerCount;
     public int    maxPlayers;
+    public string mode;
 }
 
 public class RoomListResultPacket : Packet
@@ -20,6 +21,7 @@ public class CreateRoomPacket : Packet
 {
     public string roomName;
     public int    maxPlayers = 8;
+    public string mode;
 }
 
 [System.Serializable]
@@ -38,4 +40,5 @@ public class EnterRoomResultPacket : Packet
     public int    roomId;
     public string errorMessage;
     public string hostNickname;
+    public string mode;
 }

@@ -119,7 +119,7 @@ public class GunSystem : MonoBehaviour
 
         UpdateLeadIndicators();
 
-        bool firing = SimInput.GunTrigger && _ammo > 0 && flying;
+        bool firing = SimInput.GunTrigger && _ammo > 0 && flying && RoomModeSO.WeaponsEnabled;
 
         if (firing && !_gunSrc.isPlaying) _gunSrc.Play();
         else if (!firing && _gunSrc.isPlaying) _gunSrc.Stop();

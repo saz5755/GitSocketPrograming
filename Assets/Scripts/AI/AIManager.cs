@@ -128,6 +128,13 @@ public class AIManager : MonoBehaviour
         if (!isNetworkHost) return;
 
         _isHost = true;
+        // 방 모드가 있으면 씬 Inspector 기본값을 덮어쓴다 (호스트가 AI 를 스폰하므로 게스트는 AI_SPAWN 으로 자동 동기화)
+        var mode = RoomModeSO.Current;
+        if (mode != null)
+        {
+            _spawnEscorts = mode.spawnEscorts;
+            _spawnEnemies = mode.spawnEnemies;
+        }
         // 에스코트: 갑판에서 대기하므로 localPlayer=null도 허용
         if (_spawnEscorts) SpawnEscorts(localPlayer);
         // 적 AI: 플레이어 항공기 위치가 필요하므로 SetLocalPlayerAircraft() 시점에 스폰

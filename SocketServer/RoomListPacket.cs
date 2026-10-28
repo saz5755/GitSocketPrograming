@@ -6,6 +6,7 @@ public class RoomInfo
     public string roomName = string.Empty;
     public int playerCount;
     public int maxPlayers;
+    public string mode = RoomModes.Combat;
 }
 
 public class RoomListRequestPacket : Packet { }
