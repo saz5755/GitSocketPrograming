@@ -90,6 +90,9 @@ public class GameModeManager : MonoBehaviour
             new GameObject("GLoc_Overlay").AddComponent<GLocSystem>();
         if (GetComponent<FlightVoiceWarnings>() == null)
             gameObject.AddComponent<FlightVoiceWarnings>();
+        // 부위별 손상 HUD
+        if (FindAnyObjectByType<DamageHUD>() == null)
+            new GameObject("DamageHUD_Canvas").AddComponent<DamageHUD>();
 
         // 콕핏 인터랙션 시스템 초기화
         if (GetComponent<CockpitInteractionSystem>() == null)

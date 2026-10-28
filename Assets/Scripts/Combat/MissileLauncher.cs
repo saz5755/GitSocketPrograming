@@ -67,6 +67,7 @@ public class MissileLauncher : MonoBehaviour
             go.AddComponent<MissileController>();
         }
 
+        FlightCamera.NotifyLocalMissile(go.transform);
         string shooterNick = _targeting.LocalPlayer.nickname;
         string missileId   = System.Guid.NewGuid().ToString("N")[..8];
 

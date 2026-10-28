@@ -5,6 +5,7 @@ using UnityEngine.UI;
 /// 3인칭(체이스) 비행 시점의 전투 HUD — 디자인 시안 "전투 중 HUD":
 /// 좌측 SPD / 우측 ALT 테이프, 중앙 크로스헤어, 좌상단 방위, 우하단 무장 카드, 우상단 소티 정보(레이더는 좌하단).
 /// 콕핏 시점에서는 기존 콕핏 HUD(FlightHUD)가 대신하므로 숨는다.
+/// 콕핏 HUD 와 같은 스프라이트 키트(Resources/HUD)·글래스 카드 스타일을 쓴다 (v4.2 U-1).
 /// </summary>
 public class CombatHud : MonoBehaviour
 {
@@ -12,8 +13,8 @@ public class CombatHud : MonoBehaviour
     static readonly Color HGD  = new Color(0.20f, 1.00f, 0.55f, 0.62f);
     static readonly Color HGX  = new Color(0.20f, 1.00f, 0.55f, 0.28f);
     static readonly Color Ink  = new Color(0.90f, 1.00f, 0.95f, 0.96f);
-    static readonly Color Glass = new Color(0.02f, 0.07f, 0.06f, 0.58f);
-    static readonly Color Edge  = new Color(0.20f, 1.00f, 0.55f, 0.26f);
+    static readonly Color Glass = new Color(0.01f, 0.05f, 0.04f, 0.62f);
+    static readonly Color Edge  = new Color(0.20f, 1.00f, 0.55f, 0.30f);
     static readonly Color Warn  = new Color(1.00f, 0.72f, 0.25f, 1f);
     static readonly Color Crit  = new Color(1.00f, 0.36f, 0.40f, 1f);
 
@@ -42,7 +43,8 @@ public class CombatHud : MonoBehaviour
     Text _gunVal, _aimVal, _flareVal, _chaffVal;
     Image _gunBar;
     RectTransform _hdgTicks;
-    Image[] _aimPips = new Image[4];
+    Image[] _aimPips = new Image[6];
+    Text _gVal, _thrVal, _warnText;
 
     void Start()
     {
@@ -76,6 +78,7 @@ public class CombatHud : MonoBehaviour
         BuildHeading(root);
         BuildWeapons(root);
         BuildSortie(root);
+        BuildFlightState(root);
     }
 
     RectTransform R(string n, Transform p, Vector2 pos, Vector2 size)
@@ -88,12 +91,29 @@ public class CombatHud : MonoBehaviour
         return rt;
     }
 
+    // radius > 0 이면 캡슐(9-slice pill) 스프라이트 — 콕핏 HUD 와 같은 모서리
     Image Box(RectTransform rt, Color c, int radius = 0)
     {
         var img = rt.gameObject.AddComponent<Image>();
         img.color = c; img.raycastTarget = false;
-        if (radius > 0) UIShapes.Round(img, radius);
+        if (radius > 0) { img.sprite = HudSprites.Get(HudSprites.Pill); img.type = Image.Type.Sliced; }
         return img;
+    }
+
+    Image Spr(RectTransform rt, string sprite, Color c, Image.Type type = Image.Type.Simple)
+    {
+        var img = rt.gameObject.AddComponent<Image>();
+        img.sprite = HudSprites.Get(sprite); img.type = type;
+        img.color = c; img.raycastTarget = false;
+        return img;
+    }
+
+    RectTransform Fill(string n, RectTransform p)
+    {
+        var rt = R(n, p, Vector2.zero, Vector2.zero);
+        rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
+        rt.offsetMin = rt.offsetMax = Vector2.zero;
+        return rt;
     }
 
     Text Txt(Transform p, string s, Vector2 pos, Vector2 size, int fs, Color c, TextAnchor a, FontStyle st = FontStyle.Normal)
@@ -111,9 +131,14 @@ public class CombatHud : MonoBehaviour
 
     RectTransform Card(string n, Transform p, Vector2 pos, Vector2 size)
     {
+        // 콕핏 HUD 글래스 카드: 챔퍼 면 + 상단 광택 + 헤어라인 테두리 + 코너 액센트
         var rt = R(n, p, pos, size);
-        Box(rt, Glass, 10);
-        UIShapes.AddBorder(rt, 10, Edge);
+        Spr(rt, HudSprites.Panel, Glass, Image.Type.Sliced);
+        var sheen = Fill("Sheen", rt);
+        sheen.offsetMin = new Vector2(2f, size.y * 0.45f); sheen.offsetMax = new Vector2(-2f, -2f);
+        Spr(sheen, HudSprites.Sheen, new Color(HG.r, HG.g, HG.b, 0.05f));
+        Spr(Fill("Line", rt), HudSprites.PanelLine, Edge, Image.Type.Sliced);
+        Spr(Fill("Accent", rt), HudSprites.PanelAccent, new Color(HG.r, HG.g, HG.b, 0.75f), Image.Type.Sliced);
         return rt;
     }
 
@@ -144,13 +169,13 @@ public class CombatHud : MonoBehaviour
 
         // 현재값 박스
         var vb = R("Val", card, new Vector2(0f, -8f), new Vector2(124f, 40f));
-        Box(vb, new Color(0.04f, 0.16f, 0.10f, 0.9f), 6);
-        UIShapes.AddBorder(vb, 6, new Color(HG.r, HG.g, HG.b, 0.8f));
+        Spr(vb, HudSprites.ReadoutFill, new Color(0.01f, 0.05f, 0.03f, 0.85f), Image.Type.Sliced);
+        Spr(Fill("Line", vb), HudSprites.Readout, new Color(HG.r, HG.g, HG.b, 0.85f), Image.Type.Sliced);
         value = Txt(vb, "0", Vector2.zero, new Vector2(118f, 40f), 26, Ink, TextAnchor.MiddleCenter, FontStyle.Bold);
         // 포인터
-        var ptr = R("Ptr", card, new Vector2(-side * 66f, -8f), new Vector2(8f, 8f));
-        ptr.localRotation = Quaternion.Euler(0, 0, 45f);
-        Box(ptr, HG);
+        var ptr = R("Ptr", card, new Vector2(-side * 70f, -8f), new Vector2(12f, 12f));
+        ptr.localRotation = Quaternion.Euler(0, 0, right ? 90f : -90f);
+        Spr(ptr, HudSprites.Caret, HG);
 
         Txt(card, unit, new Vector2(0f, -150f), new Vector2(130f, 20f), 12, HGD, TextAnchor.MiddleCenter);
     }
@@ -160,10 +185,8 @@ public class CombatHud : MonoBehaviour
     {
         var c = R("Crosshair", root, Vector2.zero, new Vector2(120f, 120f));
         var ring = R("Ring", c, Vector2.zero, new Vector2(46f, 46f));
-        var ri = ring.gameObject.AddComponent<Image>();
-        ri.raycastTarget = false; UIShapes.Round(ri, 23); ri.color = Color.clear;
-        UIShapes.AddBorder(ring, 23, new Color(HG.r, HG.g, HG.b, 0.75f));
-        Box(R("dot", c, Vector2.zero, new Vector2(4f, 4f)), HG, 2);
+        Spr(ring, HudSprites.RingThin, new Color(HG.r, HG.g, HG.b, 0.75f));
+        Spr(R("dot", c, Vector2.zero, new Vector2(5f, 5f)), HudSprites.Disc, HG);
         Color tc = new Color(HG.r, HG.g, HG.b, 0.8f);
         Box(R("l", c, new Vector2(-42f, 0f), new Vector2(26f, 2f)), tc);
         Box(R("r", c, new Vector2(42f, 0f), new Vector2(26f, 2f)), tc);
@@ -211,7 +234,7 @@ public class CombatHud : MonoBehaviour
         Txt(card, "AIM-120", new Vector2(-154f, -16f), new Vector2(90f, 22f), 14, Ink, TextAnchor.MiddleLeft, FontStyle.Bold);
         for (int i = 0; i < _aimPips.Length; i++)
         {
-            var p = R("pip", card, new Vector2(-30f + i * 24f, -16f), new Vector2(16f, 7f));
+            var p = R("pip", card, new Vector2(-40f + i * 18f, -16f), new Vector2(12f, 7f));
             _aimPips[i] = Box(p, HG, 3);
         }
         _aimVal = Txt(card, "4", new Vector2(154f, -16f), new Vector2(80f, 24f), 20, Ink, TextAnchor.MiddleRight, FontStyle.Bold);
@@ -231,6 +254,17 @@ public class CombatHud : MonoBehaviour
         _timeText = Txt(card, "00:00:00", new Vector2(-154f, -10f), new Vector2(140f, 28f), 22, Ink, TextAnchor.MiddleLeft, FontStyle.Bold);
         Txt(card, "PILOTS", new Vector2(50f, 16f), new Vector2(80f, 18f), 11, HGD, TextAnchor.MiddleLeft, FontStyle.Bold);
         _pilotText = Txt(card, "1", new Vector2(50f, -10f), new Vector2(100f, 28f), 22, Ink, TextAnchor.MiddleLeft, FontStyle.Bold);
+    }
+
+    // ── G / 스로틀 / 경고 (SPD 카드 아래) ─────────────────────────────────
+    void BuildFlightState(Transform root)
+    {
+        var card = Card("StateCard", root, new Vector2(-800f, -205f), new Vector2(150f, 62f));
+        Txt(card, "G", new Vector2(-62f, 12f), new Vector2(30f, 18f), 11, HGD, TextAnchor.MiddleLeft, FontStyle.Bold);
+        _gVal = Txt(card, "1.0", new Vector2(62f, 12f), new Vector2(80f, 22f), 18, Ink, TextAnchor.MiddleRight, FontStyle.Bold);
+        Txt(card, "THR", new Vector2(-62f, -14f), new Vector2(40f, 18f), 11, HGD, TextAnchor.MiddleLeft, FontStyle.Bold);
+        _thrVal = Txt(card, "IDLE", new Vector2(62f, -14f), new Vector2(80f, 22f), 15, Ink, TextAnchor.MiddleRight, FontStyle.Bold);
+        _warnText = Txt(root, "", new Vector2(0f, -150f), new Vector2(520f, 30f), 22, Warn, TextAnchor.MiddleCenter, FontStyle.Bold);
     }
 
     // ── 갱신 ──────────────────────────────────────────────────────────────
@@ -308,6 +342,21 @@ public class CombatHud : MonoBehaviour
             for (int i = 0; i < _aimPips.Length; i++) _aimPips[i].color = i < m ? HG : HGX;
         }
         if (_cms != null) { _flareVal.text = _cms.FlareRemaining.ToString(); _chaffVal.text = _cms.ChaffRemaining.ToString(); }
+
+        float g = _local.PilotG;
+        _gVal.text  = g.ToString("F1");
+        _gVal.color = (g > 7f || g < -2f) ? Crit : (g > 4f || _local.GLimiterActive) ? Warn : Ink;
+        _thrVal.text  = _local.AfterburnerActive ? "AB" : _local.Throttle01 < 0.02f ? "IDLE" : $"{_local.Throttle01 * 100f:F0}%";
+        _thrVal.color = _local.AfterburnerActive ? Warn : Ink;
+        var gloc = GLocSystem.Instance;
+        string warn = ""; Color wc = Warn;
+        if      (_local.IsCriticalDamage)               { warn = "CRITICAL DAMAGE"; wc = Crit; }
+        else if (gloc != null && gloc.Stress > 0.55f)   { warn = "OVER G";          wc = Crit; }
+        else if (_local.IsStalling)                     { warn = "STALL";           wc = Crit; }
+        else if (_local.IsFuelEmpty)                    { warn = "FUEL EMPTY";      wc = Crit; }
+        else if (_local.StallWarning)                   { warn = "STALL WARN"; }
+        else if (_local.IsFuelLow)                      { warn = "BINGO FUEL"; }
+        _warnText.text = warn; _warnText.color = wc;
 
         _time += Time.deltaTime;
         int ts = (int)_time;

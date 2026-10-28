@@ -206,6 +206,7 @@ public class PlayerController : MonoBehaviour
     {
         float thrust = noThrust ? 0f : (AfterburnerActive ? Cfg.thrustAB : Cfg.thrustMil * lever);
         if (IsEngineDamaged) thrust *= Cfg.engineDamageSpeedMult;
+        if (Damage != null) thrust *= Damage.ThrustMult;
 
         float vMil2 = Sq(Cfg.maxSpeed);
         float cI    = Cfg.inducedDragK;
@@ -233,7 +234,14 @@ public class PlayerController : MonoBehaviour
         _currentHP = Mathf.Max(0f, _currentHP - amount);
     }
 
-    public void Repair() { _currentHP = Cfg.maxHP; }
+    public void Repair() { _currentHP = Cfg.maxHP; Damage?.Repair(); }
+
+    // 부위별 손상 (피격 시 PilotStatus 가 붙인다) — 없으면 무손상
+    AircraftDamage _damage;
+    public AircraftDamage Damage => _damage != null ? _damage : (_damage = GetComponent<AircraftDamage>());
+
+    // 유압 지연 적용된 조종면 각속도 (deg/s)
+    float _surfPitch, _surfYaw, _surfRoll;
 
     /// <summary>새 출격 — 기체를 정비 완료 상태(체력·연료 만탄, 정지, 기동/제동 상태 해제)로 되돌린다.</summary>
     public void ResetForNewSortie()
@@ -484,8 +492,9 @@ public class PlayerController : MonoBehaviour
 
         float throttle = brake ? -1f : lever;   // 재조정(TickRecord)용
 
-        // 연료 고갈·파괴: 추력 없음
-        bool noThrust = IsFuelEmpty || IsDestroyed;
+        // 연료 고갈·파괴·엔진 화재: 추력 없음
+        var dmg = Damage;
+        bool noThrust = IsFuelEmpty || IsDestroyed || (dmg != null && dmg.EngineFire);
         float speedBefore = currentSpeed;
 
         // ── 연료 소비 (비행 중에만) ──────────────────────────────────────────
@@ -494,6 +503,7 @@ public class PlayerController : MonoBehaviour
             float consume = AfterburnerActive ? Cfg.fuelConsumptionAB : Cfg.fuelConsumption * Mathf.Lerp(0.35f, 1f, lever);
             _currentFuel = Mathf.Max(0f, _currentFuel - consume * dt);
         }
+        if (flying && dmg != null && dmg.FuelLeak) _currentFuel = Mathf.Max(0f, _currentFuel - dmg.FuelLeakRate * dt);
 
         float pitch = locked ? 0f : -SimInput.Pitch * Cfg.pitchSensitivity * dt;
         float yaw   = locked ? 0f :  SimInput.Yaw   * Cfg.yawSensitivity   * dt;
@@ -504,6 +514,20 @@ public class PlayerController : MonoBehaviour
         // 자동 배럴롤: Q(+1)=좌, E(-1)=우. 사용자 A/D와 덧붙음 (반대 입력으로 자전 느려짐)
         // 플레어는 아래 Rotate 이후 Interval 간격으로 자동 발사
         if (_barrelRollDir != 0) roll += _barrelRollDir * GCfg.barrelRollRate * dt;
+
+        // 손상: 조종 권한 저하·날개 비대칭 롤 쏠림·유압 지연
+        if (dmg != null && flying && dt > 0f)
+        {
+            pitch *= dmg.PitchYawAuthority;
+            yaw   *= dmg.PitchYawAuthority;
+            roll   = roll * dmg.RollAuthority + dmg.RollBias * dt;
+            float lag = dmg.ControlLag;
+            float k = lag > 0f ? 1f - Mathf.Exp(-dt / lag) : 1f;
+            _surfPitch = Mathf.Lerp(_surfPitch, pitch / dt, k);
+            _surfYaw   = Mathf.Lerp(_surfYaw,   yaw   / dt, k);
+            _surfRoll  = Mathf.Lerp(_surfRoll,  roll  / dt, k);
+            pitch = _surfPitch * dt; yaw = _surfYaw * dt; roll = _surfRoll * dt;
+        }
 
         bool airborne = flying && !HasSurfaceBelow(4f);
         if (Cfg.useEnergyModel && airborne)

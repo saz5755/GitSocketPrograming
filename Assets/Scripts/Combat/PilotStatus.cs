@@ -81,6 +81,9 @@ public class PilotStatus : MonoBehaviour
         if (pc == null) return;
 
         pc.TakeDamage(amount);
+        // 부위별 손상 — 공격자 위치로 피격 방향을 잡는다
+        var dmg = pc.GetComponent<AircraftDamage>() ?? pc.gameObject.AddComponent<AircraftDamage>();
+        dmg.ApplyHit(amount, weapon, AttackerPosition(attacker));
         if (!string.IsNullOrEmpty(attacker) && attacker != MyNick)
         {
             _lastAttacker = attacker;
@@ -88,6 +91,15 @@ public class PilotStatus : MonoBehaviour
             _lastHitTime  = Time.time;
         }
         if (pc.IsDestroyed) Die(CauseShotDown);
+    }
+
+    static Vector3? AttackerPosition(string nick)
+    {
+        if (string.IsNullOrEmpty(nick)) return null;
+        foreach (var p in PlayerController.All)
+            if (p != null && p.nickname == nick) return p.transform.position;
+        var bot = AIManager.Instance != null ? AIManager.Instance.GetBot(nick) : null;
+        return bot != null ? bot.transform.position : (Vector3?)null;
     }
 
     // 내가 격추한 수 (이번 출격) — 서버 중계로 확인된 것만

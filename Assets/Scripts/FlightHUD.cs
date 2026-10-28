@@ -965,6 +965,7 @@ public class FlightHUD : MonoBehaviour
             else if (localPlayer.IsCobraRising)          { msg = "ZOOM UP   [B TO FLIP]"; col = ExhGlow; }
             else if (localPlayer.IsDestroyed) { msg = "DESTROYED";       col = CRIT; }
             else if (critDmg)                 { msg = "CRITICAL DAMAGE"; col = CRIT; }
+            else if (localPlayer.Damage != null && localPlayer.Damage.EngineFire) { msg = "ENGINE FIRE"; col = CRIT; }
             else if (gWarn)                   { msg = "OVER G";          col = CRIT; }
             else if (stallActive)             { msg = "STALL";           col = CRIT; }
             else if (fuelEmpty)               { msg = "FUEL EMPTY";      col = CRIT; }

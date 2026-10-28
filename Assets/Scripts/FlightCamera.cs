@@ -54,6 +54,21 @@ public class FlightCamera : MonoBehaviour
 
     float _shakeMag, _shakeTimer, _shakeDur;
 
+    // ── 표적 카메라 (홀드) / 미사일 캠 (v4.2 C-3, C-4) ─────────────────────
+    static Transform s_lastLocalMissile;
+    /// <summary>로컬 플레이어가 미사일을 쏠 때 MissileLauncher 가 알린다 — 미사일 캠 대상</summary>
+    public static void NotifyLocalMissile(Transform missile) => s_lastLocalMissile = missile;
+
+    TargetingSystem _targeting;
+    float     _tgtBlend;          // 0..1 표적 카메라 전환량
+    Transform _missileCamTarget;
+    Vector3   _missileLastPos, _missileLastFwd;
+    float     _missileLinger = -1f;   // 미사일 소멸 후 폭발 지점 응시 남은 시간
+    bool      _missileCamWasCockpit;
+    const float MissileLingerSec = 1.4f;
+    bool      _missileTracking;   // 미사일을 따라가는 중 (Destroy 된 뒤에도 한 프레임 판별용)
+    public bool IsMissileCam => _missileTracking || _missileLinger > 0f;
+
     // ── 지상 모드 ──────────────────────────────────────────────────────────
     Transform        _groundTarget;
     GroundController _groundController;
@@ -196,6 +211,8 @@ public class FlightCamera : MonoBehaviour
 
     public void BeginDeathCam(Transform wreck)
     {
+        if (IsMissileCam) EndMissileCam();
+        _tgtBlend = 0f;
         _deathFocus    = wreck;
         _deathFocusPos = wreck.position;
         _deathOrbitYaw = wreck.eulerAngles.y + 150f;
@@ -217,6 +234,7 @@ public class FlightCamera : MonoBehaviour
     public void SetFlightTarget(PlayerController pc)
     {
         _deathFocus   = null;
+        _missileTracking = false; _missileLinger = -1f;
         _groundTarget = null;
         localPlayer   = pc;
         BuildRendererLists(pc);
@@ -248,6 +266,8 @@ public class FlightCamera : MonoBehaviour
             return;
         }
 
+        if (UpdateMissileCam()) return;
+
         if (SimInput.Pressed(SimAction.ViewToggle))
             SetCockpit(!isCockpit);
 
@@ -268,6 +288,7 @@ public class FlightCamera : MonoBehaviour
             UpdateCockpit();
         else
             UpdateChase();
+        ApplyTargetCam();
 
         if (_shakeTimer > 0f)
         {
@@ -353,6 +374,107 @@ public class FlightCamera : MonoBehaviour
         Quaternion freeLookOffset = Quaternion.Euler(freeLookPitch, freeLookYaw, 0f);
         Quaternion targetRot = t.rotation * freeLookOffset;
         transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, chaseSmooth * Time.deltaTime);
+    }
+
+    // ── 표적 카메라: 홀드하는 동안 락온 표적을 화면에 담는다 (AC7 TGT) ──────────
+    // 추격 시점은 내 기체 뒤-위에서 표적 쪽을 바라보고, 콕핏 시점은 조종사가 고개를 돌려 표적을 본다(패드락).
+    void ApplyTargetCam()
+    {
+        if (_targeting == null || _targeting.LocalPlayer != localPlayer)
+        {
+            _targeting = null;
+            foreach (var ts in TargetingSystem.All)
+                if (ts != null && ts.LocalPlayer == localPlayer) { _targeting = ts; break; }
+        }
+        var target = _targeting != null && _targeting.State != TargetingSystem.LockState.None ? _targeting.Target : null;
+        bool want = target != null && SimInput.Held(SimAction.TargetCam) && !SimInput.FreeLook;
+        _tgtBlend = Mathf.MoveTowards(_tgtBlend, want ? 1f : 0f, Time.deltaTime * 3.5f);
+        if (_tgtBlend <= 0f || target == null) return;
+
+        float w = Mathf.SmoothStep(0f, 1f, _tgtBlend);
+        Transform t = localPlayer.transform;
+        Vector3 toTgt = target.transform.position - t.position;
+        if (toTgt.sqrMagnitude < 1f) return;
+
+        if (isCockpit)
+        {
+            Quaternion look = Quaternion.LookRotation(toTgt.normalized, t.up);
+            transform.rotation = Quaternion.Slerp(transform.rotation, look, w);
+        }
+        else
+        {
+            Vector3 dir = toTgt.normalized;
+            Vector3 pos = t.position - dir * 16f + t.up * 4.5f;
+            Vector3 focus = Vector3.Lerp(t.position, target.transform.position, 0.5f);
+            if ((focus - t.position).sqrMagnitude > 250f * 250f) focus = t.position + dir * 250f;
+            transform.position = Vector3.Lerp(transform.position, pos, w);
+            transform.rotation = Quaternion.Slerp(transform.rotation,
+                Quaternion.LookRotation(focus - transform.position, t.up), w);
+        }
+    }
+
+    // ── 미사일 캠: 발사 후 키를 누르면 마지막 미사일을 따라가고, 명중/소멸 지점을 잠시 비춘 뒤 복귀 ──
+    // 멀티플레이라 시간 배속(슬로모션)은 쓰지 않는다 — 폭발 지점에 카메라를 머무르게 해 대신한다.
+    bool UpdateMissileCam()
+    {
+        if (SimInput.Pressed(SimAction.MissileCam))
+        {
+            if (IsMissileCam) EndMissileCam();
+            else if (s_lastLocalMissile != null)
+            {
+                _missileCamTarget     = s_lastLocalMissile;
+                _missileTracking      = true;
+                _missileLinger        = -1f;
+                _missileCamWasCockpit = isCockpit;
+                if (isCockpit) SetCockpit(false);
+            }
+        }
+        if (!IsMissileCam) return false;
+
+        if (_missileTracking && (_missileCamTarget == null || !_missileCamTarget.gameObject.activeInHierarchy))
+        {
+            _missileTracking  = false;
+            _missileCamTarget = null;
+            _missileLinger    = MissileLingerSec;
+            TriggerShake(0.25f, 0.4f);
+        }
+
+        if (_missileTracking)
+        {
+            _missileLastPos = _missileCamTarget.position;
+            _missileLastFwd = _missileCamTarget.forward;
+            Vector3 pos = _missileLastPos - _missileLastFwd * 7f + Vector3.up * 1.4f;
+            transform.position = Vector3.Lerp(transform.position, pos, 1f - Mathf.Exp(-12f * Time.deltaTime));
+            transform.rotation = Quaternion.Slerp(transform.rotation,
+                Quaternion.LookRotation(_missileLastPos + _missileLastFwd * 40f - transform.position),
+                1f - Mathf.Exp(-10f * Time.deltaTime));
+        }
+        else
+        {
+            // 폭발 지점을 바라보며 살짝 물러난다
+            _missileLinger -= Time.deltaTime;
+            transform.position -= (_missileLastPos - transform.position).normalized * 6f * Time.deltaTime;
+            transform.rotation = Quaternion.Slerp(transform.rotation,
+                Quaternion.LookRotation(_missileLastPos - transform.position), 1f - Mathf.Exp(-6f * Time.deltaTime));
+            if (_missileLinger <= 0f) { EndMissileCam(); return false; }
+        }
+
+        if (_shakeTimer > 0f)
+        {
+            _shakeTimer -= Time.deltaTime;
+            float decay = _shakeDur > 0f ? _shakeTimer / _shakeDur : 0f;
+            transform.position += Random.insideUnitSphere * (_shakeMag * decay);
+        }
+        return true;
+    }
+
+    void EndMissileCam()
+    {
+        _missileCamTarget = null;
+        _missileTracking  = false;
+        _missileLinger    = -1f;
+        if (_missileCamWasCockpit) SetCockpit(true);
+        _missileCamWasCockpit = false;
     }
 
     // withHUD=false: 탑승 모드용 — 조종석 뷰는 활성화하되 HUD·MFD는 미표시
