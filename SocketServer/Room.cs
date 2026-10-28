@@ -22,6 +22,62 @@ public class Room
     readonly Dictionary<string, ScoreEntry> _scores = new();
     readonly object _scoreLock = new();
 
+    // ── 피격 검증용 상태 (HitValidation) ────────────────────────────────────
+    readonly Dictionary<string, PoseHistory> _history = new();
+    readonly Dictionary<string, (string shooter, DateTime at)> _missiles = new();
+    readonly Dictionary<string, Queue<long>> _gunHits = new();
+    readonly object _validLock = new();
+
+    public void RecordPose(string nickname, float x, float y, float z)
+    {
+        PoseHistory? h;
+        lock (_validLock)
+            if (!_history.TryGetValue(nickname, out h)) _history[nickname] = h = new PoseHistory();
+        h.Add(x, y, z);
+    }
+
+    public PoseHistory? History(string nickname)
+    {
+        lock (_validLock) return _history.TryGetValue(nickname, out var h) ? h : null;
+    }
+
+    public void RegisterMissile(string id, string shooter)
+    {
+        lock (_validLock)
+        {
+            _missiles[id] = (shooter, DateTime.UtcNow);
+            // 소멸 보고가 유실된 오래된 항목 정리
+            if (_missiles.Count > 256)
+                foreach (var k in _missiles.Where(kv => DateTime.UtcNow - kv.Value.at > TimeSpan.FromMinutes(2)).Select(kv => kv.Key).ToList())
+                    _missiles.Remove(k);
+        }
+    }
+
+    /// <summary>미사일 소멸 — 한 번만 성공한다 (같은 미사일로 두 번 명중 보고 차단)</summary>
+    public bool TakeMissile(string id, out string shooter, out DateTime spawnedAt)
+    {
+        lock (_validLock)
+        {
+            if (_missiles.Remove(id, out var e)) { shooter = e.shooter; spawnedAt = e.at; return true; }
+        }
+        shooter = ""; spawnedAt = default;
+        return false;
+    }
+
+    /// <summary>초당 명중 수 상한 — 넘으면 false</summary>
+    public bool CountGunHit(string shooter, int maxPerSecond)
+    {
+        long now = DateTime.UtcNow.Ticks, since = now - TimeSpan.TicksPerSecond;
+        lock (_validLock)
+        {
+            if (!_gunHits.TryGetValue(shooter, out var q)) _gunHits[shooter] = q = new Queue<long>();
+            while (q.Count > 0 && q.Peek() < since) q.Dequeue();
+            if (q.Count >= maxPerSecond) return false;
+            q.Enqueue(now);
+            return true;
+        }
+    }
+
     // ── 전과 ────────────────────────────────────────────────────────────────
 
     public void RecordKill(string victim, string killer, bool victimIsBot)
@@ -114,7 +170,7 @@ public class Room
         BroadcastScoreboard();
     }
 
-    public void Leave(Player player)
+    public void Leave(Player player, bool disconnected = false)
     {
         bool wasLast;
         bool wasHost = player.nickname == hostNickname;
@@ -164,9 +220,12 @@ public class Room
             }
         }
 
-        // 마지막 플레이어가 나가면 룸 삭제 (로비 목록 자동 갱신)
-        if (wasLast)
+        // 마지막 플레이어가 나가면 룸 삭제 (로비 목록 자동 갱신).
+        // 연결이 끊긴 경우는 재접속 유예를 위해 남겨 두고 빈 방 정리기(SweepEmptyRooms)에 맡긴다.
+        if (wasLast && !disconnected)
             RoomManager.DeleteRoom(roomId);
+        else if (wasLast)
+            RoomManager.BroadcastRoomListToLobby();
     }
 
     public void Broadcast(object packet)
@@ -177,10 +236,11 @@ public class Room
             copied = new List<Player>(players);
         }
 
+        byte[]? frame = null;   // 직렬화 1회 — 수신자마다 재직렬화하지 않는다
         foreach (Player player in copied)
         {
             if (player?.session == null) continue;
-            ServerSender.SendPacket(player.session, packet);
+            ServerSender.SendFrame(player.session, frame ??= ServerSender.Frame(packet));
         }
     }
 

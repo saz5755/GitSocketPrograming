@@ -56,6 +56,7 @@ public class GameSceneController : MonoBehaviour
         // ENTER_ROOM_RESULT 구독 (실패 시 로비 복귀)
         var sc = NetworkManager.Instance.socketClient;
         sc.OnEnterRoomResult += HandleEnterRoomResult;
+        sc.OnConnectionLost  += HandleConnectionLost;
 
         NetworkManager.Instance.socketClient.EnterRoom(roomId);
         Debug.Log($"[GameScene] Sent ENTER_ROOM → room {roomId}");
@@ -152,9 +153,75 @@ public class GameSceneController : MonoBehaviour
     {
         var sc = NetworkManager.Instance?.socketClient;
         if (sc != null) sc.OnEnterRoomResult -= HandleEnterRoomResult;
+        if (sc != null) sc.OnConnectionLost  -= HandleConnectionLost;
 #if UNITY_EDITOR
         if (sc != null) sc.OnLoginResult     -= OnAutoLoginResult;
 #endif
+    }
+
+    // ── 재접속 (v4.3 N-5) ───────────────────────────────────────────────────
+    // 연결이 끊기면 같은 계정으로 다시 접속·로그인한 뒤 같은 방으로 GameScene 을 다시 연다.
+    // 서버는 끊긴 플레이어의 방을 유예 시간 동안 남겨 두고, 비행 중이던 기체는 다른 클라이언트에서
+    // 방치 항공기로 갑판에 자동 착함되어 다시 탑승할 수 있다.
+    const int   ReconnectAttempts = 6;
+    const float ReconnectInterval = 2.5f;
+    bool _reconnecting;
+
+    void HandleConnectionLost()
+    {
+        if (_reconnecting) return;
+        var sc = NetworkManager.Instance?.socketClient;
+        if (sc == null || !sc.CanReconnect)
+        {
+            ShowOverlayMessage("Connection lost");
+            StartCoroutine(ReturnToLogin(2.5f));
+            return;
+        }
+        StartCoroutine(ReconnectCo(sc));
+    }
+
+    IEnumerator ReconnectCo(SocketClient sc)
+    {
+        _reconnecting = true;
+        ShowOverlayMessage("Link lost");
+        for (int attempt = 1; attempt <= ReconnectAttempts; attempt++)
+        {
+            if (_msgText != null) _msgText.text = $"LINK LOST\nReconnecting... ({attempt}/{ReconnectAttempts})";
+            bool done = false, ok = false;
+            void OnLogin(LoginResultPacket p) { done = true; ok = p.success; }
+            sc.OnLoginResult += OnLogin;
+            try { sc.Reconnect(); }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[GameScene] Reconnect attempt {attempt} failed: {e.Message}");
+                done = true;
+            }
+
+            float t = 0f;
+            while (!done && t < 5f) { t += Time.unscaledDeltaTime; yield return null; }
+            sc.OnLoginResult -= OnLogin;
+
+            if (ok)
+            {
+                // 같은 방 ID 로 씬을 다시 열면 Start() 가 ENTER_ROOM 부터 다시 진행한다
+                if (_msgCanvas != null) Destroy(_msgCanvas.gameObject);
+                SceneManager.LoadScene("GameScene");
+                yield break;
+            }
+            yield return new WaitForSecondsRealtime(ReconnectInterval);
+        }
+        if (_msgText != null) _msgText.text = "CONNECTION LOST\nReturning to login...";
+        yield return ReturnToLogin(2.5f);
+    }
+
+    IEnumerator ReturnToLogin(float delay)
+    {
+        yield return new WaitForSecondsRealtime(delay);
+        if (_msgCanvas != null) Destroy(_msgCanvas.gameObject);
+        NetworkManager.Instance?.socketClient?.Disconnect();
+        Cursor.visible   = true;
+        Cursor.lockState = CursorLockMode.None;
+        SceneManager.LoadScene("LoginScene");
     }
 
     void HandleEnterRoomResult(EnterRoomResultPacket p)

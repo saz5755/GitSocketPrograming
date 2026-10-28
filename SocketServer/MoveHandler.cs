@@ -19,6 +19,21 @@ class MoveHandler
 
         MovePacket? packet = JsonConvert.DeserializeObject<MovePacket>(json);
         if (packet == null) return;
+        Process(session, packet);
+    }
+
+    public static void HandleBinary(IPEndPoint remoteEP, byte[] data)
+    {
+        ClientSession? session = SessionManager.FindByUDP(remoteEP);
+        if (session?.player?.room == null) return;
+        session.binaryUdp = true;
+        var packet = BinaryProtocol.DecodeMove(data);
+        if (packet != null) Process(session, packet);
+    }
+
+    static void Process(ClientSession session, MovePacket packet)
+    {
+        if (session.player?.room == null) return;
 
         // tick=0은 지상 이동 패킷 — 순서 보장 불필요, 항상 통과 (클라이언트 수신 측과 동일 처리)
         if (packet.tick > 0 && packet.tick <= session.player.lastProcessedTick)
@@ -38,6 +53,7 @@ class MoveHandler
         session.player.isFlying  = packet.isFlying;
         // isBoardedInCockpit는 TCP COCKPIT_STATE 패킷이 단독으로 관리 — UDP MOVE가 덮어쓰면 안 됨
         session.player.animState = packet.animState;
+        session.player.room.RecordPose(session.player.nickname, packet.posX, packet.posY, packet.posZ);
 
         // 비행 중 플레이어 항공기를 풀에 등록·갱신 (신규 입장자 동기화용)
         // 있으면 제자리 갱신 — 패킷마다 AircraftEntry 를 새로 할당하지 않는다
@@ -68,7 +84,9 @@ class MoveHandler
             };
             try
             {
-                byte[] ackData = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(ack));
+                byte[] ackData = session.binaryUdp
+                    ? BinaryProtocol.EncodeMoveAck(ack)
+                    : Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(ack));
                 Program.udpServer.Send(ackData, ackData.Length, session.udpEndPoint);
             }
             catch { }
@@ -97,6 +115,6 @@ class MoveHandler
         };
 
         // UDP endpoint 등록 전이면 TCP로 fallback (동기화 보장)
-        UdpSender.BroadcastToRoom(sender.room!, sender, broadcast);
+        UdpSender.BroadcastToRoom(sender.room!, sender, broadcast, () => BinaryProtocol.EncodeMoveBroadcast(broadcast));
     }
 }

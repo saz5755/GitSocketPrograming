@@ -28,16 +28,20 @@ class UdpSender
 
     // 방 안의 sender 제외 전원에게 전송. UDP 미등록 대상은 TCP로 fallback.
     // JSON 직렬화는 한 번만 (기존: 수신자 수만큼 반복 → 틱마다 O(N²)).
-    public static void BroadcastToRoom(Room room, Player? sender, object packet)
+    // binary: 바이너리 인코더 — 바이너리 UDP 를 쓰는 수신자에게는 이쪽으로 (각 형식 한 번씩만 인코딩)
+    public static void BroadcastToRoom(Room room, Player? sender, object packet, Func<byte[]>? binary = null)
     {
-        byte[]? data = null;
+        byte[]? json = null, bin = null;
         foreach (Player target in room.GetPlayers())
         {
             if (target == sender) continue;
             if (target.session == null) continue;
 
             if (target.session.udpEndPoint != null)
-                Send(target.session.udpEndPoint, data ??= Serialize(packet));
+            {
+                if (binary != null && target.session.binaryUdp) Send(target.session.udpEndPoint, bin ??= binary());
+                else                                            Send(target.session.udpEndPoint, json ??= Serialize(packet));
+            }
             else
                 ServerSender.SendPacket(target.session, packet);
         }

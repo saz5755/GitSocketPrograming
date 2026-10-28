@@ -93,6 +93,17 @@ class PacketHandler
         }
     }
     
+    // 바이너리 UDP (v4.3 N-1) — 고빈도 이동 패킷 3종
+    public static void HandleUDPBinary(IPEndPoint remoteEP, byte[] data)
+    {
+        switch (BinaryProtocol.TypeOf(data))
+        {
+            case PacketType.MOVE:         MoveHandler.HandleBinary(remoteEP, data);        break;
+            case PacketType.AI_MOVE:      AIMoveHandler.HandleBinary(remoteEP, data);      break;
+            case PacketType.MISSILE_MOVE: MissileMoveHandler.HandleBinary(remoteEP, data); break;
+        }
+    }
+
     public static void HandleUDP(IPEndPoint remoteEP, string json)
     {
         Packet? packet = JsonConvert.DeserializeObject<Packet>(json);

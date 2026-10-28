@@ -41,6 +41,7 @@ class Program
             }; 
 
             SessionManager.Add(session);
+            session.StartWriter();
 
             Thread thread = new Thread(HandleClient) { IsBackground = true };
             thread.Start(session);
@@ -56,6 +57,11 @@ class Program
             try
             {
                 byte[] data = udpServer.Receive(ref remoteEP);
+                if (BinaryProtocol.IsBinary(data))
+                {
+                    PacketHandler.HandleUDPBinary(remoteEP, data);
+                    continue;
+                }
                 string json = Encoding.UTF8.GetString(data);
                 PacketHandler.HandleUDP(remoteEP, json);
             }
@@ -105,19 +111,20 @@ class Program
         }
     }
 
-    static void DisconnectSession(ClientSession session)
+    public static void DisconnectSession(ClientSession session)
     {
         if (session == null) return;
 
         try
         {
             // 세션 먼저 제거 — BroadcastRoomListToLobby가 이 세션에 전송하지 않도록
-            SessionManager.Remove(session);
-            session.stream?.Close();
-            session.client?.Close();
+            if (!SessionManager.Remove(session)) return;   // 이미 처리됨 (재로그인 인수 등)
+            session.Close();
 
+            // 연결 끊김은 명시적 퇴장과 달리, 마지막 인원이어도 방을 바로 지우지 않는다 —
+            // 재접속 유예 동안 같은 방으로 돌아올 수 있게 (빈 방 정리기가 유예 후 삭제)
             if (session.player?.room != null)
-                session.player.room.Leave(session.player);
+                session.player.room.Leave(session.player, disconnected: true);
 
             Console.WriteLine($"[TCP] Disconnected: {session.player?.nickname}");
         }

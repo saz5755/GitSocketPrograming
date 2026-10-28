@@ -36,17 +36,17 @@ class LoginHandler
         }
 
         // 중복 접속 체크
-        if (SessionManager.Find(packet.id) != null)
+        // 비밀번호까지 맞으면 이전 세션을 끊고 인수한다 (v4.3 N-5 재접속 —
+        // 클라이언트 쪽 연결이 먼저 끊겨 서버가 아직 반쪽 연결을 붙들고 있는 경우)
+        var stale = SessionManager.Find(packet.id);
+        if (stale != null)
         {
-            ServerSender.SendLoginResult(
-                session,
-                false,
-                "Already Connected");
-
-            return;
+            Console.WriteLine($"[Login] {packet.id} re-login — closing previous session");
+            Program.DisconnectSession(stale);
         }
-        
+
         session.isLogin = true;
+        session.sessionToken = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16));
 
         Player player = new();
         // 세션 정보 저장

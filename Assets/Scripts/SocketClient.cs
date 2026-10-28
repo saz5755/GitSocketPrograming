@@ -22,6 +22,15 @@ public class SocketClient : MonoBehaviour
     public string myNickname;
     volatile bool isRunning;
 
+    // 세션 토큰 (LOGIN_RESULT) — UDP_CONNECT 에 실어 보내야 서버가 UDP 엔드포인트를 등록한다
+    string sessionToken = "";
+
+    // 재접속 (v4.3 N-5) — 로그인 자격은 메모리에만 보관
+    string _loginId, _loginPw;
+    public bool CanReconnect => !string.IsNullOrEmpty(_loginId);
+    /// <summary>의도하지 않은 TCP 끊김 (메인 스레드)</summary>
+    public event Action OnConnectionLost;
+
     [Header("Connection Defaults")]
     public string connectIP = "172.30.201.117";
     public int    tcpPort   = 5000;
@@ -100,21 +109,27 @@ public class SocketClient : MonoBehaviour
     void ReceiveLoop()
     {
         byte[] lenBuf = new byte[4];
-        while (isRunning)
+        var s = stream;   // 재접속으로 필드가 교체돼도 이 스레드는 자기 스트림만 읽는다
+        bool lost = false;
+        while (isRunning && s == stream)
         {
             try
             {
-                ReadFull(stream, lenBuf, 4);
+                ReadFull(s, lenBuf, 4);
                 int length = BitConverter.ToInt32(lenBuf, 0);
                 byte[] dataBuf = new byte[length];
-                ReadFull(stream, dataBuf, length);
+                ReadFull(s, dataBuf, length);
                 string json = Encoding.UTF8.GetString(dataBuf);
                 HandleTCP(ReadPacketType(json), json);
             }
-            catch (IOException)  { Debug.Log("[TCP] Disconnected"); break; }
-            catch (SocketException) { Debug.Log("[TCP] Socket closed"); break; }
+            catch (IOException)     { Debug.Log("[TCP] Disconnected"); lost = true; break; }
+            catch (SocketException) { Debug.Log("[TCP] Socket closed"); lost = true; break; }
+            catch (ObjectDisposedException) { lost = true; break; }
             catch (Exception e)  { if (isRunning) Debug.LogError($"[TCP] {e}"); }
         }
+        // 서버가 끊었거나 네트워크가 떨어짐 — 의도한 Disconnect() 는 isRunning 을 먼저 내리므로 제외
+        if (lost && isRunning && s == stream)
+            UnityMainThreadDispatcher.Instance.Enqueue(() => OnConnectionLost?.Invoke());
     }
 
     void HandleTCP(PacketType type, string json)
@@ -124,6 +139,7 @@ public class SocketClient : MonoBehaviour
             case PacketType.LOGIN_RESULT:
             {
                 var p = JsonConvert.DeserializeObject<LoginResultPacket>(json);
+                if (p.success) sessionToken = p.sessionToken ?? "";
                 UnityMainThreadDispatcher.Instance.Enqueue(() =>
                 {
                     if (p.success) StartCoroutine(RegisterUDP());
@@ -346,6 +362,11 @@ public class SocketClient : MonoBehaviour
             try
             {
                 byte[] data = u.Receive(ref ep);
+                if (BinaryProtocol.IsBinary(data, data.Length))
+                {
+                    HandleUDPBinary(data);
+                    continue;
+                }
                 string json = Encoding.UTF8.GetString(data);
                 var type = ReadPacketType(json);
 
@@ -427,10 +448,51 @@ public class SocketClient : MonoBehaviour
         }
     }
 
+    // 바이너리 UDP 수신 (v4.3 N-1) — 서버는 이 클라이언트가 바이너리를 보낸 뒤부터 바이너리로 답한다
+    void HandleUDPBinary(byte[] data)
+    {
+        int len = data.Length;
+        switch (BinaryProtocol.TypeOf(data))
+        {
+            case PacketType.MOVE:
+            {
+                var p = BinaryProtocol.ReadMove(data, len);
+                if (p == null || p.nickname == myNickname) break;
+                if (p.tick > 0)
+                {
+                    int last = lastTicks.GetOrAdd(p.nickname, 0);
+                    if (p.tick <= last) break;
+                    lastTicks[p.nickname] = p.tick;
+                }
+                UnityMainThreadDispatcher.Instance.Enqueue(() => OnMove?.Invoke(p));
+                break;
+            }
+            case PacketType.MOVE_ACK:
+            {
+                var p = BinaryProtocol.ReadMoveAck(data, len);
+                if (p != null) UnityMainThreadDispatcher.Instance.Enqueue(() => OnMoveAck?.Invoke(p));
+                break;
+            }
+            case PacketType.AI_MOVE:
+            {
+                var p = BinaryProtocol.ReadAIMove(data, len);
+                if (p != null) UnityMainThreadDispatcher.Instance.Enqueue(() => OnAIMove?.Invoke(p));
+                break;
+            }
+            case PacketType.MISSILE_MOVE:
+            {
+                var p = BinaryProtocol.ReadMissileMove(data, len);
+                if (p != null) UnityMainThreadDispatcher.Instance.Enqueue(() => OnMissileMove?.Invoke(p));
+                break;
+            }
+        }
+    }
+
     // ── 송신 ──────────────────────────────────────────────────────────────
     public void Login(string id, string pw)
     {
         if (!IsConnected()) Connect();
+        _loginId = id; _loginPw = pw;
         myNickname = id;
         if (GameManager.Instance != null) GameManager.Instance.myNickname = id;
         SendTCP(new LoginPacket { type = PacketType.LOGIN, id = id, password = pw });
@@ -466,15 +528,14 @@ public class SocketClient : MonoBehaviour
                          bool isBoardedInCockpit = false,
                          int  animState          = 0)
     {
-        SendUDP(new MovePacket
+        var u = udp;
+        if (u == null) return;
+        lock (sendLock)
         {
-            type = PacketType.MOVE, tick = tick,
-            posX = posX, posY = posY, posZ = posZ,
-            rotX = rotX, rotY = rotY, rotZ = rotZ,
-            isMove = isMove, isFlying = isFlying,
-            isBoardedInCockpit = isBoardedInCockpit,
-            animState          = animState
-        });
+            int len = BinaryProtocol.WriteMove(_udpBuf, tick, posX, posY, posZ, rotX, rotY, rotZ,
+                                               isMove, isFlying, isBoardedInCockpit, animState);
+            try { u.Client.Send(_udpBuf, 0, len, SocketFlags.None); } catch { }
+        }
     }
 
     public void SendMissileSpawn(string id, string shooter, string target,
@@ -531,13 +592,13 @@ public class SocketClient : MonoBehaviour
 
     public void SendAIMove(string nickname, Vector3 pos, Vector3 euler, float speed)
     {
-        SendUDP(new AIMovePacket
+        var u = udp;
+        if (u == null) return;
+        lock (sendLock)
         {
-            type = PacketType.AI_MOVE, nickname = nickname,
-            posX = pos.x, posY = pos.y, posZ = pos.z,
-            rotX = euler.x, rotY = euler.y, rotZ = euler.z,
-            speed = speed, isMove = speed > 0.5f
-        });
+            int len = BinaryProtocol.WriteAIMove(_udpBuf, nickname, pos.x, pos.y, pos.z, euler.x, euler.y, euler.z, speed);
+            try { u.Client.Send(_udpBuf, 0, len, SocketFlags.None); } catch { }
+        }
     }
 
     public void SendCockpitStateTCP(bool boarded, Vector3 pos, Vector3 rot)
@@ -581,18 +642,18 @@ public class SocketClient : MonoBehaviour
 
     public void SendMissileMove(string id, Vector3 pos, Vector3 euler, float speed)
     {
-        SendUDP(new MissileMovePacket
+        var u = udp;
+        if (u == null) return;
+        lock (sendLock)
         {
-            type = PacketType.MISSILE_MOVE, missileId = id,
-            posX = pos.x, posY = pos.y, posZ = pos.z,
-            rotX = euler.x, rotY = euler.y, rotZ = euler.z,
-            speed = speed
-        });
+            int len = BinaryProtocol.WriteMissileMove(_udpBuf, id, pos.x, pos.y, pos.z, euler.x, euler.y, euler.z, speed);
+            try { u.Client.Send(_udpBuf, 0, len, SocketFlags.None); } catch { }
+        }
     }
 
     public void SendUdpConnect()
     {
-        SendUDP(new UdpConnectPacket { type = PacketType.UDP_CONNECT, nickname = myNickname });
+        SendUDP(new UdpConnectPacket { type = PacketType.UDP_CONNECT, nickname = myNickname, token = sessionToken });
     }
 
     // ── 직렬화 버퍼 재사용 ──────────────────────────────────────────────────
@@ -604,6 +665,7 @@ public class SocketClient : MonoBehaviour
     StringWriter _sw;
     char[] _charBuf = new char[512];
     byte[] _byteBuf = new byte[4 + 1024];
+    readonly byte[] _udpBuf = new byte[256];   // 바이너리 UDP 송신 버퍼 (sendLock 안에서만)
 
     // _byteBuf[4..4+len) 에 UTF-8 JSON, [0..4) 에 길이 프리픽스를 채운다. sendLock 안에서만 호출.
     int SerializeToBuffer(object packet)
@@ -681,6 +743,25 @@ public class SocketClient : MonoBehaviour
 
     public bool IsConnected() => socket != null && socket.Connected && stream != null;
 
+    /// <summary>
+    /// 끊긴 연결을 버리고 같은 자격으로 다시 접속·로그인한다 (메인 스레드). 결과는 OnLoginResult 로 온다.
+    /// 닉네임·방 정보는 유지 — 성공하면 호출 측이 같은 방에 다시 입장한다.
+    /// </summary>
+    public void Reconnect()
+    {
+        if (!CanReconnect) return;
+        isRunning = false;
+        try { stream?.Close(); } catch { }
+        try { socket?.Close(); } catch { }
+        try { udp?.Close(); } catch { }
+        stream = null; socket = null; udp = null;
+        lastTicks.Clear();
+        _outTick = 0;
+        sessionToken = "";
+        Connect();                       // 실패 시 예외 — 호출 측이 재시도
+        Login(_loginId, _loginPw);
+    }
+
     public void Disconnect()
     {
         if (socket == null && udp == null) return;
@@ -688,6 +769,8 @@ public class SocketClient : MonoBehaviour
         lastTicks.Clear();
         string nick = myNickname;
         myNickname = "";
+        _loginId = _loginPw = null;
+        sessionToken = "";
         if (GameManager.Instance != null) GameManager.Instance.myNickname = "";
         try { SendTCP(new Packet { type = PacketType.DISCONNECT }); } catch { }
         try { stream?.Close(); } catch { }

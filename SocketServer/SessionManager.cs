@@ -16,14 +16,16 @@ class SessionManager
         Console.WriteLine($"Session Add : {sessions.Count}");
     }
 
-    public static void Remove(ClientSession session)
+    public static bool Remove(ClientSession session)
     {
+        bool removed;
         lock (locker)
         {
-            sessions.Remove(session);
+            removed = sessions.Remove(session);
         }
 
-        Console.WriteLine($"Session Remove : {sessions.Count}");
+        if (removed) Console.WriteLine($"Session Remove : {sessions.Count}");
+        return removed;
     }
 
     public static List<ClientSession> GetSessions()
