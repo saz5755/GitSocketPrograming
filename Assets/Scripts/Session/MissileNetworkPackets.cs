@@ -7,6 +7,16 @@ public class MissileSpawnPacket : Packet
     public float  posX, posY, posZ;
     public float  rotX, rotY, rotZ;
     public int    guidanceType;   // 0=HeatSeeking, 1=RadarGuided
+    public string weapon;         // 제원 이름 (AIM-9X / AIM-120 / R-73 / R-77)
+}
+
+[System.Serializable]
+public class CountermeasurePacket : Packet
+{
+    public string ownerNickname;
+    public int    cmType;         // 0=Flare, 1=Chaff
+    public float  posX, posY, posZ;
+    public float  velX, velY, velZ;
 }
 
 [System.Serializable]

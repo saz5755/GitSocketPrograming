@@ -36,4 +36,6 @@ public enum PacketType
     PLAYER_KILLED        = 34,
     SCOREBOARD           = 35,
     AIRCRAFT_STATE       = 36,
+    COUNTERMEASURE       = 37,
+    ROOM_SETTING         = 38,
 }

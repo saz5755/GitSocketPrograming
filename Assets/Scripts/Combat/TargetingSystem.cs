@@ -62,9 +62,33 @@ public class TargetingSystem : MonoBehaviour
     {
         _enemies.Clear();
         foreach (var pc in PlayerController.All)
-            if (pc != null && !pc.isLocalPlayer && pc.IsFlying && !AIManager.IsEscortBot(pc.nickname))
-                _enemies.Add(pc);
+            if (IsHostile(pc)) _enemies.Add(pc);
     }
+
+    /// <summary>
+    /// 로컬 플레이어 기준 적대 기체 — 비행 중인 적 AI(BOT_N*)와 다른 플레이어(PvP).
+    /// 아군 AI(에스코트 BOT_E*, 교대 기체 BOT_SW_* 등)와 격추된 잔해는 제외.
+    /// </summary>
+    public static bool IsHostile(PlayerController pc)
+    {
+        if (pc == null || pc.isLocalPlayer || !pc.IsFlying || !pc.gameObject.activeInHierarchy) return false;
+        if (string.IsNullOrEmpty(pc.nickname)) return false;
+        if (AIManager.IsAIBot(pc.nickname) && !AIManager.IsEnemyBot(pc.nickname)) return false;
+        return true;
+    }
+
+    /// <summary>
+    /// 공중에 떠 있는 기체인가 — 로컬 기체는 PlayerController.IsFlying 이 갱신되지 않으므로 GameModeManager 기준.
+    /// </summary>
+    public static bool IsAirborne(PlayerController pc)
+    {
+        if (pc == null || !pc.gameObject.activeInHierarchy) return false;
+        if (pc.isLocalPlayer) return GameModeManager.Instance != null && GameModeManager.Instance.IsFlying;
+        return pc.IsFlying;
+    }
+
+    /// <summary>현재 탐지 중인 적기 목록 (0.4초 간격 갱신)</summary>
+    public IReadOnlyList<PlayerController> Enemies => _enemies;
 
     // FlightHUD에서 비락온 적기 마커 위치 계산에 사용
     public Vector2 WorldToCanvasPos(Vector3 worldPos, out bool onScreen)
@@ -73,6 +97,19 @@ public class TargetingSystem : MonoBehaviour
         Vector3 vp = _cam.WorldToViewportPoint(worldPos);
         onScreen = vp.z > 0f && vp.x > 0.01f && vp.x < 0.99f && vp.y > 0.01f && vp.y < 0.99f;
         return new Vector2((vp.x - 0.5f) * 1920f, (vp.y - 0.5f) * 1080f);
+    }
+
+    /// <summary>
+    /// 화면 밖 표적을 가리킬 화면 가장자리 방향 (canvas 기준, 정규화).
+    /// WorldToViewportPoint 는 카메라 뒤쪽 점을 상하좌우 반전시키므로 카메라 로컬 좌표로 계산한다.
+    /// </summary>
+    public Vector2 EdgeDirection(Vector3 worldPos)
+    {
+        if (_cam == null) return Vector2.up;
+        Vector3 local = _cam.transform.InverseTransformPoint(worldPos);
+        var dir = new Vector2(local.x, local.y);
+        if (dir.sqrMagnitude < 1e-4f) dir = local.z < 0f ? Vector2.down : Vector2.up;   // 정후방은 아래쪽 화살표
+        return dir.normalized;
     }
 
     void HandleLockInput()

@@ -20,4 +20,11 @@ public class EnterRoomResultPacket : Packet
     public string? errorMessage;
     public string? hostNickname;
     public string? mode;
+    public int     enemySkill = 1;   // 0=ROOKIE 1=VETERAN 2=ACE
+}
+
+// ROOM_SETTING (TCP): 방장만 변경 가능한 방 설정 — 서버가 보관하고 방 전체(발신자 포함)에 중계
+public class RoomSettingPacket : Packet
+{
+    public int enemySkill = 1;
 }

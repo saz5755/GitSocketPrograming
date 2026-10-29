@@ -1,10 +1,22 @@
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Rendering;
 
 // 원격 미사일: 서버 브로드캐스트 위치를 스냅샷 보간으로 표시
 public class RemoteMissileView : MonoBehaviour
 {
+    public static readonly List<RemoteMissileView> All = new(16);
+
+    /// <summary>표적 닉네임 — 내가 표적이면 RWR/MAWS 에 거리·방위로 표시된다</summary>
+    public string      TargetNick  { get; set; } = "";
+    public string      ShooterNick { get; set; } = "";
+    public MissileSpec Spec        { get; set; }
+
+    TrailRenderer _trail;
+    float         _age;
+
+    void Awake()     => All.Add(this);
+    void OnDestroy() => All.Remove(this);
+
     struct PosSnapshot
     {
         public Vector3    pos;
@@ -25,6 +37,8 @@ public class RemoteMissileView : MonoBehaviour
 
     void Update()
     {
+        _age += Time.deltaTime;
+        if (_trail != null && Spec != null) _trail.emitting = _age < Spec.boostTime;
         if (_snaps.Count == 0) return;
 
         if (_snaps.Count == 1)
@@ -50,49 +64,6 @@ public class RemoteMissileView : MonoBehaviour
         transform.rotation = Quaternion.Slerp(from.rot, to.rot, t);
     }
 
-    // ── 연기 트레일 추가 (MissileController와 동일한 셰이더) ─────────────
-    public void AttachSmokeTrail()
-    {
-        var tr = gameObject.AddComponent<TrailRenderer>();
-        tr.time              = 1.8f;
-        tr.startWidth        = 0.5f;
-        tr.endWidth          = 0.05f;
-        tr.minVertexDistance = 0.3f;
-        tr.textureMode       = LineTextureMode.Stretch;
-        tr.shadowCastingMode = ShadowCastingMode.Off;
-        tr.receiveShadows    = false;
-
-        var sh = Shader.Find("Custom/SmokeTrail");
-        Material mat;
-        if (sh != null)
-        {
-            mat = new Material(sh);
-            mat.SetColor("_Color",      new Color(0.75f, 0.72f, 0.70f, 0.55f));
-            mat.SetFloat("_NoiseScale", 3.5f);
-        }
-        else
-        {
-            var fallback = Shader.Find("Universal Render Pipeline/Particles/Unlit")
-                        ?? Shader.Find("Sprites/Default");
-            mat = new Material(fallback);
-            mat.color = new Color(0.7f, 0.7f, 0.7f, 0.45f);
-        }
-        tr.material = mat;
-
-        var gc = new Gradient();
-        gc.SetKeys(
-            new GradientColorKey[]
-            {
-                new GradientColorKey(new Color(1.0f, 0.90f, 0.70f), 0.00f),
-                new GradientColorKey(new Color(0.65f, 0.62f, 0.60f), 0.30f),
-                new GradientColorKey(new Color(0.30f, 0.28f, 0.27f), 1.00f),
-            },
-            new GradientAlphaKey[]
-            {
-                new GradientAlphaKey(0.80f, 0.00f),
-                new GradientAlphaKey(0.45f, 0.40f),
-                new GradientAlphaKey(0.00f, 1.00f),
-            });
-        tr.colorGradient = gc;
-    }
+    // ── 연기 트레일 (모터 연소 중에만 방출 — 발사자 쪽 MissileController 와 같은 연출) ──
+    public void AttachSmokeTrail() => _trail = MissileController.AddSmokeTrail(gameObject);
 }

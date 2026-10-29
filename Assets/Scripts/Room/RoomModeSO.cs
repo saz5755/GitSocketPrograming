@@ -24,6 +24,10 @@ public class RoomModeSO : ScriptableObject
     public bool spawnEscorts = true;
     [Tooltip("적 기체 투입 + 격추 시 재투입")]
     public bool spawnEnemies = true;
+    [Tooltip("동시 투입 적기 수 (1~4)")]
+    [Range(1, 4)] public int enemyCount = 2;
+    [Tooltip("적기 숙련도 — 선회율·반응 시간·대응책 운용·사격 정확도")]
+    public EnemyAI.Skill enemySkill = EnemyAI.Skill.Veteran;
 
     [Header("무장 / UI")]
     [Tooltip("기총·미사일·락온 사용 (플레어·채프는 항상 허용)")]

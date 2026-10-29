@@ -19,6 +19,10 @@ public class InGameMenuUI : MonoBehaviour
     bool menuOpen;
     Coroutine fadeCo;
     UIThemedButton returnBtn;
+    UIThemedButton skillBtn;     // 적기 숙련도 (COMBAT 방, 방장 전용)
+    Text skillHint;
+    bool skillPending;
+    float skillPendingUntil;
 
     // 조작 설정 패널 (v4.1 F-4)
     RectTransform controlsPanel;
@@ -42,8 +46,11 @@ public class InGameMenuUI : MonoBehaviour
     void Update()
     {
         if (captureIdx >= 0) { CaptureKey(); return; }
+        if (skillPending && Time.unscaledTime > skillPendingUntil) { skillPending = false; RefreshSkill(); }
         if (menuOpen && controlsPanel.gameObject.activeSelf) RefreshDevice();
         if (!Input.GetKeyDown(KeyCode.Escape)) return;
+        // 조종사 가이드가 같은 ESC 로 닫혔으면 일시정지 메뉴를 열지 않는다
+        if (PilotGuideUI.IsOpen || PilotGuideUI.ClosedThisFrame) return;
 
         var gm = GameModeManager.Instance;
         // 프리플라이트(콕핏 탑승, 비행 전) 중 ESC 는 하차 — 메뉴 차단.
@@ -103,6 +110,74 @@ public class InGameMenuUI : MonoBehaviour
         if (zoneText  != null) zoneText.text  = zone > 0 ? $"ZONE {zone:D2}" : "ZONE —";
         bool flying = GameModeManager.Instance != null && GameModeManager.Instance.IsFlying;
         if (returnBtn != null) returnBtn.Interactable = !flying;   // 비행 중에는 착함 후 나가기
+        RefreshSkill();
+    }
+
+    // ── 적기 숙련도 (방장 전용) ──────────────────────────────────────────
+    static readonly string[] SkillNames = { "ROOKIE", "VETERAN", "ACE" };
+    static readonly string[] SkillDesc  =
+    {
+        "느린 선회·늦은 반응, 플레어를 아껴 씀 — 입문용",
+        "표준 — 노치·채프 회피, 적당한 사격 정확도",
+        "빠른 선회·즉각 반응, 선제 플레어와 정확한 기총",
+    };
+
+    static bool IsRoomHost
+    {
+        get
+        {
+            var sc = NetworkManager.Instance?.socketClient;
+            return sc != null && !string.IsNullOrEmpty(sc.myNickname) && sc.roomHostNickname == sc.myNickname;
+        }
+    }
+
+    static int CurrentSkill => (int)(AIManager.Instance != null ? AIManager.Instance.CurrentEnemySkill
+                                     : (EnemyAI.Skill)Mathf.Max(0, NetworkManager.Instance?.socketClient?.roomEnemySkill ?? 1));
+
+    void RefreshSkill()
+    {
+        if (skillBtn == null) return;
+        bool combat = !RoomModeSO.IsAirshow;
+        skillBtn.gameObject.SetActive(combat);
+        skillHint.gameObject.SetActive(combat);
+        if (!combat) return;
+
+        int s = CurrentSkill;
+        bool host = IsRoomHost;
+        skillBtn.Interactable = host && !skillPending;
+        skillBtn.SetLabel(skillPending ? "ENEMY AI :  변경 중…" : $"ENEMY AI :  ◀  {SkillNames[s]}  ▶");
+        skillHint.text = host ? SkillDesc[s] + "   (클릭하여 변경)" : SkillDesc[s] + "   · 방장만 변경할 수 있습니다";
+    }
+
+    void OnSkillClick()
+    {
+        if (!IsRoomHost || skillPending) return;
+        int next = (CurrentSkill + 1) % SkillNames.Length;
+        skillPending = true;
+        skillPendingUntil = Time.unscaledTime + 3f;   // 서버 무응답(권한 거부 등) 시 해제
+        RefreshSkill();
+        // 서버가 방장 권한을 확인한 뒤 방 전체에 중계 — 적용은 OnRoomSetting 수신 시
+        NetworkManager.Instance?.socketClient?.SendRoomSetting(next);
+    }
+
+    void HandleRoomSetting(RoomSettingPacket p)
+    {
+        skillPending = false;
+        RefreshSkill();
+        int s = Mathf.Clamp(p.enemySkill, 0, SkillNames.Length - 1);
+        CombatFeedUI.Instance?.ShowNotice($"적기 숙련도 → {SkillNames[s]}", warn: s == 2);
+    }
+
+    void OnEnable()
+    {
+        var sc = NetworkManager.Instance?.socketClient;
+        if (sc != null) sc.OnRoomSetting += HandleRoomSetting;
+    }
+
+    void OnDisable()
+    {
+        var sc = NetworkManager.Instance?.socketClient;
+        if (sc != null) sc.OnRoomSetting -= HandleRoomSetting;
     }
 
     // ── UI 빌드 ──────────────────────────────────────────────────────────
@@ -130,7 +205,7 @@ public class InGameMenuUI : MonoBehaviour
         ov.raycastTarget = true;
 
         // 중앙 패널
-        const float W = 460f, H = 590f;
+        const float W = 460f, H = 760f;
         panel = NewRect("Panel", canvasGO.transform);
         panel.anchorMin = panel.anchorMax = new Vector2(0.5f, 0.5f);
         panel.sizeDelta = new Vector2(W, H);
@@ -178,8 +253,18 @@ public class InGameMenuUI : MonoBehaviour
                              new Vector2(0, y0 - bh - 14f), new Vector2(bw, bh));
         ctl.OnClick = () => ShowControls(true);
 
+        var guide = MakeButton(panel, "PILOT GUIDE  (조작 · 무장 · 회피)", UIThemedButton.Style.Secondary,
+                               new Vector2(0, y0 - 2f * (bh + 14f)), new Vector2(bw, bh));
+        guide.OnClick = () => { SetMenuVisible(false, true); PilotGuideUI.Open(0); };
+
+        skillBtn = MakeButton(panel, "ENEMY AI", UIThemedButton.Style.Outline,
+                              new Vector2(0, y0 - 3f * (bh + 14f)), new Vector2(bw, bh));
+        skillBtn.OnClick = OnSkillClick;
+        skillHint = MakeText(panel, "", t.textXS, FontStyle.Normal, t.textSecondary, TextAnchor.MiddleCenter,
+                             new Vector2(0, y0 - 3f * (bh + 14f) - bh * 0.5f - 12f), new Vector2(bw + 20f, 18f));
+
         var ret = MakeButton(panel, "RETURN TO BASE", UIThemedButton.Style.Secondary,
-                             new Vector2(0, y0 - 2f * (bh + 14f)), new Vector2(bw, bh));
+                             new Vector2(0, y0 - 4f * (bh + 14f) - 22f), new Vector2(bw, bh));
         ret.OnClick = OnReturnToBaseClick;
         returnBtn = ret;
 

@@ -12,7 +12,8 @@ public class BulletController : MonoBehaviour
     string       _myNick;
     LineRenderer _lr;
 
-    public static void Spawn(Vector3 pos, Vector3 dir, float speed, bool isLocal)
+    /// <param name="aiShooter">호스트가 AI 대신 쏘는 탄이면 그 봇 닉네임 — 명중 판정을 봇 이름으로 보고하고 AI 끼리는 맞지 않는다</param>
+    public static void Spawn(Vector3 pos, Vector3 dir, float speed, bool isLocal, string aiShooter = null)
     {
         var go = new GameObject("Bullet");
         go.transform.position = pos;
@@ -20,7 +21,10 @@ public class BulletController : MonoBehaviour
         bc._velocity = dir.normalized * speed;
         bc._isLocal  = isLocal;
         bc._lifespan = MaxRange / speed;
+        if (!string.IsNullOrEmpty(aiShooter)) { bc._myNick = aiShooter; bc._aiShooter = true; bc._isLocal = true; }
     }
+
+    bool _aiShooter;
 
     void Awake()
     {
@@ -61,7 +65,8 @@ public class BulletController : MonoBehaviour
 
         foreach (var pc in PlayerController.All)
         {
-            if (pc == null || pc.isLocalPlayer) continue;
+            if (pc == null) continue;
+            if (_aiShooter ? (pc.nickname == _myNick || AIManager.IsAIBot(pc.nickname) || !TargetingSystem.IsAirborne(pc)) : pc.isLocalPlayer) continue;
 
             Vector3 closest = ClosestPointOnSegment(prevPos, transform.position, pc.transform.position);
             if ((closest - pc.transform.position).sqrMagnitude < hitRadiusSq)

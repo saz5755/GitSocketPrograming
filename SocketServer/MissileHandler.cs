@@ -37,4 +37,15 @@ class MissileHandler
         if (p == null) return;
         session.player.room.Broadcast(p);
     }
+
+    // 기만체 사출 — 본인 기체(AI 는 호스트)만 보고 가능, 방 전체에 중계 (발신자는 클라이언트에서 무시)
+    public static void HandleCountermeasure(ClientSession session, string json)
+    {
+        var room = session.player?.room;
+        if (room == null) return;
+        var p = JsonConvert.DeserializeObject<CountermeasurePacket>(json);
+        if (p == null || !HitValidation.CanActAs(room, session.player!, p.ownerNickname)) return;
+        if (p.cmType < 0 || p.cmType > 1) return;
+        room.Broadcast(p);
+    }
 }

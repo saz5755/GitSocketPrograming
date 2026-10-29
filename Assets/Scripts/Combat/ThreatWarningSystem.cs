@@ -20,17 +20,32 @@ public class ThreatWarningSystem : MonoBehaviour
     float            _scanTimer;
     float            _audioTimer;
     bool             _missileBeepToggle;
-    float            _networkMissileTimer;   // 네트워크 미사일 경고 잔류 시간
 
-    // 네트워크에서 호출: 원격 플레이어가 우리를 락온/미사일 발사 중
-    public void ReportNetworkThreat(ThreatLevel level, Vector3 threatWorldPos)
+    // ── 네트워크 위협 (MISSILE_WARN) ─────────────────────────────────────
+    // 발신자별로 단계와 만료 시각을 보관 — 갱신이 끊기면(락 해제·미사일 기만) 잠시 뒤 RWR 에서 사라진다.
+    // 방위는 매 스캔 발신 기체의 현재 위치로 다시 계산한다.
+    struct NetThreat { public ThreatLevel level; public float expires; public Vector3 lastPos; }
+    readonly Dictionary<string, NetThreat> _netThreats = new();
+    readonly List<string> _expired = new();
+    const float NetLockHold    = 0.9f;   // 락 경보 갱신 주기(0.3~0.4s) × 2 이상
+    const float NetMissileHold = 0.8f;
+    const string MissileKeySuffix = "#M";
+
+    /// <summary>원격(또는 호스트의 AI)이 우리를 탐지·락온·미사일 유도 중</summary>
+    public void ReportNetworkThreat(string shooter, ThreatLevel level, Vector3 shooterPos)
     {
-        if (level > Threat) Threat = level;
-        // MissileFired 수신 시 0.65초 동안 MissileIncoming 유지
-        if (level >= ThreatLevel.MissileFired) _networkMissileTimer = 0.65f;
-        if (_local != null)
-            ThreatBearing = CalcBearing(threatWorldPos - _local.transform.position);
+        if (string.IsNullOrEmpty(shooter) || level == ThreatLevel.None) return;
+        // 레이더 락(발사 기체)과 미사일 경보는 따로 만료된다 — 미사일이 기만돼도 락 경보는 남는다
+        bool  msl  = level >= ThreatLevel.MissileFired;
+        string key = msl ? shooter + MissileKeySuffix : shooter;
+        if (_netThreats.TryGetValue(key, out var cur) && cur.level > level && cur.expires > Time.time)
+            level = cur.level;
+        _netThreats[key] = new NetThreat { level = level, expires = Time.time + (msl ? NetMissileHold : NetLockHold), lastPos = shooterPos };
     }
+
+    /// <summary>구형 호출 호환</summary>
+    public void ReportNetworkThreat(ThreatLevel level, Vector3 threatWorldPos)
+        => ReportNetworkThreat("?", level, threatWorldPos);
 
     void Awake()
     {
@@ -74,50 +89,67 @@ public class ThreatWarningSystem : MonoBehaviour
         float       bearing = 0f;
         bool        missile = false;
         float       minDist = float.MaxValue;
+        Vector3     me      = _local.transform.position;
+        string      myNick  = _local.nickname;
 
-        // 인입 미사일 탐지 (로컬 씬의 MissileController – 발사자 클라이언트에서 실행 중)
+        // 1) 이 클라이언트가 시뮬레이션 중인 미사일 (호스트: AI 가 나를 향해 쏜 것)
         foreach (var mc in MissileController.All)
         {
-            if (mc.Target != _local.transform) continue;
-            missile = true;
-            float dist = Vector3.Distance(mc.transform.position, _local.transform.position);
-            if (dist < minDist)
-            {
-                minDist = dist;
-                bearing = CalcBearing(mc.transform.position - _local.transform.position);
-            }
-            if (ThreatLevel.MissileFired > worst) worst = ThreatLevel.MissileFired;
+            if (mc == null || mc.Spec == null || !mc.IsTrackingTarget || mc.IntendedTarget != _local.transform) continue;
+            ConsiderMissile(mc.transform.position, mc.IsARHActive || mc.Spec.IsIR, ref worst, ref bearing, ref missile, ref minDist, me);
         }
 
-        // 네트워크 미사일 타이머 (원격 발사 – 씬에 오브젝트 없음)
-        if (_networkMissileTimer > 0f)
+        // 2) 원격 미사일 뷰 — 나를 표적으로 발사되었고 아직 나를 향해 날아오는 것 (기만된 미사일은 빗나가며 방향이 틀어진다)
+        foreach (var rv in RemoteMissileView.All)
         {
-            _networkMissileTimer -= 0.10f;  // ScanThreats 0.1초 간격과 동기
-            missile = true;
-            if (ThreatLevel.MissileFired > worst) worst = ThreatLevel.MissileFired;
+            if (rv == null || rv.TargetNick != myNick) continue;
+            Vector3 to = me - rv.transform.position;
+            if (Vector3.Angle(rv.transform.forward, to) > 70f) continue;
+            bool active = _netThreats.TryGetValue(rv.ShooterNick + MissileKeySuffix, out var nt) && nt.expires > Time.time
+                        && nt.level >= ThreatLevel.MissileFired;
+            if (!active) continue;
+            ConsiderMissile(rv.transform.position, nt.level >= ThreatLevel.MissileActive, ref worst, ref bearing, ref missile, ref minDist, me);
         }
 
-        // 로컬 타겟팅 시스템 락온 경고 (미사일이 없을 때)
-        if (!missile)
+        // 3) 네트워크 경보 (탐지·락·미사일 — 미사일 오브젝트를 못 본 경우 포함)
+        _expired.Clear();
+        ThreatLevel netBest = ThreatLevel.None;
+        Vector3     netSrc  = Vector3.zero;
+        foreach (var kv in _netThreats)
         {
-            foreach (var ts in TargetingSystem.All)
-            {
-                if (ts.LocalPlayer == _local || ts.Target != _local) continue;
-                ThreatLevel lv = ts.State == TargetingSystem.LockState.Locked    ? ThreatLevel.Locked
-                               : ts.State == TargetingSystem.LockState.Searching ? ThreatLevel.Tracked
-                               : ThreatLevel.None;
-                if (lv > worst && ts.LocalPlayer != null)
-                {
-                    worst   = lv;
-                    bearing = CalcBearing(ts.LocalPlayer.transform.position - _local.transform.position);
-                }
-            }
+            if (kv.Value.expires <= Time.time) { _expired.Add(kv.Key); continue; }
+            var lv = kv.Value.level;
+            if (lv >= ThreatLevel.MissileFired) missile = true;
+            if (lv > worst) worst = lv;
+            if (lv > netBest) { netBest = lv; netSrc = ShooterPosition(kv.Key, kv.Value.lastPos); }
         }
+        // 미사일 위치를 모르면 가장 위험한 발신 기체 방향을 가리킨다
+        if (minDist == float.MaxValue && netBest > ThreatLevel.None && netSrc != Vector3.zero)
+            bearing = CalcBearing(netSrc - me);
+        foreach (var k in _expired) _netThreats.Remove(k);
 
         Threat              = worst;
         ThreatBearing       = bearing;
         MissileIncoming     = missile;
-        NearestMissileDist  = missile ? minDist : float.MaxValue;
+        NearestMissileDist  = minDist;
+    }
+
+    void ConsiderMissile(Vector3 pos, bool active, ref ThreatLevel worst, ref float bearing,
+                         ref bool missile, ref float minDist, Vector3 me)
+    {
+        missile = true;
+        float d = Vector3.Distance(pos, me);
+        if (d < minDist) { minDist = d; bearing = CalcBearing(pos - me); }
+        var lv = active ? ThreatLevel.MissileActive : ThreatLevel.MissileFired;
+        if (lv > worst) worst = lv;
+    }
+
+    static Vector3 ShooterPosition(string key, Vector3 fallback)
+    {
+        string nick = key.EndsWith(MissileKeySuffix) ? key[..^MissileKeySuffix.Length] : key;
+        foreach (var pc in PlayerController.All)
+            if (pc != null && pc.nickname == nick) return pc.transform.position;
+        return fallback;
     }
 
     void PlayWarningAudio()

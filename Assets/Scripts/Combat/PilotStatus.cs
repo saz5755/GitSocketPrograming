@@ -24,13 +24,13 @@ public class PilotStatus : MonoBehaviour
     const float LaunchGrace       = 4f;    // 발진 직후 충돌 판정 유예 (카타펄트·갑판 이탈)
     const float HardLandingSink   = 12f;   // m/s — 이 이상 침하율로 접지하면 기체 파손
     const float CollisionSpeed    = 25f;   // m/s — 이 이상으로 구조물 정면 충돌 시 파손
-    const float RespawnDelay      = 4f;    // 추락 후 재출격 가능까지
+    const float RespawnDelay      = 1f;    // 전투 불능 후 재출격 가능까지 (잔해 추락을 기다리지 않는다)
 
     public bool   IsDead       { get; private set; }
     public string DeathCause   { get; private set; } = "";
     public string Killer       { get; private set; } = "";
     public string KillerWeapon { get; private set; } = "";
-    /// <summary>잔해 충돌 후 재출격 가능 시각 (그 전엔 &lt;0)</summary>
+    /// <summary>재출격 가능 시각 (생존 중엔 &lt;0)</summary>
     public float  RespawnReadyAt { get; private set; } = -1f;
     public float  SortieTime   { get; private set; }
     public int    SortieKills  { get; private set; }
@@ -213,7 +213,7 @@ public class PilotStatus : MonoBehaviour
         Vector3 vel = _prevValid ? _prevVel : pc.transform.forward * pc.CurrentSpeed;
         _deadPc         = pc;
         _deadAircraftId = pc.GetComponent<NetworkAircraft>()?.networkId ?? -1;
-        RespawnReadyAt  = -1f;
+        RespawnReadyAt  = Time.time + RespawnDelay;
 
         NetworkManager.Instance?.socketClient?.SendPlayerKilled(MyNick, Killer, KillerWeapon, cause, pos, _deadAircraftId);
 
@@ -238,7 +238,6 @@ public class PilotStatus : MonoBehaviour
     void OnWreckImpact(Vector3 point)
     {
         NetworkManager.Instance?.socketClient?.SendAircraftState(_deadAircraftId, 0, point);
-        RespawnReadyAt = Time.time + RespawnDelay;
     }
 
     // ── 재출격: 기체는 갑판 슬롯에서 정비·재무장, 조종사는 갑판으로 ──────────
@@ -248,7 +247,12 @@ public class PilotStatus : MonoBehaviour
         if (pc != null)
         {
             var wreck = pc.GetComponent<WreckController>();
-            if (wreck != null) wreck.Restore();
+            if (wreck != null)
+            {
+                // 아직 떨어지는 중에 재출격하면 그 자리에서 폭발 처리 (원격에도 잔해 충돌을 알린 뒤 복구)
+                if (!wreck.Impacted) wreck.ImpactNow();
+                wreck.Restore();
+            }
 
             if (AIManager.Instance != null && AIManager.Instance.TryGetDeckPose(_deadAircraftId, out var dp, out var dr))
                 pc.transform.SetPositionAndRotation(dp, dr);

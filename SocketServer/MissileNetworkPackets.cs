@@ -6,6 +6,16 @@ public class MissileSpawnPacket : Packet
     public float  posX, posY, posZ;
     public float  rotX, rotY, rotZ;
     public int    guidanceType;
+    public string weapon          = "";
+}
+
+// COUNTERMEASURE (TCP): 플레어/채프 1발 — 방 전체에 중계해 각 클라이언트가 시뮬레이션하는 미사일이 판정한다
+public class CountermeasurePacket : Packet
+{
+    public string ownerNickname = "";
+    public int    cmType;
+    public float  posX, posY, posZ;
+    public float  velX, velY, velZ;
 }
 
 public class MissileDestroyPacket : Packet

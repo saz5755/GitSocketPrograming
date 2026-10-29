@@ -104,6 +104,27 @@ public class GameplayConfigSO : ScriptableObject
     [Tooltip("기총 1발당 데미지")]
     [Range(0.1f, 20f)] public float bulletDamage = 2f;
 
+    // ── 미사일 제원 (추진·항력·시커·대응책 저항) ─────────────────────────────
+    [Header("미사일 제원 — 플레이어")]
+    public MissileSpec aim9x  = MissileSpec.Aim9X();
+    public MissileSpec aim120 = MissileSpec.Aim120();
+    [Tooltip("출격 시 탑재 수량")]
+    [Range(0, 8)] public int aim9xLoadout  = 2;
+    [Range(0, 8)] public int aim120Loadout = 4;
+
+    [Header("미사일 제원 — 적 AI")]
+    public MissileSpec enemyIR    = MissileSpec.EnemyIR();
+    public MissileSpec enemyRadar = MissileSpec.EnemyRadar();
+
+    // ── 대응책 효과 ────────────────────────────────────────────────────────
+    [Header("대응책 효과")]
+    [Tooltip("플레어 1발이 IR 시커를 유인할 기본 확률 (ccmResistance·열원·각도로 보정)")]
+    [Range(0f, 1f)] public float flareSeduceChance = 0.42f;
+    [Tooltip("채프 1발이 레이더 시커를 교란할 기본 확률 (노치·도플러로 보정)")]
+    [Range(0f, 1f)] public float chaffSeduceChance = 0.35f;
+    [Tooltip("노치 판정 — 미사일 시선 방향 표적 속도 성분이 이 값 이하면 도플러 노치 (m/s)")]
+    [Range(1f, 40f)] public float notchSpeed = 18f;
+
     // 에디터에서 값 변경 시 캐시 무효화 (실시간 반영)
     void OnValidate() { _cached = this; }
 }

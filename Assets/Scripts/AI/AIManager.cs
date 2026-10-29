@@ -31,6 +31,8 @@ public class AIManager : MonoBehaviour
     [SerializeField] [Range(1, 4)] int _enemyCount = 1;
     [Tooltip("격추된 적기가 같은 콜사인으로 다시 투입되기까지의 시간 (초)")]
     [SerializeField] float _enemyRespawnDelay = 40f;
+    [Tooltip("적기 숙련도 (방 모드 에셋이 있으면 그 값 우선)")]
+    [SerializeField] EnemyAI.Skill _enemySkill = EnemyAI.Skill.Veteran;
     [Tooltip("AI 기체 내구도 (플레이어 기체 maxHP 와 같은 스케일)")]
     [SerializeField] float _botMaxHP = 100f;
 
@@ -95,6 +97,7 @@ public class AIManager : MonoBehaviour
         sc.OnAircraftPoolSync += HandleAircraftPoolSync;
         sc.OnArrestEvent      += HandleArrestEvent;
         sc.OnPlayerKilled     += HandleRemoteBotKilled;
+        sc.OnRoomSetting      += HandleRoomSetting;
     }
 
     void OnDestroy()
@@ -111,6 +114,7 @@ public class AIManager : MonoBehaviour
         sc.OnAircraftPoolSync -= HandleAircraftPoolSync;
         sc.OnArrestEvent      -= HandleArrestEvent;
         sc.OnPlayerKilled     -= HandleRemoteBotKilled;
+        sc.OnRoomSetting      -= HandleRoomSetting;
     }
 
     // ── 호스트 초기화 (PlayerManager.CreateLocalPlayer에서 호출) ───────────
@@ -274,26 +278,57 @@ public class AIManager : MonoBehaviour
         return list;
     }
 
+    /// <summary>적기 숙련도 — 방장이 ESC 메뉴에서 정한 방 설정 > 방 모드 에셋 > Inspector</summary>
+    public EnemyAI.Skill CurrentEnemySkill
+    {
+        get
+        {
+            int s = NetworkManager.Instance?.socketClient?.roomEnemySkill ?? -1;
+            if (s >= 0) return (EnemyAI.Skill)Mathf.Clamp(s, 0, 2);
+            return RoomModeSO.Current != null ? RoomModeSO.Current.enemySkill : _enemySkill;
+        }
+    }
+
+    // 방장이 숙련도를 바꾸면 이미 비행 중인 적기에도 즉시 적용 (AI 는 호스트만 시뮬레이션)
+    void HandleRoomSetting(RoomSettingPacket p)
+    {
+        if (!_isHost) return;
+        foreach (var bot in _bots)
+            bot?.GetComponent<EnemyAI>()?.SetSkill(CurrentEnemySkill);
+        DevLog.Log($"[AIManager] Enemy skill → {CurrentEnemySkill}");
+    }
+
+    int EnemyCount => RoomModeSO.Current != null ? Mathf.Clamp(RoomModeSO.Current.enemyCount, 1, 4) : _enemyCount;
+
     void SpawnEnemies(PlayerController leader)
     {
-        for (int i = 0; i < _enemyCount; i++)
+        for (int i = 0; i < EnemyCount; i++)
             SpawnEnemy($"BOT_N{i + 1}", leader);
     }
 
     void SpawnEnemy(string nick, PlayerController leader)
     {
-        Vector3 spawnPos = leader.transform.position + new Vector3(
-            Random.Range(-300f, 300f), Random.Range(30f, 80f), Random.Range(700f, 1400f));
+        // BVR 교전부터 시작하도록 리더 전방 5~7 km, 고도 600~1100 m 에 편대로 투입 (기수는 리더 쪽)
+        Vector3 fwd = leader.transform.forward; fwd.y = 0f;
+        if (fwd.sqrMagnitude < 0.01f) fwd = Vector3.forward;
+        fwd.Normalize();
+        Vector3 right = Vector3.Cross(Vector3.up, fwd);
+        int idx = int.TryParse(nick.Substring(5), out var n) ? n - 1 : 0;
+        Vector3 spawnPos = leader.transform.position + fwd * Random.Range(5000f, 7000f)
+                         + right * ((idx - (EnemyCount - 1) * 0.5f) * 700f + Random.Range(-150f, 150f));
+        spawnPos.y = (FindAnyObjectByType<OceanSurface>()?.seaLevel ?? 0f) + Random.Range(600f, 1100f);
+        var spawnRot = Quaternion.LookRotation(-fwd, Vector3.up);
 
-        var go    = BuildAIObject(nick, spawnPos, leader.transform.rotation);
+        var go    = BuildAIObject(nick, spawnPos, spawnRot);
         var bot   = go.GetComponent<AIBotController>();
         var enemy = go.AddComponent<EnemyAI>();
+        enemy.SetSkill(CurrentEnemySkill);
         enemy.Initialize(leader.transform, leader.nickname);
 
         _bots.Add(bot);
         _botHP[nick] = _botMaxHP;
         NetworkManager.Instance?.socketClient?.SendAISpawn(
-            nick, spawnPos, leader.transform.eulerAngles, aiType: 1);
+            nick, spawnPos, spawnRot.eulerAngles, aiType: 1);
 
         DevLog.Log($"[AIManager] Enemy spawned: {nick}");
     }
@@ -301,6 +336,10 @@ public class AIManager : MonoBehaviour
     // ── 피격·격추 (호스트 권한) ──────────────────────────────────────────────
     // 에스코트(BOT_E*)는 탑승 가능한 공유 기체라 아직 피해를 받지 않는다 (아군 오사 처리는 별도 과제).
     readonly Dictionary<string, float> _botHP = new();
+
+    /// <summary>AI 기체 잔여 내구도 비율 (0..1, 호스트 전용 — 모르면 1)</summary>
+    public float GetBotHP01(string nick)
+        => _botHP.TryGetValue(nick, out var hp) ? Mathf.Clamp01(hp / Mathf.Max(1f, _botMaxHP)) : 1f;
 
     public void DamageBot(string nick, float amount, string attacker, string weapon)
     {
@@ -411,6 +450,9 @@ public class AIManager : MonoBehaviour
             if (pc.isLocalPlayer) { localPlayer = pc; break; }
         }
 
+        // 적기는 지상에 있어도(기체 미탑승) 넘겨받는다 — 안 그러면 원격 뷰가 공중에 멈추고 숙련도 변경도 적용될 대상이 없다
+        TakeOverRemoteEnemies(localPlayer);
+
         if (localPlayer == null)
         {
             Debug.LogWarning("[AIManager] TakeOver: local PlayerController not found");
@@ -466,6 +508,49 @@ public class AIManager : MonoBehaviour
         }
 
         DevLog.Log($"[AIManager] Host takeover complete: {idx} escort bots now under local control");
+    }
+
+    // 이전 방장이 시뮬레이션하던 적기(BOT_N*) 원격 뷰를 로컬 EnemyAI 제어로 전환.
+    // 이전 방장 쪽에서 재투입 대기 중이던 적기는 여기서 재투입 코루틴을 다시 건다.
+    void TakeOverRemoteEnemies(PlayerController localPlayer)
+    {
+        // 게스트였던 클라이언트는 방 모드 설정을 적용한 적이 없다 — 여기서 적용
+        var mode = RoomModeSO.Current;
+        if (mode != null) { _spawnEscorts = mode.spawnEscorts; _spawnEnemies = mode.spawnEnemies; }
+        if (!_spawnEnemies) return;
+        var keys = new List<string>();
+        foreach (var kv in _remoteBots) if (IsEnemyBot(kv.Key)) keys.Add(kv.Key);
+
+        foreach (string nick in keys)
+        {
+            var pc = _remoteBots[nick];
+            _remoteBots.Remove(nick);
+            if (pc == null || !pc.IsFlying) continue;   // 격추된 잔해
+
+            Vector3 vel = pc.transform.forward * 80f;
+            pc.ClearSnapshots();
+            var bot = pc.gameObject.AddComponent<AIBotController>();
+            bot.SetConfig(_botConfig);
+            bot.SetNickname(nick);
+            bot.SetInitialSpeed(vel.magnitude);   // 0 에서 다시 가속하면 공중에서 멈칫한다
+
+            var enemy = pc.gameObject.AddComponent<EnemyAI>();
+            enemy.SetSkill(CurrentEnemySkill);
+            enemy.Initialize(localPlayer != null ? localPlayer.transform : null, localPlayer != null ? localPlayer.nickname : "");
+            enemy.EnableCombat();
+
+            _bots.Add(bot);
+            _botHP[nick] = _botMaxHP;   // 이전 방장의 잔여 내구도는 전달되지 않는다
+        }
+
+        // 투입 수만큼 없으면 (격추 후 재투입 대기 중이었다면) 재투입 예약
+        for (int i = 0; i < EnemyCount; i++)
+        {
+            string nick = $"BOT_N{i + 1}";
+            if (GetBot(nick) == null) StartCoroutine(RespawnEnemyLater(nick));
+        }
+        _enemiesSpawned = true;   // 이륙 시 SpawnEnemies 가 같은 콜사인을 중복 생성하지 않게
+        DevLog.Log($"[AIManager] Host takeover: {keys.Count} enemy view(s) → local EnemyAI ({CurrentEnemySkill})");
     }
 
     // ── 원격 클라이언트: AI 패킷 핸들러 ──────────────────────────────────

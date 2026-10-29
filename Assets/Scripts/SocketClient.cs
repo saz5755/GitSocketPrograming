@@ -45,7 +45,8 @@ public class SocketClient : MonoBehaviour
 
     // 현재 방의 호스트 닉네임 — ENTER_ROOM_RESULT 수신 즉시 세팅 (씬 전환 전에도 참조 가능)
     public string roomHostNickname = "";
-    public string roomMode = "";          // 현재 방 모드 (RoomModeSO.Airshow / Combat) — ENTER_ROOM_RESULT 로 수신
+    public string roomMode = "";
+    public int    roomEnemySkill = -1;   // 적 AI 숙련도 (0~2, 모르면 -1) — ENTER_ROOM_RESULT / ROOM_SETTING 으로 수신          // 현재 방 모드 (RoomModeSO.Airshow / Combat) — ENTER_ROOM_RESULT 로 수신
     public ScoreboardPacket LastScoreboard;
 
     // ── 이벤트 (Unity 메인스레드에서 발행) ──────────────────────────────
@@ -62,6 +63,8 @@ public class SocketClient : MonoBehaviour
     public event Action<MissileMovePacket>    OnMissileMove;
     public event Action<GunFirePacket>          OnGunFire;
     public event Action<GunHitPacket>           OnGunHit;
+    public event Action<CountermeasurePacket>   OnCountermeasure;
+    public event Action<RoomSettingPacket>      OnRoomSetting;
     public event Action<CreateRoomResultPacket> OnCreateRoomResult;
     public event Action<EnterRoomResultPacket>  OnEnterRoomResult;
     public event Action<QuestUpdatePacket>      OnQuestUpdate;
@@ -213,6 +216,23 @@ public class SocketClient : MonoBehaviour
                 break;
             }
 
+            case PacketType.ROOM_SETTING:
+            {
+                var p = JsonConvert.DeserializeObject<RoomSettingPacket>(json);
+                if (p == null) break;
+                roomEnemySkill = p.enemySkill;
+                UnityMainThreadDispatcher.Instance.Enqueue(() => OnRoomSetting?.Invoke(p));
+                break;
+            }
+
+            case PacketType.COUNTERMEASURE:
+            {
+                var p = JsonConvert.DeserializeObject<CountermeasurePacket>(json);
+                if (p == null || p.ownerNickname == myNickname) break;
+                UnityMainThreadDispatcher.Instance.Enqueue(() => OnCountermeasure?.Invoke(p));
+                break;
+            }
+
             case PacketType.GUN_HIT:
             {
                 var p = JsonConvert.DeserializeObject<GunHitPacket>(json);
@@ -231,7 +251,7 @@ public class SocketClient : MonoBehaviour
             {
                 var p = JsonConvert.DeserializeObject<EnterRoomResultPacket>(json);
                 // 씬 전환 전(수신 스레드)에 즉시 저장 — AIManager.TryInitializeAsHost가 씬 로드 후 참조
-                if (p.success) { roomHostNickname = p.hostNickname ?? ""; roomMode = p.mode ?? ""; }
+                if (p.success) { roomHostNickname = p.hostNickname ?? ""; roomMode = p.mode ?? ""; roomEnemySkill = p.enemySkill; }
                 UnityMainThreadDispatcher.Instance.Enqueue(() => OnEnterRoomResult?.Invoke(p));
                 break;
             }
@@ -264,6 +284,7 @@ public class SocketClient : MonoBehaviour
             case PacketType.HOST_CHANGE:
             {
                 var p = JsonConvert.DeserializeObject<HostChangePacket>(json);
+                if (p != null && !string.IsNullOrEmpty(p.newHostNickname)) roomHostNickname = p.newHostNickname;   // 방장 권한 UI(ESC 메뉴)가 참조
                 UnityMainThreadDispatcher.Instance.Enqueue(() => OnHostChange?.Invoke(p));
                 break;
             }
@@ -512,6 +533,7 @@ public class SocketClient : MonoBehaviour
         lastTicks.Clear();
         roomHostNickname = "";
         roomMode         = "";
+        roomEnemySkill   = -1;
         _outTick = 0;
         SendTCP(new LeaveRoomPacket { type = PacketType.LEAVE_ROOM });
     }
@@ -539,13 +561,23 @@ public class SocketClient : MonoBehaviour
     }
 
     public void SendMissileSpawn(string id, string shooter, string target,
-                                 Vector3 pos, Vector3 rot, int guidanceType)
+                                 Vector3 pos, Vector3 rot, int guidanceType, string weapon = "")
         => SendTCP(new MissileSpawnPacket {
             type = PacketType.MISSILE_SPAWN, missileId = id,
             shooterNickname = shooter, targetNickname = target,
             posX = pos.x, posY = pos.y, posZ = pos.z,
             rotX = rot.x, rotY = rot.y, rotZ = rot.z,
-            guidanceType = guidanceType });
+            guidanceType = guidanceType, weapon = weapon });
+
+    /// <summary>방장 전용 — 서버가 권한 검증 후 방 전체에 중계</summary>
+    public void SendRoomSetting(int enemySkill)
+        => SendTCP(new RoomSettingPacket { type = PacketType.ROOM_SETTING, enemySkill = enemySkill });
+
+    public void SendCountermeasure(string owner, int cmType, Vector3 pos, Vector3 vel)
+        => SendTCP(new CountermeasurePacket {
+            type = PacketType.COUNTERMEASURE, ownerNickname = owner, cmType = cmType,
+            posX = pos.x, posY = pos.y, posZ = pos.z,
+            velX = vel.x, velY = vel.y, velZ = vel.z });
 
     public void SendMissileDestroy(string id, string shooterNick, string hitNick, Vector3 pos, float damage = 0f)
         => SendTCP(new MissileDestroyPacket {

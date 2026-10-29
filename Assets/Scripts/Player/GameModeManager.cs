@@ -85,6 +85,9 @@ public class GameModeManager : MonoBehaviour
         // 킬 피드·사망 화면·스코어보드
         if (CombatFeedUI.Instance == null)
             new GameObject("CombatFeed_Canvas").AddComponent<CombatFeedUI>();
+        // 훈련 체크리스트 + 위협 코칭 (RWR 경보 시 할 일 안내)
+        if (FlightCoach.Instance == null)
+            new GameObject("FlightCoach").AddComponent<FlightCoach>();
         // 조종사 G 내성(그레이아웃·G-LOC) + 음성 경고
         if (GLocSystem.Instance == null)
             new GameObject("GLoc_Overlay").AddComponent<GLocSystem>();

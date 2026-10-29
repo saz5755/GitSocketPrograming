@@ -125,6 +125,7 @@ class EnterRoomHandler
             success      = true,
             roomId       = room.roomId,
             hostNickname = room.hostNickname,
+            enemySkill   = room.enemySkill,
             mode         = room.mode
         });
 

@@ -7,6 +7,8 @@ public class Room
     /// <summary>방 모드 — 생성 시 정해지고 바뀌지 않는다 (RoomModes)</summary>
     public string mode = RoomModes.Combat;
     public bool   IsCombat => mode == RoomModes.Combat;
+    /// <summary>적 AI 숙련도 (0=ROOKIE 1=VETERAN 2=ACE) — 방장이 게임 중 ESC 메뉴에서 변경</summary>
+    public int    enemySkill = 1;
 
     List<Player> players = new();
 

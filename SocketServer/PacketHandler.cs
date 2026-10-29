@@ -34,6 +34,10 @@ class PacketHandler
             = MissileHandler.HandleDestroy;
         handlers[PacketType.MISSILE_WARN]
             = MissileHandler.HandleWarn;
+        handlers[PacketType.COUNTERMEASURE]
+            = MissileHandler.HandleCountermeasure;
+        handlers[PacketType.ROOM_SETTING]
+            = RoomSettingHandler.Handle;
 
         // TCP Move는 제거 예정
         /*handlers[PacketType.MOVE]

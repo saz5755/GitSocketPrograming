@@ -31,6 +31,14 @@ public class CountermeasureSystem : MonoBehaviour
     {
         Rearm();
         FindLocal();
+        var sc = NetworkManager.Instance?.socketClient;
+        if (sc != null) sc.OnCountermeasure += HandleRemoteCountermeasure;
+    }
+
+    void OnDestroy()
+    {
+        var sc = NetworkManager.Instance?.socketClient;
+        if (sc != null) sc.OnCountermeasure -= HandleRemoteCountermeasure;
     }
 
     /// <summary>새 출격 — 플레어·채프 만재</summary>
@@ -91,42 +99,66 @@ public class CountermeasureSystem : MonoBehaviour
 
     void Deploy(CountermeasureType type)
     {
-        var cfg       = GameplayConfigSO.Instance;
-        bool  isFlare = type == CountermeasureType.Flare;
-        float lifetime = isFlare ? cfg.flareLifetime : cfg.chaffLifetime;
+        var cfg = GameplayConfigSO.Instance;
+        if (type == CountermeasureType.Flare) { FlareRemaining--; _flareCd = cfg.flareCooldown; }
+        else                                  { ChaffRemaining--; _chaffCd = cfg.chaffCooldown; }
 
-        if (isFlare) { FlareRemaining--; _flareCd = cfg.flareCooldown; }
-        else         { ChaffRemaining--; _chaffCd = cfg.chaffCooldown; }
+        DeployFrom(_local.nickname, _local.transform, _local.CurrentSpeed, type);
+        OnDeploy?.Invoke(type);
+    }
+
+    /// <summary>
+    /// 기체 후방으로 기만체 1발 사출 + 방 전체 중계. 재고·쿨다운은 호출자가 관리한다 (플레이어: Deploy, AI: EnemyAI).
+    /// </summary>
+    public static void DeployFrom(string owner, Transform aircraft, float speed, CountermeasureType type)
+    {
+        if (aircraft == null) return;
+        var  cfg     = GameplayConfigSO.Instance;
+        bool isFlare = type == CountermeasureType.Flare;
 
         // 항공기 후방으로 디코이 발사 — 플레어는 Config에서 분산 조정 (커튼 전개)
-        float posScatter    = isFlare ? cfg.flareScatterPos  : 0.6f;
-        float velScatter    = isFlare ? cfg.flareScatterVel  : 4f;
+        float posScatter     = isFlare ? cfg.flareScatterPos : 0.6f;
+        float velScatter     = isFlare ? cfg.flareScatterVel : 4f;
         float lateralKickMag = cfg.flareLateralKick;
 
-        Vector3 spawnPos = _local.transform.position
-                         - _local.transform.forward * 2.5f
+        Vector3 spawnPos = aircraft.position
+                         - aircraft.forward * 2.5f
                          + Random.insideUnitSphere * posScatter;
         Vector3 lateralKick = isFlare
-            ? (_local.transform.right * Random.Range(-lateralKickMag, lateralKickMag)
-              + _local.transform.up * Random.Range(-lateralKickMag * 0.67f, lateralKickMag * 0.67f))
+            ? (aircraft.right * Random.Range(-lateralKickMag, lateralKickMag)
+              + aircraft.up * Random.Range(-lateralKickMag * 0.67f, lateralKickMag * 0.67f))
             : Vector3.zero;
         // 플레어는 동체 하부 디스펜서에서 아래로 사출된다 — 배럴롤 중엔 기체 회전을 따라 나선 커튼이 펼쳐짐
-        Vector3 ejectKick = isFlare ? -_local.transform.up * Random.Range(4f, 8f) : Vector3.zero;
-        Vector3 velocity = -_local.transform.forward * (_local.CurrentSpeed * 0.4f)
+        Vector3 ejectKick = isFlare ? -aircraft.up * Random.Range(4f, 8f) : Vector3.zero;
+        Vector3 velocity = -aircraft.forward * (speed * 0.4f)
                          + lateralKick
                          + ejectKick
                          + Random.insideUnitSphere * velScatter;
 
-        var go = new GameObject($"{type}Decoy");
-        go.transform.position = spawnPos;
-        go.AddComponent<CountermeasureDecoy>().Initialize(type, lifetime, velocity);
+        SpawnDecoy(owner, type, spawnPos, velocity);
+        NetworkManager.Instance?.socketClient?.SendCountermeasure(owner, (int)type, spawnPos, velocity);
+    }
 
-        if (isFlare)
-            FlareDecoyVFX.Attach(go, lifetime);
-        else
-            SpawnChaffVFX(go.transform, lifetime);
+    static void SpawnDecoy(string owner, CountermeasureType type, Vector3 pos, Vector3 velocity)
+    {
+        var   cfg      = GameplayConfigSO.Instance;
+        bool  isFlare  = type == CountermeasureType.Flare;
+        float lifetime = isFlare ? cfg.flareLifetime : cfg.chaffLifetime;
 
-        OnDeploy?.Invoke(type);
+        var go = new GameObject($"{type}Decoy_{owner}");
+        go.transform.position = pos;
+        go.AddComponent<CountermeasureDecoy>().Initialize(type, lifetime, velocity, owner);
+
+        if (isFlare) FlareDecoyVFX.Attach(go, lifetime);
+        else         SpawnChaffVFX(go.transform, lifetime);
+    }
+
+    // 원격 기체(다른 플레이어·호스트의 AI)가 뿌린 기만체 — 이 클라이언트가 시뮬레이션하는 미사일도 속을 수 있게 로컬에 생성
+    void HandleRemoteCountermeasure(CountermeasurePacket p)
+    {
+        if (CombatDamage.Owns(p.ownerNickname)) return;   // 내가 뿌린 것(또는 호스트로서 AI 가 뿌린 것)은 이미 생성됨
+        SpawnDecoy(p.ownerNickname, (CountermeasureType)p.cmType,
+                   new Vector3(p.posX, p.posY, p.posZ), new Vector3(p.velX, p.velY, p.velZ));
     }
 
     // ── 채프 VFX (은색 금속 입자, 파티클 유지) ──────────────────────────

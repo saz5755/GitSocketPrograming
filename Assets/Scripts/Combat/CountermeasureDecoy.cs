@@ -5,6 +5,8 @@ public enum CountermeasureType { Flare, Chaff }
 public class CountermeasureDecoy : MonoBehaviour
 {
     public CountermeasureType Type     { get; private set; }
+    /// <summary>뿌린 기체 닉네임 — 미사일은 자기 표적이 뿌린 기만체만 판정한다</summary>
+    public string             Owner    { get; private set; } = "";
     public Vector3            Position => transform.position;
     // 채프 도플러 계산용 — 투하 시 항공기 속도를 기준으로 하며,
     // 이후 공기 저항으로 감속되는 실시간 속도를 추적
@@ -13,9 +15,10 @@ public class CountermeasureDecoy : MonoBehaviour
     float     _remaining;
     Rigidbody _rb;
 
-    public void Initialize(CountermeasureType type, float lifetime, Vector3 velocity)
+    public void Initialize(CountermeasureType type, float lifetime, Vector3 velocity, string owner = "")
     {
         Type       = type;
+        Owner      = owner ?? "";
         _remaining = lifetime;
         Velocity   = velocity;
         CountermeasureSystem.Register(this);

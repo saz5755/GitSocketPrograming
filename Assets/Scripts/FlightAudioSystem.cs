@@ -5,9 +5,11 @@ public class FlightAudioSystem : MonoBehaviour
 {
     // ── 외부 이벤트 (MissileLauncher, HitEffectSystem에서 호출) ──────────────
     public static event System.Action               OnMissileFired;
+    public static event System.Action               OnWeaponSelect;
     public static event System.Action<Vector3,bool> OnExplosionEvent;
 
     public static void NotifyMissileFired()                        => OnMissileFired?.Invoke();
+    public static void NotifyWeaponSelect()                        => OnWeaponSelect?.Invoke();
     public static void NotifyExplosion(Vector3 pos, bool localHit) => OnExplosionEvent?.Invoke(pos, localHit);
 
     // ── AudioSource ──────────────────────────────────────────────────────────
@@ -22,6 +24,7 @@ public class FlightAudioSystem : MonoBehaviour
     AudioClip _explodeClip;
     AudioClip _flareClip;
     AudioClip _chaffClip;
+    AudioClip _selectClip;
 
     PlayerController _local;
     float            _engineRpm;
@@ -35,6 +38,7 @@ public class FlightAudioSystem : MonoBehaviour
         _explodeClip = MakeExplosion(SR);
         _flareClip   = MakeFlareDeploy(SR);
         _chaffClip   = MakeChaffDeploy(SR);
+        _selectClip  = MakeSelectClick(SR);
 
         _engineSrc = MakeSrc(loop: true,  volume: 0f);
         _windSrc   = MakeSrc(loop: true,  volume: 0f);
@@ -48,6 +52,7 @@ public class FlightAudioSystem : MonoBehaviour
     {
         CountermeasureSystem.OnDeploy += OnCMSDeploy;
         OnMissileFired   += PlayFire;
+        OnWeaponSelect   += PlaySelect;
         OnExplosionEvent += PlayExplosion;
 
         _engineSrc.Play();
@@ -58,6 +63,7 @@ public class FlightAudioSystem : MonoBehaviour
     {
         CountermeasureSystem.OnDeploy -= OnCMSDeploy;
         OnMissileFired   -= PlayFire;
+        OnWeaponSelect   -= PlaySelect;
         OnExplosionEvent -= PlayExplosion;
     }
 
@@ -239,5 +245,23 @@ public class FlightAudioSystem : MonoBehaviour
             buf[i]         *= f;
             buf[n - 1 - i] *= f;
         }
+    }
+
+    void PlaySelect() { if (_sfxSrc != null && _selectClip != null) _sfxSrc.PlayOneShot(_selectClip, 0.6f); }
+
+    // 무장 선택 — 짧은 2연 클릭
+    static AudioClip MakeSelectClick(int sr)
+    {
+        int n = Mathf.CeilToInt(sr * 0.09f);
+        var buf = new float[n];
+        for (int i = 0; i < n; i++)
+        {
+            float t = (float)i / sr;
+            float env = (t < 0.025f ? 1f - t / 0.025f : 0f) + (t > 0.05f && t < 0.075f ? 1f - (t - 0.05f) / 0.025f : 0f);
+            buf[i] = Mathf.Sin(2f * Mathf.PI * 1800f * t) * env * 0.5f;
+        }
+        var clip = AudioClip.Create("WpnSelect", n, 1, sr, false);
+        clip.SetData(buf, 0);
+        return clip;
     }
 }

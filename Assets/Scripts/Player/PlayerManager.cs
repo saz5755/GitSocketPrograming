@@ -545,6 +545,9 @@ public class PlayerManager : MonoBehaviour
             Quaternion.Euler(p.rotX, p.rotY, p.rotZ));
 
         var view = go.AddComponent<RemoteMissileView>();
+        view.TargetNick  = p.targetNickname ?? "";
+        view.ShooterNick = p.shooterNickname ?? "";
+        view.Spec        = MissileSpec.ByName(p.weapon, (MissileGuidanceType)p.guidanceType);
         view.AttachSmokeTrail();
         view.AddSnapshot(go.transform.position, go.transform.rotation);
 
@@ -596,7 +599,7 @@ public class PlayerManager : MonoBehaviour
         else if (_groundChars.TryGetValue(p.shooterNickname, out var gc) && gc != null)
             shooterPos = gc.transform.position;
 
-        threatWarn.ReportNetworkThreat(level, shooterPos);
+        threatWarn.ReportNetworkThreat(p.shooterNickname, level, shooterPos);
     }
 
     // ── 로컬 플레이어 생성 ─────────────────────────────────────────────────

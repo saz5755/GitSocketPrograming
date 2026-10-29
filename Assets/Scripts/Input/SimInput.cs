@@ -12,6 +12,7 @@ public enum SimAction
     BarrelRollLeft, BarrelRollRight, Immelmann,
     FireMissile, LockTarget, Flare, Chaff,
     ViewToggle, TargetCam, MissileCam,
+    WeaponSelect,
 }
 
 /// <summary>
@@ -35,6 +36,7 @@ public static class SimInput
         KeyCode.Q, KeyCode.E, KeyCode.B,
         KeyCode.Space, KeyCode.Tab, KeyCode.X, KeyCode.Z,
         KeyCode.C, KeyCode.T, KeyCode.V,
+        KeyCode.R,
     };
 
     static readonly string[] Labels =
@@ -44,6 +46,7 @@ public static class SimInput
         "BARREL ROLL L + FLARE", "BARREL ROLL R + FLARE", "ZOOM / IMMELMANN",
         "FIRE MISSILE", "LOCK TARGET", "FLARE", "CHAFF",
         "VIEW (COCKPIT/CHASE)", "TARGET CAM (HOLD)", "MISSILE CAM",
+        "WEAPON SELECT (AIM-9X/AIM-120)",
     };
 
     public static int ActionCount => Defaults.Length;

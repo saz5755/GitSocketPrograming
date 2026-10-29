@@ -9,6 +9,12 @@ public class RoomInfo
     public string mode;
 }
 
+[System.Serializable]
+public class RoomSettingPacket : Packet
+{
+    public int enemySkill;           // 0=ROOKIE 1=VETERAN 2=ACE
+}
+
 public class RoomListResultPacket : Packet
 {
     public List<RoomInfo> rooms = new();
@@ -41,4 +47,5 @@ public class EnterRoomResultPacket : Packet
     public string errorMessage;
     public string hostNickname;
     public string mode;
+    public int    enemySkill = -1;   // 적 AI 숙련도 0~2 (구 서버면 -1 = 모름)
 }

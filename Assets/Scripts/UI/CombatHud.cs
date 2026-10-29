@@ -44,6 +44,8 @@ public class CombatHud : MonoBehaviour
     Image _gunBar;
     RectTransform _hdgTicks;
     Image[] _aimPips = new Image[6];
+    Image[] _aim9Pips = new Image[4];
+    Text _aim9Val, _aim9Label, _aimLabel, _cueText, _dlzText, _centerCue;
     Text _gVal, _thrVal, _warnText;
 
     void Start()
@@ -75,6 +77,7 @@ public class CombatHud : MonoBehaviour
         BuildTape(root, "ALT", "m", new Vector2(800f, 20f), true, out _altTicks, _altNums, out _altVal);
         _vviText = Txt(root, "VVI +0", new Vector2(800f, -176f), new Vector2(150f, 22f), 13, HGD, TextAnchor.MiddleCenter);
         BuildCrosshair(root);
+        BuildCenterCue(root);
         BuildHeading(root);
         BuildWeapons(root);
         BuildSortie(root);
@@ -216,34 +219,48 @@ public class CombatHud : MonoBehaviour
     // ── 우하단 무장 카드 ──────────────────────────────────────────────────
     void BuildWeapons(Transform root)
     {
-        var card = Card("WeaponCard", root, new Vector2(760f, -390f), new Vector2(340f, 150f));
-        Txt(card, "WEAPON", new Vector2(-154f, 56f), new Vector2(100f, 18f), 11, HGD, TextAnchor.MiddleLeft, FontStyle.Bold);
-        Box(R("sep", card, new Vector2(0f, 44f), new Vector2(308f, 1f)), HGX);
+        var card = Card("WeaponCard", root, new Vector2(760f, -372f), new Vector2(340f, 196f));
+        Txt(card, "WEAPON", new Vector2(-154f, 80f), new Vector2(100f, 18f), 11, HGD, TextAnchor.MiddleLeft, FontStyle.Bold);
+        Txt(card, "[R] SELECT", new Vector2(154f, 80f), new Vector2(120f, 18f), 10, HGX, TextAnchor.MiddleRight);
+        Box(R("sep", card, new Vector2(0f, 68f), new Vector2(308f, 1f)), HGX);
 
         // GUN
-        Txt(card, "GUN", new Vector2(-154f, 20f), new Vector2(70f, 22f), 14, Ink, TextAnchor.MiddleLeft, FontStyle.Bold);
-        var bar = R("GunBarBG", card, new Vector2(-10f, 20f), new Vector2(120f, 6f));
+        Txt(card, "GUN", new Vector2(-154f, 46f), new Vector2(70f, 22f), 14, Ink, TextAnchor.MiddleLeft, FontStyle.Bold);
+        var bar = R("GunBarBG", card, new Vector2(-10f, 46f), new Vector2(120f, 6f));
         Box(bar, HGX, 3);
         var fill = R("GunBar", bar, Vector2.zero, new Vector2(120f, 6f));
         fill.anchorMin = new Vector2(0, 0.5f); fill.anchorMax = new Vector2(0, 0.5f); fill.pivot = new Vector2(0, 0.5f);
         fill.anchoredPosition = Vector2.zero;
         _gunBar = Box(fill, HG, 3);
-        _gunVal = Txt(card, "500", new Vector2(154f, 20f), new Vector2(80f, 24f), 20, Ink, TextAnchor.MiddleRight, FontStyle.Bold);
+        _gunVal = Txt(card, "500", new Vector2(154f, 46f), new Vector2(80f, 24f), 20, Ink, TextAnchor.MiddleRight, FontStyle.Bold);
 
-        // AIM-120
-        Txt(card, "AIM-120", new Vector2(-154f, -16f), new Vector2(90f, 22f), 14, Ink, TextAnchor.MiddleLeft, FontStyle.Bold);
+        // AIM-9X / AIM-120 — 선택된 무장은 ▶ 표시 + 밝게
+        _aim9Label = Txt(card, "AIM-9X", new Vector2(-154f, 16f), new Vector2(100f, 22f), 14, Ink, TextAnchor.MiddleLeft, FontStyle.Bold);
+        for (int i = 0; i < _aim9Pips.Length; i++)
+            _aim9Pips[i] = Box(R("pip9", card, new Vector2(-40f + i * 18f, 16f), new Vector2(12f, 7f)), HG, 3);
+        _aim9Val = Txt(card, "2", new Vector2(154f, 16f), new Vector2(80f, 24f), 20, Ink, TextAnchor.MiddleRight, FontStyle.Bold);
+
+        _aimLabel = Txt(card, "AIM-120", new Vector2(-154f, -14f), new Vector2(100f, 22f), 14, Ink, TextAnchor.MiddleLeft, FontStyle.Bold);
         for (int i = 0; i < _aimPips.Length; i++)
-        {
-            var p = R("pip", card, new Vector2(-40f + i * 18f, -16f), new Vector2(12f, 7f));
-            _aimPips[i] = Box(p, HG, 3);
-        }
-        _aimVal = Txt(card, "4", new Vector2(154f, -16f), new Vector2(80f, 24f), 20, Ink, TextAnchor.MiddleRight, FontStyle.Bold);
+            _aimPips[i] = Box(R("pip", card, new Vector2(-40f + i * 18f, -14f), new Vector2(12f, 7f)), HG, 3);
+        _aimVal = Txt(card, "4", new Vector2(154f, -14f), new Vector2(80f, 24f), 20, Ink, TextAnchor.MiddleRight, FontStyle.Bold);
 
         // CMS
-        Txt(card, "FLARE", new Vector2(-154f, -52f), new Vector2(60f, 18f), 11, HGD, TextAnchor.MiddleLeft);
-        _flareVal = Txt(card, "0", new Vector2(-98f, -52f), new Vector2(40f, 20f), 15, Ink, TextAnchor.MiddleLeft, FontStyle.Bold);
-        Txt(card, "CHAFF", new Vector2(0f, -52f), new Vector2(60f, 18f), 11, HGD, TextAnchor.MiddleLeft);
-        _chaffVal = Txt(card, "0", new Vector2(56f, -52f), new Vector2(40f, 20f), 15, Ink, TextAnchor.MiddleLeft, FontStyle.Bold);
+        Txt(card, "FLARE", new Vector2(-154f, -46f), new Vector2(60f, 18f), 11, HGD, TextAnchor.MiddleLeft);
+        _flareVal = Txt(card, "0", new Vector2(-98f, -46f), new Vector2(40f, 20f), 15, Ink, TextAnchor.MiddleLeft, FontStyle.Bold);
+        Txt(card, "CHAFF", new Vector2(0f, -46f), new Vector2(60f, 18f), 11, HGD, TextAnchor.MiddleLeft);
+        _chaffVal = Txt(card, "0", new Vector2(56f, -46f), new Vector2(40f, 20f), 15, Ink, TextAnchor.MiddleLeft, FontStyle.Bold);
+
+        // 발사 큐 + DLZ (표적 거리 / Rmax / Rne)
+        Box(R("sep2", card, new Vector2(0f, -64f), new Vector2(308f, 1f)), HGX);
+        _cueText = Txt(card, "", new Vector2(-154f, -80f), new Vector2(120f, 20f), 15, HG, TextAnchor.MiddleLeft, FontStyle.Bold);
+        _dlzText = Txt(card, "", new Vector2(154f, -80f), new Vector2(200f, 20f), 12, HGD, TextAnchor.MiddleRight);
+    }
+
+    // 크로스헤어 아래 발사 큐 (체이스 시점에는 콕핏 TDB 가 없으므로)
+    void BuildCenterCue(Transform root)
+    {
+        _centerCue = Txt(root, "", new Vector2(0f, -78f), new Vector2(300f, 24f), 17, HG, TextAnchor.MiddleCenter, FontStyle.Bold);
     }
 
     // ── 우상단 소티 정보 ──────────────────────────────────────────────────
@@ -335,12 +352,7 @@ public class CombatHud : MonoBehaviour
             _gunBar.rectTransform.sizeDelta = new Vector2(120f * Mathf.Clamp01(ammo / (float)max), 6f);
             _gunBar.color = ammo <= 50 ? Warn : HG;
         }
-        if (_launcher != null)
-        {
-            int m = _launcher.MissileCount;
-            _aimVal.text = m.ToString();
-            for (int i = 0; i < _aimPips.Length; i++) _aimPips[i].color = i < m ? HG : HGX;
-        }
+        if (_launcher != null) UpdateMissiles();
         if (_cms != null) { _flareVal.text = _cms.FlareRemaining.ToString(); _chaffVal.text = _cms.ChaffRemaining.ToString(); }
 
         float g = _local.PilotG;
@@ -363,6 +375,37 @@ public class CombatHud : MonoBehaviour
         _timeText.text = $"{ts / 3600:D2}:{ts / 60 % 60:D2}:{ts % 60:D2}";
         _pilotText.text = PlayerController.All.Count.ToString();
     }
+
+    void UpdateMissiles()
+    {
+        int m9 = _launcher.Aim9Count, m120 = _launcher.Aim120Count;
+        bool sel9 = _launcher.Selected == MissileLauncher.Weapon.AIM9X;
+        _aim9Val.text = m9.ToString();
+        _aimVal.text  = m120.ToString();
+        for (int i = 0; i < _aim9Pips.Length; i++) _aim9Pips[i].color = i < m9 ? (sel9 ? HG : HGD) : HGX;
+        for (int i = 0; i < _aimPips.Length; i++)  _aimPips[i].color  = i < m120 ? (!sel9 ? HG : HGD) : HGX;
+        _aim9Label.text  = sel9 ? "> AIM-9X" : "  AIM-9X";
+        _aimLabel.text   = !sel9 ? "> AIM-120" : "  AIM-120";
+        _aim9Label.color = sel9 ? Ink : HGD;
+        _aimLabel.color  = !sel9 ? Ink : HGD;
+
+        bool blink = Time.time % 0.5f < 0.25f;
+        bool   urgent = false;
+        string cue    = RoomModeSO.WeaponsEnabled ? _launcher.Cue(out urgent) : "SAFE";
+        Color cc = urgent ? (blink ? Crit : Warn) : cue is "IN RNG" or "TONE" ? HG : cue is "SRCH" or "NO LOCK" or "SAFE" ? HGD : Warn;
+        _cueText.text = cue; _cueText.color = cc;
+
+        string dlz = "";
+        if (_launcher.ShotTarget != null || _launcher.Range > 0f)
+            dlz = $"{Km(_launcher.Range)}  Rmax {Km(_launcher.RMax)}  Rne {Km(_launcher.RNe)}";
+        _dlzText.text = dlz;
+
+        bool showCenter = cue is "SHOOT" or "IN RNG" or "TONE" or "OUT RNG" or "MIN RNG" or "STEER";
+        _centerCue.text  = showCenter ? $"{_launcher.SelectedSpec.displayName}  {cue}" : "";
+        _centerCue.color = cc;
+    }
+
+    static string Km(float m) => m >= 1000f ? $"{m / 1000f:F1}k" : $"{m:F0}";
 
     static void ScrollTicks(RectTransform ticks, float value, float step)
     {

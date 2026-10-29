@@ -4,65 +4,89 @@ using UnityEngine.Rendering;
 
 public enum MissileGuidanceType { HeatSeeking, RadarGuided }
 
+/// <summary>
+/// 유도미사일 시뮬레이션 (발사자 클라이언트, AI 무기는 호스트에서 실행).
+///
+///   · 추진/항력: MissileSpec — 부스트 후 코스팅하며 감속, 상승하면 더 감속. 에너지가 바닥나면 유도 불능
+///   · 유도: G 한계가 있는 비례항법(PN). 느릴수록 가용 G 가 줄어 마지막 순간 급선회로 회피 가능
+///   · 시커: 짐벌 한계를 벗어나면 락 상실. 레이더 미사일은 중간유도(데이터링크) → 피트불(능동) 전환
+///   · 대응책: 플레어/채프 한 발마다 시커 시야 안에 들어올 때 1회 판정. 기만체가 꺼지면 원 표적 재포착 시도
+///             레이더 미사일은 표적이 빔(노치) 기동 중이면 락을 잃기 쉽다
+///   · 신관: 원 표적 기준 (기만체를 쫓다가도 표적 옆을 지나면 근접신관 작동)
+/// </summary>
 public class MissileController : MonoBehaviour
 {
     public static readonly List<MissileController> All = new List<MissileController>(32);
 
-    [SerializeField] float topSpeed      = 600f;
-    [SerializeField] float acceleration  = 150f;
-    [SerializeField] float navConst      = 4f;
-    [SerializeField] float maxTurnRate   = 30f;
-    [SerializeField] float directHitDist = 3f;
-    [SerializeField] float proximityFuse = 8f;
-    [SerializeField] float lifetime      = 30f;
-    [SerializeField] float armDelay      = 0.5f;
+    const float Gravity          = 9.81f;
+    const float ArmDelay         = 0.6f;
+    const float DatalinkInterval = 0.5f;    // 중간유도 교점 갱신 주기
+    const float ShooterGimbal    = 60f;     // 발사 기체 레이더가 표적을 계속 비춰야 데이터링크 유지
+    const float LagCompensation  = 0.1f;    // 원격 표적 스냅샷 보간 지연 보상 (s)
+    const float VelSmooth        = 0.2f;
+    const float CmCheckInterval  = 0.2f;
+    const float WarnInterval     = 0.35f;
 
-    // ── AIM-120 유도 단계 ──────────────────────────────────────────────────
-    enum GuidancePhase { Midcourse, Terminal }
-
-    // ARH 시커 활성 거리 — 이 안에 들어오면 종말유도로 전환
-    const float ARH_ACTIVATION_RANGE = 8000f;
-    // 중간유도 데이터링크 갱신 주기 (s) — 예측 교점 재계산
-    const float DATALINK_INTERVAL    = 1.5f;
-    // 스냅샷 딜레이 보상 (s) — 원격 위치 데이터가 0.1s 지연되므로 예측 보정
-    const float LAG_COMPENSATION     = 0.1f;
-    // 속도 추정 지수 평활 계수 (높을수록 빠른 반응, 노이즈 증가)
-    const float VEL_SMOOTH           = 0.20f;
-
-    GuidancePhase _phase         = GuidancePhase.Midcourse;
-    Vector3       _targetVelEst;            // 타겟 속도 추정 (딜레이 보상·중간유도 공용)
-    Vector3       _prevTargetPos;           // 이전 프레임 타겟 위치
-    Vector3       _interceptPoint;          // 중간유도 목표 교점
-    float         _datalinkTimer;
-    bool          _prevTargetPosValid;
+    enum Phase { Midcourse, Terminal }
 
     // ── 공개 상태 ──────────────────────────────────────────────────────────
-    public Transform           Target       { get; private set; }
-    public bool                IsDeflected  { get; private set; }
-    public MissileGuidanceType GuidanceType { get; private set; }
-    public string              MissileId    { get; private set; }
-    public string              ShooterNick  { get; private set; }
-    public bool                IsARHActive  { get; private set; }
+    /// <summary>시커가 현재 쫓는 대상 (기만체일 수 있음, 락 상실 시 null)</summary>
+    public Transform           Target         { get; private set; }
+    /// <summary>발사 시 지정한 표적 기체</summary>
+    public Transform           IntendedTarget { get; private set; }
+    public string              TargetNick     { get; private set; } = "";
+    public bool                IsDeflected    { get; private set; }
+    public bool                IsLost         { get; private set; }
+    public MissileGuidanceType GuidanceType   => Spec.guidance;
+    public MissileSpec         Spec           { get; private set; }
+    public string              MissileId      { get; private set; }
+    public string              ShooterNick    { get; private set; }
+    public bool                IsARHActive    { get; private set; }
+    public float               Speed          => _speed;
+    public float               Age            => _age;
+    /// <summary>표적을 아직 쫓고 있는가 (경보 대상)</summary>
+    public bool                IsTrackingTarget => Target != null && Target == IntendedTarget && !IsLost;
 
-    float   _speed;
-    float   _age;
-    Vector3 _prevLOS;
-    bool    _armed;
-    float   _decoyTimer;
-    float   _netBroadcastTimer;
+    Phase     _phase = Phase.Midcourse;
+    Transform _shooter;
+    float     _speed, _age;
+    bool      _armed;
+    Vector3   _prevLOS;
+    Vector3   _targetVelEst, _prevTargetPos;
+    bool      _prevTargetPosValid;
+    Vector3   _interceptPoint;
+    float     _datalinkTimer = DatalinkInterval;
+    float     _cmTimer, _warnTimer, _netTimer;
+    float     _notchTime;
+    float     _deadTimer = -1f;               // 에너지 고갈 후 자폭까지
+    bool      _reacquireTried;
+    TrailRenderer _trail;
+    readonly HashSet<CountermeasureDecoy> _evaluatedDecoys = new HashSet<CountermeasureDecoy>();
 
-    void Awake()  => All.Add(this);
+    void Awake()     => All.Add(this);
     void OnDestroy() => All.Remove(this);
 
+    /// <summary>구형 호출 호환 — 유도 방식의 기본 제원 사용</summary>
     public void Initialize(Transform target, float launchSpeed,
                            MissileGuidanceType guidanceType = MissileGuidanceType.RadarGuided,
                            string missileId = "", string shooterNickname = "")
     {
-        Target       = target;
-        _speed       = Mathf.Max(launchSpeed, 40f);
-        GuidanceType = guidanceType;
-        MissileId    = string.IsNullOrEmpty(missileId) ? System.Guid.NewGuid().ToString("N")[..8] : missileId;
-        ShooterNick  = shooterNickname;
+        var cfg = GameplayConfigSO.Instance;
+        Initialize(target, launchSpeed, guidanceType == MissileGuidanceType.HeatSeeking ? cfg.aim9x : cfg.aim120,
+                   missileId, shooterNickname, null);
+    }
+
+    public void Initialize(Transform target, float launchSpeed, MissileSpec spec,
+                           string missileId, string shooterNickname, Transform shooter)
+    {
+        Spec           = spec ?? GameplayConfigSO.Instance.aim120;
+        Target         = target;
+        IntendedTarget = target;
+        TargetNick     = target != null ? target.GetComponent<PlayerController>()?.nickname ?? "" : "";
+        _speed         = Mathf.Max(launchSpeed, 40f);
+        _shooter       = shooter;
+        MissileId      = string.IsNullOrEmpty(missileId) ? System.Guid.NewGuid().ToString("N")[..8] : missileId;
+        ShooterNick    = shooterNickname;
 
         if (target != null)
         {
@@ -71,21 +95,18 @@ public class MissileController : MonoBehaviour
             _prevTargetPosValid = true;
         }
 
-        // HeatSeeking은 처음부터 Terminal (적외선 시커 = 항상 활성)
-        if (guidanceType == MissileGuidanceType.HeatSeeking)
-        {
-            _phase      = GuidancePhase.Terminal;
-            IsARHActive = false;
-        }
+        // IR 시커는 발사 전부터 표적을 보고 있다 — 처음부터 종말유도
+        if (Spec.IsIR) _phase = Phase.Terminal;
 
-        AddSmokeTrail();
+        _trail = AddSmokeTrail(gameObject);
     }
 
-    void AddSmokeTrail()
+    // ── 연기 트레일 (원격 뷰와 공용) ──────────────────────────────────────
+    public static TrailRenderer AddSmokeTrail(GameObject go)
     {
-        var tr = gameObject.AddComponent<TrailRenderer>();
-        tr.time              = 1.8f;
-        tr.startWidth        = 0.5f;
+        var tr = go.AddComponent<TrailRenderer>();
+        tr.time              = 2.4f;
+        tr.startWidth        = 0.55f;
         tr.endWidth          = 0.05f;
         tr.minVertexDistance = 0.3f;
         tr.textureMode       = LineTextureMode.Stretch;
@@ -111,252 +132,339 @@ public class MissileController : MonoBehaviour
 
         var gc = new Gradient();
         gc.SetKeys(
-            new GradientColorKey[]
+            new[]
             {
                 new GradientColorKey(new Color(1.0f, 0.90f, 0.70f), 0.00f),
                 new GradientColorKey(new Color(0.65f, 0.62f, 0.60f), 0.30f),
                 new GradientColorKey(new Color(0.30f, 0.28f, 0.27f), 1.00f),
             },
-            new GradientAlphaKey[]
+            new[]
             {
                 new GradientAlphaKey(0.80f, 0.00f),
                 new GradientAlphaKey(0.45f, 0.40f),
                 new GradientAlphaKey(0.00f, 1.00f),
             });
         tr.colorGradient = gc;
+        return tr;
     }
 
     static float s_seaY = float.NaN;
 
     void Update()
     {
-        _age += Time.deltaTime;
-        // 연료 소진 후 자폭 / 해수면 충돌 — 원격 뷰도 사라지도록 파괴를 알린다 (기존: 조용히 사라지거나 수면 아래로 계속 비행)
+        float dt = Time.deltaTime;
+        if (dt <= 0f || Spec == null) return;   // Initialize 전 (씬에 놓인 프리팹 등)
+        _age += dt;
+
         if (float.IsNaN(s_seaY))
         {
             var ocean = FindAnyObjectByType<OceanSurface>();
             s_seaY = ocean != null ? ocean.seaLevel : float.NegativeInfinity;
         }
-        if (_age > lifetime || transform.position.y < s_seaY) { SelfDestruct(); return; }
-        if (_age > armDelay) _armed = true;
+        // 연료 소진 후 자폭 / 해수면 충돌 — 원격 뷰도 사라지도록 파괴를 알린다
+        if (_age > Spec.lifetime || transform.position.y < s_seaY) { SelfDestruct(); return; }
+        if (_age > ArmDelay) _armed = true;
 
-        _speed = Mathf.MoveTowards(_speed, topSpeed, acceleration * Time.deltaTime);
+        UpdateEnergy(dt);
+        if (_deadTimer >= 0f && (_deadTimer -= dt) <= 0f) { SelfDestruct(); return; }
 
-        // ── 타겟 속도 추정 (지수 평활) ─────────────────────────────────────
-        if (Target != null && _prevTargetPosValid && Time.deltaTime > 0f)
-        {
-            Vector3 rawVel = (Target.position - _prevTargetPos) / Time.deltaTime;
-            _targetVelEst  = Vector3.Lerp(_targetVelEst, rawVel, VEL_SMOOTH);
-        }
-        if (Target != null)
-        {
-            _prevTargetPos      = Target.position;
-            _prevTargetPosValid = true;
-        }
+        UpdateTargetEstimate(dt);
 
-        // ── ARH 전환 판정 (RadarGuided 전용) ───────────────────────────────
-        if (GuidanceType == MissileGuidanceType.RadarGuided
-            && _phase == GuidancePhase.Midcourse
-            && Target != null
-            && Vector3.Distance(transform.position, Target.position) <= ARH_ACTIVATION_RANGE)
-        {
-            _phase      = GuidancePhase.Terminal;
-            IsARHActive = true;
-            _prevLOS    = Vector3.zero;  // 위상 전환 시 LOS 히스토리 초기화 (첫 프레임 LOSRate 급등 방지)
-            BroadcastARHActive();
-        }
+        // 기만체가 타 버렸으면 원 표적 재포착 시도
+        if (IsDeflected && Target == null) TryReacquire();
 
-        // ── 디코이 체크 (0.25초마다) ────────────────────────────────────────
-        if (_armed && !IsDeflected)
+        if (_armed && Target != null && !IsLost)
         {
-            _decoyTimer += Time.deltaTime;
-            if (_decoyTimer >= 0.25f) { _decoyTimer = 0f; CheckCountermeasures(); }
+            _cmTimer += dt;
+            if (_cmTimer >= CmCheckInterval) { _cmTimer = 0f; CheckCountermeasures(); CheckNotch(); }
         }
 
         Vector3 posBefore = transform.position;
+        Steer(dt);
+        transform.position += transform.forward * _speed * dt;
 
-        if (Target != null)
-        {
-            if (_phase == GuidancePhase.Midcourse)
-                NavigateMidcourse();
-            else
-                NavigateTerminal();
-        }
-        else
-        {
-            transform.position += transform.forward * _speed * Time.deltaTime;
-        }
+        if (_armed) CheckHit(posBefore);
 
-        if (_armed && Target != null)
-            CheckHit(posBefore);
+        _netTimer += dt;
+        if (_netTimer >= 0.1f) { _netTimer = 0f; BroadcastPosition(); }
+        _warnTimer += dt;
+        if (_warnTimer >= WarnInterval) { _warnTimer = 0f; BroadcastWarn(); }
+    }
 
-        // 네트워크 위치 브로드캐스트 (0.1초마다)
-        _netBroadcastTimer += Time.deltaTime;
-        if (_netBroadcastTimer >= 0.1f)
+    // ── 추진 / 항력 ───────────────────────────────────────────────────────
+    void UpdateEnergy(float dt)
+    {
+        bool boosting = _age < Spec.boostTime;
+        if (boosting) _speed += Spec.boostAccel * dt;
+        _speed -= Spec.dragK * _speed * _speed * dt;
+        _speed -= Gravity * transform.forward.y * dt;   // 상승 = 감속, 강하 = 가속
+        _speed  = Mathf.Max(_speed, 30f);
+
+        // 모터 연소가 끝나면 연기 트레일이 끊긴다 — 코스팅 중인 미사일은 눈으로 덜 보인다
+        if (_trail != null && _trail.emitting != boosting) _trail.emitting = boosting;
+
+        if (!boosting && _speed < Spec.minGuideSpeed && _deadTimer < 0f)
         {
-            _netBroadcastTimer = 0f;
-            BroadcastPosition();
+            // 운동에너지 고갈 — 유도 불능, 잠시 탄도 비행 후 자폭
+            LoseLock();
+            _deadTimer = 2.5f;
         }
     }
 
-    // ── 중간유도: 예측 교점을 향한 PN 유도 ───────────────────────────────
-    // 타겟 위치를 직접 추적하지 않고, 속도 기반으로 예측한 요격 교점으로 비행.
-    // 타겟 RWR에는 "RADAR TRACKING" 수준으로만 표시 (시커 미방사).
-    void NavigateMidcourse()
+    void UpdateTargetEstimate(float dt)
     {
-        _datalinkTimer += Time.deltaTime;
-        if (_datalinkTimer >= DATALINK_INTERVAL || _interceptPoint == Vector3.zero)
+        if (IntendedTarget == null) return;
+        if (_prevTargetPosValid)
         {
-            _datalinkTimer  = 0f;
-            _interceptPoint = PredictIntercept();
+            Vector3 raw = (IntendedTarget.position - _prevTargetPos) / dt;
+            if (raw.sqrMagnitude < 1e6f) _targetVelEst = Vector3.Lerp(_targetVelEst, raw, VelSmooth);
         }
-
-        NavigateToward(_interceptPoint);
+        _prevTargetPos      = IntendedTarget.position;
+        _prevTargetPosValid = true;
     }
 
-    // ── 종말유도: ARH + 딜레이 보상 ──────────────────────────────────────
-    void NavigateTerminal()
+    // ── 유도 ──────────────────────────────────────────────────────────────
+    void Steer(float dt)
     {
-        float dist = Vector3.Distance(transform.position, Target.position);
-
-        // 근접 최종 단계 (< 80m): PN 유도 불안정 구간 — 순수 추격으로 전환
-        // 이 거리에서 근접 신관(8m)이 터지므로 PN 정밀도보다 빠른 방향 수정이 우선
-        if (dist < 80f)
+        if (Target == null || IsLost)
         {
-            Vector3 toTarget = (Target.position - transform.position).normalized;
-            float   dt       = Time.deltaTime;
-            transform.rotation = Quaternion.RotateTowards(
-                transform.rotation, Quaternion.LookRotation(toTarget), maxTurnRate * 4f * dt);
-            transform.position += transform.forward * _speed * dt;
-            _prevLOS = toTarget;
+            // 락 상실: 직진하며 서서히 기수가 처진다
+            _prevLOS = Vector3.zero;
+            Quaternion sag = Quaternion.LookRotation(Vector3.Slerp(transform.forward, Vector3.down, 0.04f * dt));
+            transform.rotation = sag;
             return;
         }
 
-        // 딜레이 보상: 150m 이하에서 0으로 수렴 (속도 추정 노이즈 방지)
-        // 원거리에서만 lag compensation이 실질적 이득을 가짐
-        float lagScale      = Mathf.Clamp01((dist - 150f) / 600f);
-        Vector3 aimPos      = Target.position + _targetVelEst * (LAG_COMPENSATION * lagScale);
-        NavigateToward(aimPos);
-    }
-
-    void NavigateToward(Vector3 targetPos)
-    {
-        Vector3 LOS = (targetPos - transform.position).normalized;
-        float   dt  = Time.deltaTime;
-
-        if (dt > 0f && _prevLOS.sqrMagnitude > 0.001f)
+        Vector3 aim;
+        if (_phase == Phase.Midcourse)
         {
-            Vector3 LOSRate    = (LOS - _prevLOS) / dt;
-            float   closingSpd = Vector3.Dot(transform.forward * _speed, LOS);
-            Vector3 desired    = (transform.forward + navConst * closingSpd * LOSRate * dt).normalized;
-            transform.rotation = Quaternion.RotateTowards(
-                transform.rotation, Quaternion.LookRotation(desired), maxTurnRate * dt);
+            UpdateDatalink(dt);
+            aim = _interceptPoint;
+
+            // 피트불 — 미사일 자체 레이더 능동 전환
+            if (Vector3.Distance(transform.position, IntendedTarget.position) <= Spec.seekerRange)
+            {
+                _phase      = Phase.Terminal;
+                IsARHActive = true;
+                _prevLOS    = Vector3.zero;
+                if (!InGimbal(IntendedTarget.position)) { LoseLock(); return; }
+                BroadcastWarnNow();
+            }
+        }
+        else
+        {
+            if (!InGimbal(Target.position)) { LoseLock(); return; }
+            float dist = Vector3.Distance(transform.position, Target.position);
+            float lag  = Target == IntendedTarget ? Mathf.Clamp01((dist - 150f) / 600f) * LagCompensation : 0f;
+            aim = Target.position + (Target == IntendedTarget ? _targetVelEst * lag : Vector3.zero);
         }
 
-        _prevLOS           = LOS;
-        transform.position += transform.forward * _speed * dt;
+        NavigatePN(aim, dt);
     }
 
-    // ── 예측 교점 계산 ────────────────────────────────────────────────────
-    // 2회 반복 수렴으로 미사일 비행 시간과 타겟 이동을 동시에 고려
+    // 중간유도: 발사 기체가 표적을 계속 비추는 동안 예측 교점 갱신, 끊기면 마지막 교점으로 관성 비행
+    void UpdateDatalink(float dt)
+    {
+        _datalinkTimer += dt;
+        if (_datalinkTimer < DatalinkInterval) return;
+        _datalinkTimer = 0f;
+
+        bool supported = _shooter == null   // 발사 기체 정보 없음 → 지원 유지로 간주
+            || (_shooter.gameObject.activeInHierarchy &&
+                Vector3.Angle(_shooter.forward, IntendedTarget.position - _shooter.position) <= ShooterGimbal);
+        if (supported) _interceptPoint = PredictIntercept();
+    }
+
     Vector3 PredictIntercept()
     {
-        if (Target == null) return _interceptPoint;
-
-        float timeEst = Vector3.Distance(transform.position, Target.position) / Mathf.Max(_speed, 1f);
-
+        float t = Vector3.Distance(transform.position, IntendedTarget.position) / Mathf.Max(_speed, 1f);
         for (int i = 0; i < 2; i++)
         {
-            Vector3 predicted = Target.position + _targetVelEst * timeEst;
-            timeEst = Vector3.Distance(transform.position, predicted) / Mathf.Max(_speed, 1f);
+            Vector3 p = IntendedTarget.position + _targetVelEst * t;
+            t = Vector3.Distance(transform.position, p) / Mathf.Max(_speed, 1f);
         }
-
-        return Target.position + _targetVelEst * timeEst;
+        return IntendedTarget.position + _targetVelEst * t;
     }
 
-    void CheckHit(Vector3 posBefore)
+    // G 한계가 있는 비례항법 — a = N·Vc·(dλ/dt), |a| ≤ 가용 G
+    void NavigatePN(Vector3 aim, float dt)
     {
-        Vector3 posAfter = transform.position;
-        Vector3 move     = posAfter - posBefore;
-        float   moveLen  = move.magnitude;
+        Vector3 toAim = aim - transform.position;
+        if (toAim.sqrMagnitude < 0.01f) return;
+        Vector3 LOS = toAim.normalized;
+        Vector3 fwd = transform.forward;
 
-        // 직격 판정: 이동 선분~타겟 최단거리 (서브프레임 정밀도)
-        if (moveLen > 0.001f)
+        Vector3 accel = Vector3.zero;
+        if (_prevLOS.sqrMagnitude > 0.5f)
         {
-            Vector3 toTarget = Target.position - posBefore;
-            float   t        = Mathf.Clamp01(Vector3.Dot(toTarget, move) / (moveLen * moveLen));
-            float   closest  = Vector3.Distance(posBefore + move * t, Target.position);
-            if (closest <= directHitDist) { Detonate(); return; }
+            Vector3 losRate = (LOS - _prevLOS) / dt;
+            Vector3 tgtVel  = Target == IntendedTarget ? _targetVelEst : Vector3.zero;
+            float   vc      = Mathf.Max(Vector3.Dot(fwd * _speed - tgtVel, LOS), 50f);
+            accel = Spec.navConst * vc * losRate;
         }
+        _prevLOS = LOS;
 
-        // 근접 신관: 파편 살상반경
-        if (Vector3.Distance(posAfter, Target.position) <= proximityFuse)
-            Detonate();
+        // 시선각 오차가 크면(고각 발사·중간유도 직후) 추격 성분으로 기수를 먼저 돌린다
+        float err = Vector3.Angle(fwd, LOS);
+        if (err > 8f) accel += Vector3.ProjectOnPlane(LOS, fwd).normalized * (_speed * 1.2f * Mathf.Min(err, 60f) * Mathf.Deg2Rad);
+
+        accel = Vector3.ProjectOnPlane(accel, fwd);
+        float aMax = AvailableG * Gravity;
+        if (accel.sqrMagnitude > aMax * aMax) accel = accel.normalized * aMax;
+
+        Vector3 newFwd = (fwd * _speed + accel * dt).normalized;
+        transform.rotation = Quaternion.LookRotation(newFwd, transform.up);
+
+        // 고G 선회는 유도 항력을 만든다
+        _speed -= accel.magnitude / Gravity * 0.18f * dt;
     }
 
-    // ── 채프 도플러 기반 교란 효율 계산 ──────────────────────────────────
-    // 레이더 유도 미사일은 펄스-도플러 탐색기를 사용.
-    // 채프와 타겟의 방사 속도(미사일 방향 성분)가 비슷할수록 구별 불가 → 교란 성공.
-    // 타겟이 기동으로 속도를 바꾸면 도플러 차이가 커져 채프 효과 감소.
-    float CalcChaffEffectiveness(CountermeasureDecoy decoy, float dist)
+    public float AvailableG => Spec.maxG * Mathf.Clamp01(Mathf.Pow(_speed / Mathf.Max(1f, Spec.fullGSpeed), 2f));
+
+    bool InGimbal(Vector3 worldPos) => Vector3.Angle(transform.forward, worldPos - transform.position) <= Spec.gimbalLimit;
+
+    void LoseLock()
     {
-        Vector3 missileToDecoy  = (decoy.Position - transform.position).normalized;
-        Vector3 missileToTarget = (Target.position - transform.position).normalized;
-
-        // 방사 속도 = 미사일 방향 성분의 도플러 특성
-        float chaffDoppler  = Vector3.Dot(decoy.Velocity,  missileToDecoy);
-        float targetDoppler = Vector3.Dot(_targetVelEst,   missileToTarget);
-
-        // 도플러 차이가 레이더 필터 대역폭 이하면 구별 불가 → 교란 가능
-        float dopplerDiff = Mathf.Abs(chaffDoppler - targetDoppler);
-        const float dopplerBandwidth = 20f;  // m/s — 펄스-도플러 필터 대역폭
-        float dopplerMatch = Mathf.Clamp01(1f - dopplerDiff / dopplerBandwidth);
-
-        // 각도 분리: 채프가 타겟과 같은 레이더 빔 안에 있어야 함
-        float angularSep = Vector3.Angle(missileToDecoy, missileToTarget);
-        const float beamWidth = 4f;          // degrees — 레이더 빔 폭
-        float angularMatch = Mathf.Clamp01(1f - angularSep / beamWidth);
-
-        // 거리 요인 (보조)
-        float distFactor = Mathf.Clamp01(1f - dist / 120f);
-
-        return dopplerMatch * angularMatch * 0.85f + distFactor * 0.10f;
+        if (IsLost) return;
+        IsLost = true;
+        Target = null;
     }
 
+    // ── 대응책 ────────────────────────────────────────────────────────────
     void CheckCountermeasures()
     {
-        foreach (var decoy in CountermeasureSystem.Active)
+        if (IntendedTarget == null) return;
+        // 중간유도 중인 레이더 미사일은 자체 시커가 꺼져 있다 — 채프에 속을 것이 없다
+        if (!Spec.IsIR && _phase == Phase.Midcourse) return;
+        var cfg = GameplayConfigSO.Instance;
+        Vector3 toTarget = IntendedTarget.position - transform.position;
+        float   tgtDist  = toTarget.magnitude;
+        float   fov      = Spec.IsIR ? 9f : 6f;   // 시커 순간 시야 (IR 레티클 / 레이더 빔폭)
+
+        var decoys = CountermeasureSystem.Active;
+        for (int i = 0; i < decoys.Count; i++)
         {
-            bool compatible = GuidanceType == MissileGuidanceType.HeatSeeking
-                            ? decoy.Type == CountermeasureType.Flare
-                            : decoy.Type == CountermeasureType.Chaff;
+            var d = decoys[i];
+            if (d == null) continue;
+            bool compatible = Spec.IsIR ? d.Type == CountermeasureType.Flare : d.Type == CountermeasureType.Chaff;
             if (!compatible) continue;
+            if (_evaluatedDecoys.Contains(d)) continue;
 
-            float dist = Vector3.Distance(transform.position, decoy.Position);
-            if (dist > 120f) continue;
+            // 표적이 뿌린 것 (소유자 정보가 없으면 표적 근처)
+            bool ours = !string.IsNullOrEmpty(d.Owner) && !string.IsNullOrEmpty(TargetNick)
+                      ? d.Owner == TargetNick
+                      : Vector3.Distance(d.Position, IntendedTarget.position) < 200f;
+            if (!ours) continue;
 
-            float prob;
-            if (GuidanceType == MissileGuidanceType.RadarGuided)
-                prob = CalcChaffEffectiveness(decoy, dist);
-            else
-                prob = Mathf.Lerp(0.85f, 0.05f, dist / 120f);  // 플레어: 거리 기반 유지
+            Vector3 toDecoy = d.Position - transform.position;
+            if (Vector3.Angle(toDecoy, toTarget) > fov) continue;   // 아직 시커 시야 밖 — 나중에 들어오면 판정
+            _evaluatedDecoys.Add(d);
 
-            if (Random.value < prob)
+            float p = Spec.IsIR ? FlareChance(cfg, tgtDist) : ChaffChance(cfg, d);
+            if (Random.value < p)
             {
-                Target      = decoy.transform;
-                IsDeflected = true;
+                Target          = d.transform;
+                IsDeflected     = true;
+                _reacquireTried = false;
+                _prevLOS        = Vector3.zero;
                 return;
             }
         }
     }
 
-    void Detonate()
+    float FlareChance(GameplayConfigSO cfg, float tgtDist)
     {
-        // 기만체(플레어/채프)로 유도된 경우 Target 에 PlayerController 가 없어 피격자 없음
-        var victimPc  = Target != null ? Target.GetComponent<PlayerController>() : null;
+        float p = cfg.flareSeduceChance * (1f - Spec.ccmResistance);
+
+        // 열원 — 애프터버너는 플레어보다 뜨겁고, 아이들은 플레어가 압도한다
+        var pc = IntendedTarget.GetComponent<PlayerController>();
+        if (pc != null && pc.isLocalPlayer)
+        {
+            if (pc.AfterburnerActive)    p *= 0.5f;
+            else if (pc.Throttle01 < 0.35f) p *= 1.4f;
+        }
+
+        // 각도 — 꼬리 쪽에서는 엔진 배기열이 강해 플레어 효과가 떨어진다
+        float aspect = Vector3.Angle(IntendedTarget.forward, transform.position - IntendedTarget.position);
+        p *= aspect < 60f ? 0.8f : aspect > 120f ? 1.25f : 1f;
+
+        // 너무 이른 플레어는 (기만체가 꺼진 뒤) 재포착될 가능성이 크다 — 판정은 그대로, 재포착에서 반영
+        if (tgtDist > Spec.seekerRange) p *= 0.6f;
+        return Mathf.Clamp01(p);
+    }
+
+    float ChaffChance(GameplayConfigSO cfg, CountermeasureDecoy d)
+    {
+        // 펄스-도플러: 채프(거의 정지)와 표적의 시선 방향 속도가 비슷할수록 구별 불가 → 노치 + 채프가 정석
+        Vector3 los        = (IntendedTarget.position - transform.position).normalized;
+        float   tgtRadial  = Mathf.Abs(Vector3.Dot(_targetVelEst, los));
+        float   chaffRad   = Mathf.Abs(Vector3.Dot(d.Velocity, los));
+        float   match      = Mathf.Clamp01(1f - Mathf.Abs(tgtRadial - chaffRad) / (cfg.notchSpeed * 2.5f));
+        float   p          = cfg.chaffSeduceChance * (1f - Spec.ccmResistance) * Mathf.Lerp(0.35f, 2.2f, match);
+        return Mathf.Clamp01(p);
+    }
+
+    // 도플러 노치 — 표적이 미사일 시선과 수직(빔)으로 날면 클러터 속에 묻혀 레이더 락을 잃는다
+    void CheckNotch()
+    {
+        if (Spec.IsIR || _phase != Phase.Terminal || Target != IntendedTarget || IntendedTarget == null) return;
+        var cfg = GameplayConfigSO.Instance;
+        Vector3 los    = (IntendedTarget.position - transform.position).normalized;
+        float   radial = Mathf.Abs(Vector3.Dot(_targetVelEst, los));
+        _notchTime = radial < cfg.notchSpeed ? _notchTime + CmCheckInterval : Mathf.Max(0f, _notchTime - CmCheckInterval * 2f);
+
+        // 저고도 표적일수록 해면 클러터가 강하다
+        float lowAlt = IntendedTarget.position.y < 600f ? 1.5f : 1f;
+        if (_notchTime > 0.8f && Random.value < 0.12f * (1f - Spec.ccmResistance) * lowAlt)
+            LoseLock();
+    }
+
+    // 기만체가 꺼진 뒤 시커 시야 안에 원 표적이 있으면 1회 재포착 시도
+    void TryReacquire()
+    {
+        if (_reacquireTried || IntendedTarget == null) { if (!IsLost) LoseLock(); return; }
+        _reacquireTried = true;
+
+        Vector3 to = IntendedTarget.position - transform.position;
+        bool inView = Vector3.Angle(transform.forward, to) < 20f && to.magnitude < Spec.seekerRange * 1.2f;
+        if (inView && Random.value < 0.35f + 0.45f * Spec.ccmResistance)
+        {
+            Target      = IntendedTarget;
+            IsDeflected = false;
+            _prevLOS    = Vector3.zero;
+        }
+        else LoseLock();
+    }
+
+    // ── 명중 판정 ─────────────────────────────────────────────────────────
+    void CheckHit(Vector3 posBefore)
+    {
+        // 원 표적 기준 — 기만체를 쫓던 중이라도 표적 옆을 지나면 근접신관이 작동한다
+        if (IntendedTarget != null && IntendedTarget.gameObject.activeInHierarchy)
+        {
+            float closest = SegmentDistance(posBefore, transform.position, IntendedTarget.position);
+            if (closest <= Spec.proximityFuse) { Detonate(IntendedTarget, closest); return; }
+        }
+        // 기만체에 충돌
+        if (Target != null && Target != IntendedTarget &&
+            SegmentDistance(posBefore, transform.position, Target.position) <= 4f)
+            Detonate(null, 0f);
+    }
+
+    static float SegmentDistance(Vector3 a, Vector3 b, Vector3 p)
+    {
+        Vector3 ab = b - a;
+        float   l2 = ab.sqrMagnitude;
+        float   t  = l2 > 1e-6f ? Mathf.Clamp01(Vector3.Dot(p - a, ab) / l2) : 0f;
+        return Vector3.Distance(a + ab * t, p);
+    }
+
+    void Detonate(Transform victimT, float missDist)
+    {
+        var victimPc  = victimT != null ? victimT.GetComponent<PlayerController>() : null;
         bool hitLocal = victimPc != null && victimPc.isLocalPlayer;
         string victim = victimPc != null ? victimPc.nickname : "";
-        float damage  = victimPc != null ? CalcDamage(Vector3.Distance(transform.position, Target.position)) : 0f;
+        float damage  = victimPc != null ? CalcDamage(missDist) : 0f;
 
         HitEffectSystem.Instance?.TriggerHit(transform.position, hitLocal);
 
@@ -364,7 +472,6 @@ public class MissileController : MonoBehaviour
         CombatDamage.Apply(victim, damage, ShooterNick, CombatDamage.WeaponMissile);
         CombatDamage.ReportHit(ShooterNick, victim, CombatDamage.WeaponMissile);
         BroadcastDestroy(victim, damage);
-
         Destroy(gameObject);
     }
 
@@ -375,34 +482,38 @@ public class MissileController : MonoBehaviour
         Destroy(gameObject);
     }
 
-    // 직격은 치명상, 근접신관은 파편 살상반경 안에서 거리에 따라 감쇠 (기본 missileDamage=40 → 직격 100, 근접 60~30)
+    // 직격은 치명상, 근접신관은 파편 살상반경 안에서 거리에 따라 감쇠
     float CalcDamage(float dist)
     {
-        float baseDmg = GameplayConfigSO.Instance.missileDamage;
-        if (dist <= directHitDist) return baseDmg * 2.5f;
-        float t = Mathf.InverseLerp(directHitDist, proximityFuse, dist);
+        float baseDmg = GameplayConfigSO.Instance.missileDamage * Spec.damageScale;
+        if (dist <= Spec.directHitDist) return baseDmg * 2.5f;
+        float t = Mathf.InverseLerp(Spec.directHitDist, Spec.proximityFuse, dist);
         return baseDmg * Mathf.Lerp(1.5f, 0.75f, t);
     }
 
-    // ARH 활성화 시 타겟에게 상위 경고 레벨 브로드캐스트
-    void BroadcastARHActive()
+    // ── 네트워크 ──────────────────────────────────────────────────────────
+    // 표적에게 주기적으로 경보 — IR 은 미사일 접근 경보(MAWS), 레이더는 피트불 후 ARH 경보.
+    // 기만되었거나 락을 잃은 미사일은 경보를 멈춘다 (표적 RWR 에서 위협이 사라짐)
+    void BroadcastWarn()
+    {
+        if (!IsTrackingTarget || string.IsNullOrEmpty(TargetNick)) return;
+        BroadcastWarnNow();
+    }
+
+    void BroadcastWarnNow()
     {
         var sc = NetworkManager.Instance?.socketClient;
-        if (sc == null || !CombatDamage.SimulatesWeaponOf(ShooterNick)) return;
-
-        var targetPc = Target?.GetComponent<PlayerController>();
-        if (targetPc == null) return;
-
-        sc.SendMissileWarn(ShooterNick, targetPc.nickname,
-                           (int)ThreatWarningSystem.ThreatLevel.MissileActive);
+        if (sc == null || string.IsNullOrEmpty(TargetNick) || !CombatDamage.SimulatesWeaponOf(ShooterNick)) return;
+        sc.SendMissileWarn(ShooterNick, TargetNick, IsARHActive
+            ? (int)ThreatWarningSystem.ThreatLevel.MissileActive
+            : (int)ThreatWarningSystem.ThreatLevel.MissileFired);
     }
 
     void BroadcastPosition()
     {
         var sc = NetworkManager.Instance?.socketClient;
-        // AI 가 쏜 미사일은 호스트가 시뮬레이션한다 (기존: 발사자 닉네임 비교라 AI 미사일 위치·폭발이 전송되지 않았음)
+        // AI 가 쏜 미사일은 호스트가 시뮬레이션한다
         if (sc == null || !CombatDamage.SimulatesWeaponOf(ShooterNick)) return;
-
         sc.SendMissileMove(MissileId, transform.position, transform.eulerAngles, _speed);
     }
 
@@ -410,7 +521,6 @@ public class MissileController : MonoBehaviour
     {
         var sc = NetworkManager.Instance?.socketClient;
         if (sc == null || !CombatDamage.SimulatesWeaponOf(ShooterNick)) return;
-
         sc.SendMissileDestroy(MissileId, ShooterNick, victim, transform.position, damage);
     }
 }

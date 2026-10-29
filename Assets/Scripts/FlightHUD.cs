@@ -1126,7 +1126,10 @@ public class FlightHUD : MonoBehaviour
 
         bool hasTarget   = targeting.Target != null;
         bool locked      = targeting.State == TargetingSystem.LockState.Locked;
-        bool inFireZone  = locked && targeting.IsInFireZone;
+        // 발사 큐는 선택 무장의 DLZ 기준 (AIM-9X: 시커 포착, AIM-120: 레이더 락)
+        bool   urgent    = false;
+        string cue       = launcher != null && RoomModeSO.WeaponsEnabled ? launcher.Cue(out urgent) : "SAFE";
+        bool inFireZone  = urgent;
 
         if (hasTarget && targeting.IsTargetOnScreen)
         {
@@ -1158,9 +1161,14 @@ public class FlightHUD : MonoBehaviour
                 tdbLabel.text  = "SHOOT";
                 tdbLabel.color = blink ? CRIT : WARN;
             }
+            else if (locked && launcher != null && launcher.ShotTarget == targeting.Target)
+            {
+                tdbLabel.text  = cue == "STEER" ? $"STEER  {targeting.BoresightAngle:F0}°" : cue;
+                tdbLabel.color = cue == "IN RNG" ? HG : WARN;
+            }
             else if (locked)
             {
-                tdbLabel.text  = $"STEER  {targeting.BoresightAngle:F0}°";
+                tdbLabel.text  = $"LOCK  {cue}";
                 tdbLabel.color = WARN;
             }
             else
@@ -1181,7 +1189,7 @@ public class FlightHUD : MonoBehaviour
                 if (inFireZone)
                 { weaponText.text = "SHOOT"; weaponText.color = blink ? CRIT : WARN; }
                 else if (locked)
-                { weaponText.text = "LOCK"; weaponText.color = HG; }
+                { weaponText.text = cue == "IN RNG" ? "RDY" : "LOCK"; weaponText.color = HG; }
                 else
                 { weaponText.text = "ACQR"; weaponText.color = WARN; }
             }
@@ -1191,8 +1199,7 @@ public class FlightHUD : MonoBehaviour
             tdbRoot.gameObject.SetActive(false);
             offScreenRoot.gameObject.SetActive(true);
 
-            Vector2 dir = targeting.TargetCanvasPos;
-            if (dir.sqrMagnitude < 0.001f) dir = Vector2.up;
+            Vector2 dir = targeting.EdgeDirection(targeting.Target.transform.position);
             float   maxX  = 830f, maxY = 370f;
             float   sX    = Mathf.Abs(dir.x) > 0.001f ? maxX / Mathf.Abs(dir.x) : float.MaxValue;
             float   sY    = Mathf.Abs(dir.y) > 0.001f ? maxY / Mathf.Abs(dir.y) : float.MaxValue;
@@ -1210,15 +1217,32 @@ public class FlightHUD : MonoBehaviour
         {
             tdbRoot.gameObject.SetActive(false);
             offScreenRoot.gameObject.SetActive(false);
-            if (weaponText != null) { weaponText.text = "SAFE"; weaponText.color = HGD; }
+            if (weaponText != null)
+            {
+                // 레이더 표적 없이 AIM-9X 시커만으로도 교전 가능 — 톤/발사 큐 표시
+                if (inFireZone)     { weaponText.text = "SHOOT"; weaponText.color = blink ? CRIT : WARN; }
+                else if (cue is "TONE" or "IN RNG" or "OUT RNG" or "MIN RNG" or "STEER")
+                                    { weaponText.text = cue == "IN RNG" ? "RDY" : cue == "OUT RNG" ? "OUT" : cue == "MIN RNG" ? "MIN" : cue; weaponText.color = cue == "IN RNG" ? HG : WARN; }
+                else                { weaponText.text = "SAFE"; weaponText.color = HGD; }
+            }
         }
 
         UpdateEnemyMarkers();
 
         if (aim120CountText != null && launcher != null)
         {
-            aim120CountText.text  = $"{launcher.MissileCount}";
-            aim120CountText.color = launcher.MissileCount == 0 ? CRIT : INK;
+            if (!_storeLabelsFound) FindStoreLabels();
+            bool sel9 = launcher.Selected == MissileLauncher.Weapon.AIM9X;
+            aim120CountText.text  = $"{launcher.Aim120Count}";
+            aim120CountText.color = launcher.Aim120Count == 0 ? CRIT : INK;
+            if (_aim9CountText != null)
+            {
+                _aim9CountText.text  = $"{launcher.Aim9Count}";
+                _aim9CountText.color = launcher.Aim9Count == 0 ? CRIT : INK;
+            }
+            // 선택 무장 강조
+            if (_aim9Label   != null) _aim9Label.color   = sel9 ? INK : HGD;
+            if (_aim120Label != null) _aim120Label.color = sel9 ? HGD : INK;
         }
 
         if (cmsys != null)
@@ -1236,6 +1260,27 @@ public class FlightHUD : MonoBehaviour
         }
 
         UpdateThreatWarningUI();
+    }
+
+    // 무장 카드는 씬에 베이크돼 있어 AIM-9X 값/라벨 참조가 직렬화돼 있지 않다 — 라벨 텍스트로 찾아 연결
+    bool _storeLabelsFound;
+    Text _aim9CountText, _aim9Label, _aim120Label;
+
+    void FindStoreLabels()
+    {
+        _storeLabelsFound = true;
+        var card = aim120CountText != null ? aim120CountText.transform.parent : null;
+        if (card == null) return;
+        var texts = card.GetComponentsInChildren<Text>(true);
+        for (int i = 0; i < texts.Length; i++)
+        {
+            if (texts[i].text == "AIM-9X")
+            {
+                _aim9Label = texts[i];
+                if (i + 1 < texts.Length) _aim9CountText = texts[i + 1];
+            }
+            else if (texts[i].text == "AIM-120") _aim120Label = texts[i];
+        }
     }
 
     // AI 적기: 빨간 코너 박스  /  인간 플레이어 비행: 파란 △
@@ -1262,15 +1307,37 @@ public class FlightHUD : MonoBehaviour
             if (pc == lockedTarget) continue;
 
             Vector2 cp = targeting.WorldToCanvasPos(pc.transform.position, out bool onScreen);
-            if (!onScreen) continue;
-
             bool  isEnemy = AIManager.IsEnemyBot(pc.nickname);
             Color col     = isEnemy ? MarkerEnemyColor : MarkerHumanColor;
 
-            _emRoots[mi].anchoredPosition = cp;
-            _emNicks[mi].text  = pc.nickname;
+            if (onScreen)
+            {
+                _emRoots[mi].anchoredPosition = cp;
+                _emNicks[mi].text  = pc.nickname;
+                _emIcons[mi].sprite = HudSprites.Get(isEnemy ? HudSprites.MarkerBox : HudSprites.MarkerTri);
+                _emIcons[mi].rectTransform.localRotation = Quaternion.identity;
+            }
+            else
+            {
+                // 화면 밖 적기 — 가장자리 화살표 + 시계 방위·거리 (뒤에 붙은 적기를 놓치지 않게)
+                if (!isEnemy || targeting.LocalPlayer == null) continue;
+                Vector2 dir = targeting.EdgeDirection(pc.transform.position);
+                const float maxX = 800f, maxY = 350f;
+                float sX = Mathf.Abs(dir.x) > 0.001f ? maxX / Mathf.Abs(dir.x) : float.MaxValue;
+                float sY = Mathf.Abs(dir.y) > 0.001f ? maxY / Mathf.Abs(dir.y) : float.MaxValue;
+                _emRoots[mi].anchoredPosition = dir * Mathf.Min(sX, sY);
+                _emIcons[mi].sprite = HudSprites.Get(HudSprites.Chevron);
+                _emIcons[mi].rectTransform.localRotation = Quaternion.Euler(0f, 0f, -Mathf.Atan2(dir.x, dir.y) * Mathf.Rad2Deg);
+
+                var   me    = targeting.LocalPlayer.transform;
+                Vector3 to  = pc.transform.position - me.position;
+                Vector3 fwd = me.forward; fwd.y = 0f; to.y = 0f;
+                int   clock = Mathf.RoundToInt(Mathf.Repeat(Vector3.SignedAngle(fwd, to, Vector3.up), 360f) / 30f) % 12;
+                float km    = (pc.transform.position - me.position).magnitude / 1000f;
+                _emNicks[mi].text = $"{(clock == 0 ? 12 : clock)}시  {(km >= 1f ? $"{km:F1}km" : $"{km * 1000f:F0}m")}";
+            }
+
             _emNicks[mi].color = new Color(col.r, col.g, col.b, 0.75f);
-            _emIcons[mi].sprite = HudSprites.Get(isEnemy ? HudSprites.MarkerBox : HudSprites.MarkerTri);
             _emIcons[mi].color  = col;
             _emRoots[mi].gameObject.SetActive(true);
             mi++;

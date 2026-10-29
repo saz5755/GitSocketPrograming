@@ -106,6 +106,9 @@ public class AIBotController : MonoBehaviour
 
     public void SetMaxSpeed(float v) => _maxSpeed = Mathf.Max(0f, v);
 
+    /// <summary>비행 중인 기체를 넘겨받을 때 — 현재 속도에서 시작</summary>
+    public void SetInitialSpeed(float v) { Speed = Mathf.Max(0f, v); _targetSpeed = Speed; }
+
     // AIManager.BuildAIObject가 호출 — Awake 직후 SO 재할당 + 인스턴스 변수 재동기화
     public void SetConfig(AIBotConfigSO config)
     {
