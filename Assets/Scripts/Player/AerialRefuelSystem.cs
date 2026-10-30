@@ -27,6 +27,19 @@ public class AerialRefuelSystem : MonoBehaviour
     enum State { Off, Rendezvous, Precontact, Contact }
     State _state;
 
+    // ── 조회 (FlightCoach 튜토리얼이 읽는다) ─────────────────────────────
+    public static AerialRefuelSystem Instance { get; private set; }
+    public bool  HasTanker      { get; private set; }
+    public float TankerDistance { get; private set; } = float.MaxValue;
+    public float TankerBearing  { get; private set; }
+    public float TankerAltDiff  { get; private set; }
+    public float DrogueDistance => _prevDist;
+    public float Closure        => _closure;
+    public bool  InContact      => _state == State.Contact;
+    public bool  ProbeReady     => _probe != null && _probe.Ready;
+    public const float MaxClosure = MaxContactClosure;
+    public const float ProbeRange = ProbeOutRange;
+
     PlayerController _pc;
     RefuelProbe      _probe;
     TankerDrogueRig  _rig;
@@ -46,6 +59,8 @@ public class AerialRefuelSystem : MonoBehaviour
     Text _title, _l1, _l2, _l3, _reticleLabel;
     Image _reticleImg, _bar;
 
+    void Awake() => Instance = this;
+    void OnDestroy() { if (Instance == this) Instance = null; }
     void Start() => BuildHud();
 
     void Update()
@@ -64,11 +79,16 @@ public class AerialRefuelSystem : MonoBehaviour
         }
 
         _rig = TankerDrogueRig.Nearest(_pc.transform.position, out float tankerDist);
-        if (_rig == null || _rig.transform == _pc.transform)
+        HasTanker = _rig != null && _rig.transform != _pc.transform;
+        if (!HasTanker)
         {
+            TankerDistance = float.MaxValue;
             _probe.Extended = false; _state = State.Off; ShowHud(false);
             return;
         }
+        TankerDistance = tankerDist;
+        TankerBearing  = Bearing(_rig.transform.position);
+        TankerAltDiff  = _rig.transform.position.y - _pc.transform.position.y;
 
         float dt = Mathf.Max(Time.deltaTime, 1e-4f);
         _bounceT -= dt;
@@ -250,6 +270,11 @@ public class AerialRefuelSystem : MonoBehaviour
         bool show = tankerDist < HudRange || _state == State.Contact || (_pc.IsFuelLow && tankerDist < 25000f);
         ShowHud(show);
         if (!show) return;
+
+        // 훈련 안내 막대(FlightCoach)가 같은 하단 중앙을 쓰므로 떠 있는 동안은 그 위로 비켜 선다
+        float wantY = FlightCoach.BarShown ? 318f : 150f;
+        var ap = _panel.anchoredPosition;
+        _panel.anchoredPosition = new Vector2(0f, Mathf.MoveTowards(ap.y, wantY, Time.unscaledDeltaTime * 900f));
 
         float fuel01 = _pc.CurrentFuel / Mathf.Max(1f, _pc.MaxFuel);
         _bar.rectTransform.sizeDelta = new Vector2(380f * fuel01, 0f);

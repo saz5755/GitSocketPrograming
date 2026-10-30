@@ -28,11 +28,14 @@ public class FlightCoach : MonoBehaviour
 
     static void Ensure() { if (Instance == null) new GameObject("FlightCoach").AddComponent<FlightCoach>(); }
 
+    /// <summary>하단 훈련 안내 막대가 떠 있는가 — 같은 자리를 쓰는 AAR 패널이 위로 비켜 선다</summary>
+    public static bool BarShown => Instance != null && Instance._bar != null && Instance._bar.activeSelf;
+
     const KeyCode SkipKey = KeyCode.F2;
     const KeyCode QuitKey = KeyCode.F3;
 
     // ── 훈련 단계 ─────────────────────────────────────────────────────────
-    enum Step { Board, Preflight, Launch, Afterburner, Roll, WeaponSelect, Lock, Fire, Gun, Flare, Evade }
+    enum Step { Board, Preflight, Launch, Afterburner, Roll, WeaponSelect, Lock, Fire, Gun, Flare, Evade, TankerRendezvous, AirRefuel }
 
     /// <summary>안내창에 그릴 키캡 — 누르고 있는 동안 불이 켜진다</summary>
     struct Cap { public string label, caption; public Func<bool> held; }
@@ -91,7 +94,7 @@ public class FlightCoach : MonoBehaviour
                 caps = new[] { Raw("WASD", "이동", () => Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.D)), confirm } },
             new StepInfo { id = Step.Preflight, title = "시동 절차",
                 hint = "콕핏 스위치를 순서대로 좌클릭: APU → ENG → AV",
-                desc = "실기처럼 보조동력(APU)으로 엔진을 돌리고 항전 장비를 켭니다. 표시등이 켜질 때까지 기다렸다 다음 스위치를 누르세요.",
+                desc = "실기처럼 보조동력(APU)으로 엔진을 돌리고 항전 장비를 켭니다. 표시등이 켜질 때까지 기다렸다 다음 스위치를 누르세요. 그동안 갑판 요원이 연료를 가득 채워 줍니다.",
                 caps = new[] { Lmb("스위치") } },
             new StepInfo { id = Step.Launch, title = "카타펄트 발진",
                 hint = $"[F] 로 발진 → 이륙 직후 [{K(SimAction.ThrottleUp)}] 홀드로 추력 유지",
@@ -129,6 +132,14 @@ public class FlightCoach : MonoBehaviour
                 hint = "MISSILE 경보 → 미사일 쪽 측면(90°)으로 급선회 + 플레어/채프",
                 desc = "적기에 다가가면 적이 미사일을 쏩니다. 경보가 울리면 RWR 의 미사일 방향을 옆에 두고 급선회하며 기만체를 뿌리세요. 살아남으면 완료.",
                 caps = new[] { Key(SimAction.Flare, "플레어"), Key(SimAction.Chaff, "채프"), Mouse("급선회") } },
+            new StepInfo { id = Step.TankerRendezvous, title = "급유기 랑데부",
+                hint = "HUD 의 TANKER 마커를 따라 급유기 1.2km 안으로",
+                desc = "연료가 떨어지면 하늘에서 급유받습니다. 급유기는 항모 북동쪽 고도 약 1,500m 를 천천히 돌고 있습니다. 가까이 가면 급유 프로브가 자동으로 펴집니다.",
+                caps = new[] { Key(SimAction.ThrottleUp, "추력"), Mouse("방향") } },
+            new StepInfo { id = Step.AirRefuel, title = "공중급유 접속",
+                hint = "바스켓 뒤에서 속도를 맞추고 1~3 m/s 로 천천히 꽂기",
+                desc = "급유기 뒤 아래 늘어진 바스켓 뒤에 자리 잡고, 하단 AAR 패널의 ▲▼◀▶ 로 정렬하세요. 천천히 밀어 넣어 CONTACT 가 되면 같은 속도로 자세를 유지합니다. 너무 빠르면 튕겨 나옵니다.",
+                caps = new[] { Key(SimAction.ThrottleUp, "가속"), Key(SimAction.ThrottleDown, "감속"), Mouse("정렬") } },
         };
         if (RoomModeSO.IsAirshow)
             _steps = Array.FindAll(_steps, s => !s.combatOnly);
@@ -151,7 +162,8 @@ public class FlightCoach : MonoBehaviour
         _intro.gameObject.SetActive(false);
     }
 
-    void ResetDetect() { _prevMsl = _prevAmmo = _prevFlare = -1; _sawMissile = false; _rollHeld = 0f; }
+    void ResetDetect() { _prevMsl = _prevAmmo = _prevFlare = -1; _sawMissile = false; _rollHeld = 0f; _contactHeld = 0f; }
+    float _contactHeld;
 
     // 이미 끝낸 단계 건너뛰기 (예: 비행 중 훈련 시작)
     void SkipSatisfied()
@@ -361,6 +373,41 @@ public class FlightCoach : MonoBehaviour
                 if (_prevFlare < 0) _prevFlare = f;
                 if (cms != null) live = $"남은 플레어 {cms.FlareRemaining} · 채프 {cms.ChaffRemaining}";
                 return f >= 0 && f < _prevFlare;
+            }
+
+            case Step.TankerRendezvous:
+            {
+                var ars = AerialRefuelSystem.Instance;
+                if (!flying) { live = "비행 중에만 급유기를 찾을 수 있습니다"; return false; }
+                if (ars == null || !ars.HasTanker) { live = "급유기 투입 대기 중"; return false; }
+                float d = ars.TankerDistance, dy = ars.TankerAltDiff;
+                string alt = Mathf.Abs(dy) < 100f ? "같은 고도" : dy > 0f ? $"위 {dy:F0}m" : $"아래 {-dy:F0}m";
+                live = $"급유기: 방위 {ars.TankerBearing:000}° · {Km(d)} · {alt}";
+                progress = Mathf.Clamp01(1f - (d - AerialRefuelSystem.ProbeRange) / 8000f);
+                return d < AerialRefuelSystem.ProbeRange;
+            }
+
+            case Step.AirRefuel:
+            {
+                var ars = AerialRefuelSystem.Instance;
+                if (ars == null || !flying) { live = "비행 중에만 가능합니다"; return false; }
+                if (ars.InContact)
+                {
+                    _contactHeld += Time.deltaTime;
+                    live = me != null ? $"CONTACT — 연료 {me.CurrentFuel / me.MaxFuel * 100f:F0}%  · 자세 유지!" : "CONTACT";
+                    progress = _contactHeld / 2f;
+                    return _contactHeld >= 2f;
+                }
+                _contactHeld = 0f;
+                if (ars.TankerDistance > AerialRefuelSystem.ProbeRange) live = $"급유기에서 멀어졌습니다 — {Km(ars.TankerDistance)}";
+                else if (!ars.ProbeReady) live = "급유 프로브 전개 중…";
+                else
+                {
+                    float c = ars.Closure;
+                    string pace = c > AerialRefuelSystem.MaxClosure ? "너무 빠름 — 감속!" : c < 0.3f ? "조금 더 다가가세요" : "좋습니다 — 그대로";
+                    live = $"바스켓 {ars.DrogueDistance:F1}m · 접근 {c:+0.0;-0.0} m/s — {pace}";
+                }
+                return false;
             }
 
             case Step.Evade:

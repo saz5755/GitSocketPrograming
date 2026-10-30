@@ -15,12 +15,12 @@ public class PilotGuideUI : MonoBehaviour
     public static bool ClosedThisFrame => s_closedFrame == Time.frameCount;
     static int s_closedFrame = -1;
 
-    static readonly string[] Tabs = { "1  지상 · 탑승 · 출격", "2  비행 조작", "3  무장 사용", "4  위협 인지 · 회피", "5  착함 · 피격 · 기타" };
+    static readonly string[] Tabs = { "1  지상 · 탑승 · 출격", "2  비행 조작", "3  무장 사용", "4  위협 인지 · 회피", "5  착함 · 피격 · 기타", "6  연료 · 급유" };
 
     Font _font;
     GameObject _root;
     Text _title, _body;
-    readonly UIThemedButton[] _tabBtns = new UIThemedButton[5];
+    readonly UIThemedButton[] _tabBtns = new UIThemedButton[Tabs.Length];
     UIThemedButton _trainBtn, _tipsBtn;
     int _page;
     GroundController _frozenGc;
@@ -221,6 +221,27 @@ $@"{H("RWR (레이더 경보 수신기) — 콕핏 좌측 원형 스코프 / 화
   6. 레이더 미사일: 측면 비행(노치) + 채프가 가장 잘 통합니다. 멀리서 오면 {H("등을 돌려 도망")} — 미사일 연료가 바닥납니다.
   7. 마지막 순간(수백 m) 급선회 — 미사일은 회전 반경이 커서 따라오지 못합니다.";
 
+            case 5: return
+$@"{H("연료")}
+  연료는 SYSTEMS 카드의 FUEL 로 확인합니다.  {Key(SimAction.Afterburner)} 애프터버너는 평소의 약 4배를 씁니다.
+  20% 아래면 {H("BINGO FUEL")} 경고와 함께 급유기 방향을 알려 줍니다.  0% 가 되면 {Crit("FUEL EMPTY")} — 엔진 추력이 끊겨 활공합니다.
+
+{H("① 항모 갑판 급유")}
+  착함 후 다시 전투기에 탑승하면 {H("시동 절차(APU → ENG → AV)를 하는 동안 갑판 요원이 연료를 채웁니다")} (약 6초).
+  발진할 때는 항상 만탱크입니다.
+
+{H("② 공중급유 (프로브-드로그)")}  — 비행을 멈추지 않고 하늘에서 연료를 받습니다
+  1. {H("랑데부")}: HUD 의 {Ok("TANKER")} 마커(화면 밖이면 화살표)를 따라 급유기로 — 항모 북동쪽, 고도 약 1,500m, 약 245 km/h
+  2. {H("프로브 전개")}: 1.2km 안에 들어오면 기수 오른쪽 급유 프로브가 자동으로 펴집니다
+  3. {H("프리컨택")}: 급유기 뒤 아래에 늘어진 {H("바스켓")} 뒤 수 m 에 자리 잡고 속도를 맞춥니다
+     하단 AAR 패널 — ▲▼ ◀▶ = 바스켓이 있는 쪽,  SPD Δ = 급유기와의 속도 차
+  4. {H("컨택")}: {Ok("접근속도 1~3 m/s")} 로 천천히 밀어 넣어 프로브 끝을 바스켓에 꽂습니다
+     너무 빠르면 {Crit("TOO FAST")} — 튕겨 나옵니다.  성공하면 {Ok("CONTACT")} + 급유기 포드 표시등이 {Ok("녹색")}
+  5. {H("급유")}: 급유기와 같은 속도로 자세 유지 (좌우·상하 약 2m 안).  벗어나면 {Crit("BREAKAWAY")} 분리
+  6. {H("분리")}: 만탱크가 되면 {Key(SimAction.ThrottleDown)} 로 살짝 감속해 뒤로 빠집니다
+
+  표시등:  {H("황색")} = 급유 준비   {Ok("녹색")} = 연료 이송 중";
+
             default: return
 $@"{H("항모 착함")}
   항모 뒤쪽에서 정렬해 감속 접근 → 착함 존에서 갑판에 내리면 어레스팅 와이어가 잡아 줍니다.
@@ -299,7 +320,7 @@ $@"{H("항모 착함")}
         _tipsBtn.OnClick = () => { FlightCoach.ThreatTipsEnabled = !FlightCoach.ThreatTipsEnabled; RefreshTrainButton(); };
         var close = Button(panel, "닫기  [ESC]", UIThemedButton.Style.Secondary, new Vector2(W * 0.5f - 150f, -Hh * 0.5f + 46f), new Vector2(220f, 52f), 16);
         close.OnClick = Hide;
-        Txt(panel, "[1]~[5] 탭 이동", new Vector2(-W * 0.5f + 40f, -Hh * 0.5f + 46f), new Vector2(300f, 20f), 12, t.textSecondary, TextAnchor.MiddleLeft);
+        Txt(panel, $"[1]~[{Tabs.Length}] 탭 이동", new Vector2(-W * 0.5f + 40f, -Hh * 0.5f + 46f), new Vector2(300f, 20f), 12, t.textSecondary, TextAnchor.MiddleLeft);
     }
 
     static RectTransform Rect(string n, Transform p, Vector2 pos, Vector2 size)
