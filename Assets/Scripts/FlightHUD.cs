@@ -1012,7 +1012,8 @@ public class FlightHUD : MonoBehaviour
         {
             int v=base_+(half-i)*(int)step;
             labels[i].text=v>=0?v.ToString("F0"):"";
-            float y=(half-i)*px+frac*px;
+            // 라벨 위치 = (값-현재값)/step*px → 값이 오르면 테이프가 아래로 흘러야 연속적
+            float y=(half-i)*px-frac*px;
             rts[i].anchoredPosition=new Vector2(rts[i].anchoredPosition.x,y);
         }
     }
