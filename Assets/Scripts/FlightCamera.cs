@@ -21,6 +21,9 @@ public class FlightCamera : MonoBehaviour
 
     bool isCockpit = false;
     public bool IsCockpit => isCockpit;
+    /// <summary>카메라가 실제로 조종석 안에 있는가 (비행 콕핏·탑승 콕핏) — 사운드 차음·콕핏 전용 연출 판단</summary>
+    public bool IsInsideCockpit => _deathFocus == null && _groundTarget == null
+                                && (_isBoardingMode || (isCockpit && !IsMissileCam && localPlayer != null));
     public Vector3 CockpitOffset => cockpitOffset;   // 조종사 눈 위치 (FlightHUD 가 HUD 유리를 시선 앞에 배치할 때 사용)
     public float   CockpitDownTilt => cockpitDownTilt;
     PlayerController localPlayer;
@@ -87,11 +90,86 @@ public class FlightCamera : MonoBehaviour
         _shakeMag   = magnitude;
         _shakeTimer = duration;
         _shakeDur   = duration;
+        _trauma     = Mathf.Min(1f, _trauma + magnitude * 1.6f);
+    }
+
+    // ── 절차적 진동 (상용 비행시뮬식 회전 흔들림 — 위치를 무작위로 튀기지 않고 Perlin 으로 부드럽게) ──
+    [Header("Camera Feel")]
+    [Tooltip("진동 전체 배율 (0 = 끔)")]
+    [SerializeField] float shakeScale = 1f;
+    [Tooltip("애프터버너·고속 시 추가 FOV (추격 시점)")]
+    [SerializeField] float speedFovKick = 5f;
+
+    float _trauma, _buffet, _gunShakeT, _fovKick;
+    float _gSag;
+    Quaternion _lastShakeRot = Quaternion.identity;
+    Vector3    _lastShakePos;
+    int        _shakeFrame = -10;
+
+    // 추격 카메라는 직전 회전에서 Slerp 하므로, 지난 프레임에 얹은 흔들림을 먼저 걷어내야 누적되지 않는다
+    void UndoFlightFeel()
+    {
+        if (_shakeFrame != Time.frameCount - 1) return;
+        transform.rotation *= Quaternion.Inverse(_lastShakeRot);
+        transform.position -= _lastShakePos;
+    }
+
+    /// <summary>폭발 충격파 — 카메라와 가까울수록 크게</summary>
+    public void AddExplosionShake(Vector3 pos, float scale)
+    {
+        float d = Vector3.Distance(transform.position, pos);
+        float k = Mathf.Clamp01(1f - d / (450f * scale));
+        _trauma = Mathf.Min(1f, _trauma + k * k * 0.8f);
+        FlightPostFX.Impact(k * k * 0.5f);
+    }
+
+    public void AddGunShake() => _gunShakeT = 0.1f;
+    public void AddBuffetShake(float amount) => _buffet = Mathf.Max(_buffet, amount);
+
+    void ApplyFlightFeel()
+    {
+        float dt = Time.deltaTime;
+        var pc = localPlayer;
+        float vn = pc != null ? Mathf.Clamp01(pc.CurrentSpeed / 120f) : 0f;
+        bool ab  = pc != null && pc.AfterburnerActive;
+
+        _trauma    = Mathf.MoveTowards(_trauma, 0f, dt * 1.2f);
+        _buffet    = Mathf.MoveTowards(_buffet, 0f, dt * 3f);
+        _gunShakeT = Mathf.Max(0f, _gunShakeT - dt);
+
+        // 진폭 (도) — 저주파 큰 흔들림(충격)과 고주파 잔떨림(기총·버핏·고속 기류)을 분리
+        float hf = (vn * vn * 0.12f + (ab ? 0.08f : 0f) + _buffet * 0.55f + (_gunShakeT > 0f ? 0.3f : 0f)) * (isCockpit ? 1f : 0.6f);
+        float lf = _trauma * _trauma * 3.2f;
+        float t = Time.time;
+        Vector3 rot =
+            new Vector3(Mathf.PerlinNoise(t * 22f, 1.3f) - 0.5f, Mathf.PerlinNoise(t * 22f, 7.7f) - 0.5f, Mathf.PerlinNoise(t * 19f, 3.1f) - 0.5f) * (2f * hf)
+          + new Vector3(Mathf.PerlinNoise(t * 4.5f, 11.3f) - 0.5f, Mathf.PerlinNoise(t * 4.5f, 17.7f) - 0.5f, Mathf.PerlinNoise(t * 3.5f, 23.1f) - 0.5f) * (2f * lf);
+
+        // 콕핏: 하중이 머리를 짓눌러 시선이 살짝 내려간다 (DCS 류 G 헤드 무브)
+        float gT = isCockpit && pc != null ? Mathf.Clamp(pc.PilotG - 1f, -2f, 8f) : 0f;
+        _gSag = Mathf.Lerp(_gSag, gT, 1f - Mathf.Exp(-dt * 4f));
+        rot.x += _gSag * 0.22f;
+
+        _lastShakeRot = Quaternion.Euler(rot * shakeScale);
+        _lastShakePos = isCockpit ? -transform.up * (_gSag * 0.008f) : Vector3.zero;
+        transform.rotation *= _lastShakeRot;
+        transform.position += _lastShakePos;
+        _shakeFrame = Time.frameCount;
+
+        // FOV — 고속·AB 에서 살짝 넓어져 속도감
+        var cam = GetComponent<Camera>();
+        if (cam != null)
+        {
+            float kickT = (isCockpit ? 0.35f : 1f) * speedFovKick * (vn * vn * 0.6f + (ab ? 0.4f : 0f));
+            _fovKick = Mathf.Lerp(_fovKick, kickT, 1f - Mathf.Exp(-dt * 1.5f));
+            cam.fieldOfView = (isCockpit ? cockpitFOV : chaseFOV) + _fovKick;
+        }
     }
 
     void Awake()
     {
         mfdController  = gameObject.AddComponent<MFDController>();
+        if (GetComponent<FlightPostFX>() == null) gameObject.AddComponent<FlightPostFX>();
     }
 
     void Start()
@@ -284,18 +362,13 @@ public class FlightCamera : MonoBehaviour
             freeLookPitch = Mathf.Lerp(freeLookPitch, 0f, freeLookReturnSpeed * Time.deltaTime);
         }
 
+        UndoFlightFeel();
         if (isCockpit)
             UpdateCockpit();
         else
             UpdateChase();
         ApplyTargetCam();
-
-        if (_shakeTimer > 0f)
-        {
-            _shakeTimer -= Time.deltaTime;
-            float decay = _shakeDur > 0f ? _shakeTimer / _shakeDur : 0f;
-            transform.position += Random.insideUnitSphere * (_shakeMag * decay);
-        }
+        ApplyFlightFeel();   // TriggerShake 충격도 여기서 회전 흔들림(trauma)으로 처리
     }
 
     // ── 탑승 모드: 주기된 항공기 콕핏 1인칭 ────────────────────────────────

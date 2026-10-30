@@ -17,4 +17,8 @@ public class MovePacket : Packet
     public bool isFlying;
     public bool isBoardedInCockpit;
     public int  animState;
+
+    // v4.4 — 송신자 시계(ms)·에어쇼 연출 상태 (바이너리 꼬리 필드, 구버전·JSON 은 0)
+    public uint sendMs;
+    public byte fx;
 }

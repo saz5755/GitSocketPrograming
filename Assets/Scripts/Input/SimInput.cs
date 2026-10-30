@@ -13,6 +13,7 @@ public enum SimAction
     FireMissile, LockTarget, Flare, Chaff,
     ViewToggle, TargetCam, MissileCam,
     WeaponSelect,
+    SmokeToggle, SmokeColor, Formation,   // v4.4 에어쇼 (끝에 추가 — 저장된 키 인덱스 유지)
 }
 
 /// <summary>
@@ -37,6 +38,7 @@ public static class SimInput
         KeyCode.Space, KeyCode.Tab, KeyCode.X, KeyCode.Z,
         KeyCode.C, KeyCode.T, KeyCode.V,
         KeyCode.R,
+        KeyCode.H, KeyCode.J, KeyCode.G,
     };
 
     static readonly string[] Labels =
@@ -47,6 +49,7 @@ public static class SimInput
         "FIRE MISSILE", "LOCK TARGET", "FLARE", "CHAFF",
         "VIEW (COCKPIT/CHASE)", "TARGET CAM (HOLD)", "MISSILE CAM",
         "WEAPON SELECT (AIM-9X/AIM-120)",
+        "AIRSHOW SMOKE ON/OFF", "AIRSHOW SMOKE COLORS", "AIRSHOW FORMATION",
     };
 
     public static int ActionCount => Defaults.Length;

@@ -285,7 +285,7 @@ public class PlayerManager : MonoBehaviour
                 {
                     // BOARD_AIRCRAFT 수신 전 타이밍 경쟁으로 생성된 fallback 항공기 정리
                     HideRemoteAircraft(p.nickname);
-                    na.PC.AddSnapshot(pos, rot, p.isMove);
+                    na.PC.AddSnapshot(pos, rot, p.isMove, p.localTime, p.fx, p.nickname);
                     return;
                 }
             }
@@ -297,7 +297,7 @@ public class PlayerManager : MonoBehaviour
                 _remoteAircraft[p.nickname] = aircraft;
                 Debug.Log($"[PlayerManager] RemoteAircraft fallback for {p.nickname} at {pos}");
             }
-            aircraft.AddSnapshot(pos, rot, p.isMove);
+            aircraft.AddSnapshot(pos, rot, p.isMove, p.localTime, p.fx, p.nickname);
         }
         else if (p.isBoardedInCockpit)
         {
@@ -452,7 +452,7 @@ public class PlayerManager : MonoBehaviour
         if (p.state == 0)
         {
             // 잔해 충돌 — 폭발 후 기체 숨김
-            ExplosionEffect.Spawn(pos);
+            ExplosionEffect.Spawn(pos, null, 1.5f);
             FlightAudioSystem.NotifyExplosion(pos, false);
             if (view != null) WreckController.SetAircraftVisible(view, false);
         }

@@ -77,6 +77,55 @@ public class VaporTrailRig : MonoBehaviour
         }
         _lastPos = transform.position;
         _lastFwd = transform.forward;
+        BuildWingVapor();
+    }
+
+    // ── 고G 날개 상면 증기 (wing vapor sheet) ─────────────────────────────
+    // 급선회 시 날개 윗면 저압부에서 습기가 순간 응결해 하얀 막이 날개를 덮고 뒤로 흘러간다.
+    // 해면 근처 습한 공기일수록 잘 생긴다 — Ace Combat·DCS 고기동 연출의 핵심.
+    ParticleSystem[] _sheets;
+    float _sheetAmt;
+
+    void BuildWingVapor()
+    {
+        _sheets = new ParticleSystem[2];
+        for (int i = 0; i < 2; i++)
+        {
+            float side = i == 0 ? -1f : 1f;
+            var ps = FXLib.MakePS("WingVapor" + i, transform, FXLib.Vapor, 160, worldSpace: false, loop: true);
+            ps.transform.localPosition = new Vector3(1.75f * side, 1.42f, -1.4f);
+            var m = ps.main;
+            m.startLifetime = new ParticleSystem.MinMaxCurve(0.12f, 0.22f);
+            m.startSpeed    = 0f;
+            m.startSize     = new ParticleSystem.MinMaxCurve(0.9f, 1.6f);
+            m.startRotation = new ParticleSystem.MinMaxCurve(0f, Mathf.PI * 2f);
+            var sh = ps.shape; sh.enabled = true; sh.shapeType = ParticleSystemShapeType.Box;
+            sh.scale = new Vector3(1.9f, 0.1f, 1.6f);
+            var vel = ps.velocityOverLifetime; vel.enabled = true; vel.space = ParticleSystemSimulationSpace.Local;
+            vel.x = new ParticleSystem.MinMaxCurve(0f, 0f);
+            vel.y = new ParticleSystem.MinMaxCurve(0.5f, 1.5f);
+            vel.z = new ParticleSystem.MinMaxCurve(-30f, -18f);   // 기류를 따라 뒤로 흘러감
+            FXLib.SizeOverLife(ps, FXLib.Curve(0f, 0.6f, 1f, 1.5f));
+            FXLib.ColorOverLife(ps, FXLib.Grad(new[] { Color.white, Color.white }, new[] { 0f, 1f },
+                new[] { 0f, 1f, 0f }, new[] { 0f, 0.2f, 1f }));
+            var em = ps.emission; em.rateOverTime = 0f;
+            ps.Play();
+            _sheets[i] = ps;
+        }
+    }
+
+    void UpdateWingVapor(float g, float dt)
+    {
+        if (_sheets == null) return;
+        float alt = transform.position.y - FXLib.SeaY;
+        float humid = Mathf.Lerp(1f, 0.45f, Mathf.Clamp01(alt / 3000f));
+        float target = Mathf.Clamp01((g - 4.2f) / 3f) * Mathf.Clamp01((_speed - 45f) / 30f) * humid;
+        _sheetAmt = Mathf.MoveTowards(_sheetAmt, target, dt * (target > _sheetAmt ? 6f : 3f));
+        foreach (var ps in _sheets)
+        {
+            var em = ps.emission;
+            em.rateOverTime = _sheetAmt * 150f;
+        }
     }
 
     void LateUpdate()
@@ -101,6 +150,7 @@ public class VaporTrailRig : MonoBehaviour
 
         // 하중계수 근사: 선회 각속도 × 속도 (n ≈ v·ω/g)
         float g = _speed * _turn * Mathf.Deg2Rad / 9.81f;
+        UpdateWingVapor(g, dt);
         float target = _on ? Mathf.InverseLerp(OffSpeed, FullSpeed, _speed) * Mathf.Lerp(0.6f, 1f, Mathf.Clamp01((g - 1f) / 3f)) : 0f;
         _amount = Mathf.MoveTowards(_amount, target, dt * (target > _amount ? 0.8f : 0.6f));
 

@@ -104,6 +104,7 @@ class PacketHandler
         {
             case PacketType.MOVE:         MoveHandler.HandleBinary(remoteEP, data);        break;
             case PacketType.AI_MOVE:      AIMoveHandler.HandleBinary(remoteEP, data);      break;
+            case PacketType.AI_MOVE_BATCH: AIMoveBatchHandler.HandleBinary(remoteEP, data); break;
             case PacketType.MISSILE_MOVE: MissileMoveHandler.HandleBinary(remoteEP, data); break;
         }
     }

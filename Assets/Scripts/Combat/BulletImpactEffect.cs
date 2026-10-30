@@ -18,23 +18,24 @@ public class BulletImpactEffect : MonoBehaviour
 
     void Init()
     {
-        Material addMat   = _injectedAddMat   != null ? _injectedAddMat   : Resources.Load<Material>("VFX/Mat_Additive");
-        Material alphaMat = _injectedAlphaMat != null ? _injectedAlphaMat : Resources.Load<Material>("VFX/Mat_Alpha");
+        // HDR 발광·조명 연기 셰이더(FXLib)를 쓴다 — 예전 레거시 파티클 머티리얼 주입값은 무시
+        Material addMat   = FXLib.Spark;
+        Material alphaMat = FXLib.SmokeDark;
 
         // 1. Sharp Core Flash (Very quick, intense)
         var flash = MakeParticles("Flash", 1);
         var fm = flash.main;
-        fm.startLifetime = 0.03f;
+        fm.startLifetime = 0.05f;
         fm.startSpeed = 0f;
         fm.startSize = new ParticleSystem.MinMaxCurve(1.5f, 2.5f);
-        fm.startColor = new Color(1f, 1f, 0.8f, 1f);
+        fm.startColor = new Color(1f, 0.85f, 0.55f, 1f);
         fm.loop = false;
         var fe = flash.emission;
         fe.rateOverTime = 0f;
         fe.SetBurst(0, new ParticleSystem.Burst(0f, 1));
         var fr = flash.GetComponent<ParticleSystemRenderer>();
         fr.renderMode = ParticleSystemRenderMode.Billboard;
-        if (addMat != null) fr.material = addMat;
+        if (addMat != null) fr.sharedMaterial = FXLib.Glow;
         flash.Play();
 
         // 2. Steel Cutting Sparks (More visible, bright streaks)
@@ -78,7 +79,7 @@ public class BulletImpactEffect : MonoBehaviour
         sr.renderMode = ParticleSystemRenderMode.Stretch;
         sr.lengthScale = 6f; // Adjusted length scale
         sr.velocityScale = 0.05f;
-        if (addMat != null) sr.material = addMat;
+        if (addMat != null) sr.sharedMaterial = addMat;
         sparks.Play();
 
         // 3. Micro Sparks (Glowing chunks)
@@ -104,7 +105,7 @@ public class BulletImpactEffect : MonoBehaviour
         msr.renderMode = ParticleSystemRenderMode.Stretch;
         msr.lengthScale = 2f;
         msr.velocityScale = 0.05f;
-        if (addMat != null) msr.material = addMat;
+        if (addMat != null) msr.sharedMaterial = addMat;
         microSparks.Play();
 
         // 4. Subtle Smoke Puff (Reduced to not hide the sparks)
@@ -113,7 +114,7 @@ public class BulletImpactEffect : MonoBehaviour
         km.startLifetime = new ParticleSystem.MinMaxCurve(0.3f, 0.8f);
         km.startSpeed = new ParticleSystem.MinMaxCurve(1f, 3f);
         km.startSize = new ParticleSystem.MinMaxCurve(1.0f, 2.5f);
-        km.startColor = new Color(0.3f, 0.3f, 0.3f, 0.4f);
+        km.startColor = new Color(1f, 1f, 1f, 0.7f);
         km.gravityModifier = -0.05f;
         km.loop = false;
         var ke = smoke.emission;
@@ -138,7 +139,12 @@ public class BulletImpactEffect : MonoBehaviour
 
         var kr = smoke.GetComponent<ParticleSystemRenderer>();
         kr.renderMode = ParticleSystemRenderMode.Billboard;
-        if (alphaMat != null) kr.material = alphaMat;
+        if (alphaMat != null) kr.sharedMaterial = alphaMat;
+        kr.SetActiveVertexStreams(new System.Collections.Generic.List<ParticleSystemVertexStream>
+        {
+            ParticleSystemVertexStream.Position, ParticleSystemVertexStream.Color, ParticleSystemVertexStream.UV,
+            ParticleSystemVertexStream.StableRandomXY, ParticleSystemVertexStream.AgePercent,
+        });
         smoke.Play();
     }
 

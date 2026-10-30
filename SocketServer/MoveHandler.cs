@@ -53,6 +53,8 @@ class MoveHandler
         session.player.isFlying  = packet.isFlying;
         // isBoardedInCockpit는 TCP COCKPIT_STATE 패킷이 단독으로 관리 — UDP MOVE가 덮어쓰면 안 됨
         session.player.animState = packet.animState;
+        session.player.sendMs    = packet.sendMs;
+        session.player.fx        = packet.fx;
         session.player.room.RecordPose(session.player.nickname, packet.posX, packet.posY, packet.posZ);
 
         // 비행 중 플레이어 항공기를 풀에 등록·갱신 (신규 입장자 동기화용)
@@ -111,7 +113,9 @@ class MoveHandler
             isMove             = sender.isMove,
             isFlying           = sender.isFlying,
             isBoardedInCockpit = sender.isBoardedInCockpit,
-            animState          = sender.animState
+            animState          = sender.animState,
+            sendMs             = sender.sendMs,
+            fx                 = sender.fx
         };
 
         // UDP endpoint 등록 전이면 TCP로 fallback (동기화 보장)

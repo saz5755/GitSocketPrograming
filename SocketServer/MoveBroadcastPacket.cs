@@ -18,4 +18,8 @@ public class MoveBroadcastPacket : Packet
     public bool isFlying;
     public bool isBoardedInCockpit;
     public int  animState;
+
+    // v4.4 — 송신자 시계(ms)·에어쇼 연출 상태
+    public uint sendMs;
+    public byte fx;
 }

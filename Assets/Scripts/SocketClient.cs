@@ -397,6 +397,7 @@ public class SocketClient : MonoBehaviour
                     {
                         var p = JsonConvert.DeserializeObject<MoveBroadcastPacket>(json);
                         if (p.nickname == myNickname) break;
+                        p.localTime = NetClock.Now;
 
                         // 오래된 패킷 드롭
                         if (p.tick > 0)
@@ -433,6 +434,7 @@ public class SocketClient : MonoBehaviour
                     case PacketType.AI_MOVE:
                     {
                         var p = JsonConvert.DeserializeObject<AIMovePacket>(json);
+                        p.localTime = NetClock.Now;
                         UnityMainThreadDispatcher.Instance.Enqueue(() => OnAIMove?.Invoke(p));
                         break;
                     }
@@ -479,6 +481,7 @@ public class SocketClient : MonoBehaviour
             {
                 var p = BinaryProtocol.ReadMove(data, len);
                 if (p == null || p.nickname == myNickname) break;
+                p.localTime = NetClock.ToLocal(p.nickname, p.sendMs);   // 송신자 타임라인 (수신 스레드에서 즉시)
                 if (p.tick > 0)
                 {
                     int last = lastTicks.GetOrAdd(p.nickname, 0);
@@ -497,7 +500,19 @@ public class SocketClient : MonoBehaviour
             case PacketType.AI_MOVE:
             {
                 var p = BinaryProtocol.ReadAIMove(data, len);
-                if (p != null) UnityMainThreadDispatcher.Instance.Enqueue(() => OnAIMove?.Invoke(p));
+                if (p == null) break;
+                p.localTime = NetClock.Now;
+                UnityMainThreadDispatcher.Instance.Enqueue(() => OnAIMove?.Invoke(p));
+                break;
+            }
+            case PacketType.AI_MOVE_BATCH:
+            {
+                // 편대 전원이 같은 송신 시각 — 호스트 MOVE 와 같은 시계 추정치를 써야 리더·편대가 함께 움직인다
+                var list = new List<AIMovePacket>(8);
+                if (!BinaryProtocol.ReadAIBatch(data, len, list, out uint sendMs) || list.Count == 0) break;
+                double local = NetClock.ToLocal(roomHostNickname, sendMs);
+                foreach (var p in list) p.localTime = local;
+                UnityMainThreadDispatcher.Instance.Enqueue(() => { foreach (var p in list) OnAIMove?.Invoke(p); });
                 break;
             }
             case PacketType.MISSILE_MOVE:
@@ -548,14 +563,15 @@ public class SocketClient : MonoBehaviour
                          float rotX, float rotY, float rotZ,
                          bool isMove, bool isFlying, int tick,
                          bool isBoardedInCockpit = false,
-                         int  animState          = 0)
+                         int  animState          = 0,
+                         byte fx                 = 0)
     {
         var u = udp;
         if (u == null) return;
         lock (sendLock)
         {
             int len = BinaryProtocol.WriteMove(_udpBuf, tick, posX, posY, posZ, rotX, rotY, rotZ,
-                                               isMove, isFlying, isBoardedInCockpit, animState);
+                                               isMove, isFlying, isBoardedInCockpit, animState, NetClock.FrameMs, fx);
             try { u.Client.Send(_udpBuf, 0, len, SocketFlags.None); } catch { }
         }
     }
@@ -621,6 +637,17 @@ public class SocketClient : MonoBehaviour
 
     public void SendAIDespawn(string nickname)
         => SendTCP(new DespawnPacket { type = PacketType.AI_DESPAWN, nickname = nickname });
+
+    /// <summary>호스트가 BinaryProtocol.BeginAIBatch/AppendAIBatch 로 채운 AI 배치를 그대로 송신</summary>
+    public void SendAIBatch(byte[] buf, int len)
+    {
+        var u = udp;
+        if (u == null || len <= 7) return;
+        lock (sendLock)
+        {
+            try { u.Client.Send(buf, 0, len, SocketFlags.None); } catch { }
+        }
+    }
 
     public void SendAIMove(string nickname, Vector3 pos, Vector3 euler, float speed)
     {

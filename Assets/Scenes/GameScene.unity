@@ -2674,6 +2674,8 @@ MonoBehaviour:
   freeLookMaxPitch: 80
   groundOffset: {x: 0, y: 2.5, z: -5}
   groundSmooth: 8
+  shakeScale: 1
+  speedFovKick: 5
 --- !u!1 &337126251
 GameObject:
   m_ObjectHideFlags: 0
@@ -3827,8 +3829,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e687777622a5af240918cd2c33afa288, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::HitEffectSystem
-  explosionClip: {fileID: 0}
-  _explosionPrefab: {fileID: 7410638401797982315, guid: aca1aacaf0ff0f647857ef5728429fb6, type: 3}
   _vfxAdditive: {fileID: 2100000, guid: c387eaee230ace24c88c560ed606d199, type: 2}
   _vfxAlpha: {fileID: 2100000, guid: 61751cc2b4e625b469721cdb429668c4, type: 2}
 --- !u!114 &504464692

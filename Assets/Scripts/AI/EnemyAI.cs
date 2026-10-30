@@ -539,6 +539,8 @@ public class EnemyAI : MonoBehaviour
                                                                Random.Range(-_p.gunSpread, _p.gunSpread), 0f) * Vector3.forward;
         BulletController.Spawn(muzzle, dir, BulletSpeed, isLocal: true, aiShooter: _bot.Nickname);
         NetworkManager.Instance?.socketClient?.SendGunFire(_bot.Nickname, muzzle, dir);
+        AircraftGunFX.Ensure(gameObject).Fire();                  // 호스트 화면의 총구 섬광·기총음
+        AircraftEngineAudio.Ensure(gameObject).NotifyGunFire();
     }
 
     void DropCountermeasures(CountermeasureType type)

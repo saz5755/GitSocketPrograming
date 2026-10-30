@@ -38,4 +38,5 @@ public enum PacketType
     AIRCRAFT_STATE       = 36,
     COUNTERMEASURE       = 37,
     ROOM_SETTING         = 38,
+    AI_MOVE_BATCH        = 39,   // v4.4 호스트 AI 위치 묶음 (바이너리 UDP 전용)
 }

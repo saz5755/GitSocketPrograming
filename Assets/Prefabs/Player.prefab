@@ -514,7 +514,7 @@ MonoBehaviour:
     innerLifetime: 0.1
     innerSpeed: 50
     innerSize: 0.8
-    innerColor: {r: 0.7, g: 0.9, b: 1, a: 1}
+    innerColor: {r: 1, g: 0.86, b: 0.62, a: 1}
     innerEmission: 60
     innerSizeOverLifetime:
       serializedVersion: 2

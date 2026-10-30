@@ -56,7 +56,7 @@ public class EscortVFXController : MonoBehaviour
         {
             var inst = Instantiate(_afterburnerVFXPrefab, nozzle);
             inst.transform.localPosition = Vector3.zero;
-            inst.transform.localRotation = Quaternion.Euler(180f, 0f, 0f);
+            inst.transform.rotation = Quaternion.LookRotation(-transform.forward, transform.up);   // 방출축 = 기체 후방
             _afterburnerAssembly = inst.GetComponent<EngineExhaustAssembly>();
             if (_afterburnerAssembly == null)
                 Debug.LogWarning($"[EscortVFXController] _afterburnerVFXPrefab '{_afterburnerVFXPrefab.name}' has no EngineExhaustAssembly component on its root.");
@@ -64,14 +64,17 @@ public class EscortVFXController : MonoBehaviour
         }
 
         // ── 절차적 폴백 ────────────────────────────────────────────────────────
-        Material addMat     = _additiveMaterial     != null ? _additiveMaterial     : Resources.Load<Material>("VFX/Mat_Additive");
-        Material diamondMat = _shockDiamondMaterial != null ? _shockDiamondMaterial : Resources.Load<Material>("VFX/Mat_ShockDiamond");
+        Material addMat     = _additiveMaterial     != null ? _additiveMaterial     : FXLib.Glow;
+        Material diamondMat = _shockDiamondMaterial != null ? _shockDiamondMaterial : FXLib.Spark;
+        _nozzleGlow = FXLib.MakeFlare("NozzleGlow", nozzle, new Vector3(0f, 0f, -0.2f), 0.9f, 0.0035f, 0.15f);
 
         // ── 외부 글로우 (주황/적색) ─────────────────────────────────────────
         var abObj = new GameObject("AfterburnerVFX");
         abObj.transform.SetParent(nozzle, false);
         // Euler(180,0,0): 방출 방향을 항공기 후방(-Z)으로 명시. World 공간에서 기체 뒤로 파티클이 남는다.
-        abObj.transform.localRotation = Quaternion.Euler(180f, 0f, 0f);
+        // 방출축을 월드 기준으로 기체 후방에 맞춘다 — 공유 EngineNozzle 은 이미 후방을 보고 있어서
+        // 예전처럼 로컬 180° 를 더 돌리면 화염이 기체 앞(동체 속)으로 뿜어졌다
+        abObj.transform.rotation = Quaternion.LookRotation(-transform.forward, transform.up);
 
         var afterburnerPS = abObj.AddComponent<ParticleSystem>();
         afterburnerPS.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
@@ -80,7 +83,7 @@ public class EscortVFXController : MonoBehaviour
         main.duration  = 1f; main.loop = true;
         main.startLifetime = 0.15f; main.startSpeed = 35f; main.startSize = 1.5f;
         main.startColor = new Color(1f, 0.4f, 0.05f, 0.8f);
-        main.simulationSpace = ParticleSystemSimulationSpace.World;
+        main.simulationSpace = ParticleSystemSimulationSpace.Local;   // 화염이 노즐에 붙어 있도록 (월드면 고속에서 뒤로 흩어짐)
 
         var em = afterburnerPS.emission; em.rateOverTime = 80f;
         var sh = afterburnerPS.shape;
@@ -104,8 +107,8 @@ public class EscortVFXController : MonoBehaviour
         var cm = corePS.main;
         cm.duration = 1f; cm.loop = true;
         cm.startLifetime = 0.12f; cm.startSpeed = 45f; cm.startSize = 0.8f;
-        cm.startColor = new Color(0.7f, 0.9f, 1f, 1f);
-        cm.simulationSpace = ParticleSystemSimulationSpace.World;
+        cm.startColor = new Color(1f, 0.86f, 0.62f, 1f);   // 쇼크 다이아몬드 — 주간엔 백황색 (청록은 어두운 동체 위에서 남색으로 보였다)
+        cm.simulationSpace = ParticleSystemSimulationSpace.Local;
 
         var cem = corePS.emission; cem.rateOverTime = 60f;
         var csh = corePS.shape;
@@ -135,16 +138,32 @@ public class EscortVFXController : MonoBehaviour
         _afterburnerAssembly.Configure(afterburnerPS, corePS, afterburnerLight);
     }
 
+    FXLib.Flare _nozzleGlow;
+    F35VFXController _f35;
+    float _lastSpeed, _accel, _glow;
+    float _flickSeed = -1f;
+
     void Update()
     {
         bool active;
+        float dt = Time.deltaTime;
         if (_bot != null)
         {
-            // AI 봇 모드 — 단순히 봇 속도 기반
-            active = _bot.Speed > afterburnerThreshold;
+            // AI 봇 모드 — 고속 유지·급가속 때만 (순항 중 늘 AB 를 켜고 다니지 않게)
+            if (dt > 0f) _accel = Mathf.Lerp(_accel, (_bot.Speed - _lastSpeed) / dt, 1f - Mathf.Exp(-dt * 3f));
+            _lastSpeed = _bot.Speed;
+            active = _bot.Speed > afterburnerThreshold && (_bot.Speed > 95f || _accel > 4f);
         }
         else
         {
+            // 플레이어가 이 기체에 탑승 — 배기 연출은 F35VFXController 가 맡는다 (켜 두면 화염이 두 겹)
+            if (_f35 == null) _f35 = GetComponent<F35VFXController>();
+            if (_f35 != null && _f35.enabled)
+            {
+                _afterburnerAssembly?.ForceOff();
+                _nozzleGlow?.Set(Color.black, 0f);
+                return;
+            }
             // TakeOverEscortBot 이후 — PlayerController로 폴백, F35와 동일 조건 (속도 + W키)
             if (_playerFallback == null) _playerFallback = GetComponent<PlayerController>();
             active = _playerFallback != null
@@ -153,5 +172,12 @@ public class EscortVFXController : MonoBehaviour
                   && SimInput.Throttle > 0.5f;
         }
         _afterburnerAssembly?.SetActive(active, Time.deltaTime);
+
+        bool running = _bot != null ? _bot.Speed > 1f : (_playerFallback != null && _playerFallback.CurrentSpeed > 1f);
+        float target = !running ? 0f : active ? 1f : 0.22f;
+        _glow = Mathf.MoveTowards(_glow, target, dt * (target > _glow ? 4f : 1.5f));
+        Color c = Color.Lerp(new Color(1f, 0.32f, 0.08f), new Color(1f, 0.72f, 0.42f), Mathf.InverseLerp(0.3f, 1f, _glow));
+        if (_flickSeed < 0f) _flickSeed = Random.Range(0f, 100f);
+        _nozzleGlow?.Set(c, _glow * 7f * (0.9f + 0.2f * Mathf.PerlinNoise(Time.time * 18f, _flickSeed)));
     }
 }

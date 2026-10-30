@@ -260,7 +260,7 @@ public class CombatFeedUI : MonoBehaviour
     {
         string hex = nick == me ? "#5CFF9D"
                    : AIManager.IsEnemyBot(nick) ? "#F05B68"
-                   : AIManager.IsEscortBot(nick) ? "#48D6F2"
+                   : AIManager.IsEscortBot(nick) || AIManager.IsTankerBot(nick) ? "#48D6F2"
                    : "#E6FFF2";
         return $"<color={hex}>{nick}</color>";
     }

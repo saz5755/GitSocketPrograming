@@ -21,6 +21,8 @@ public class Player
     public bool isFlying;
     public bool isBoardedInCockpit;
     public int  animState;
+    public uint sendMs;   // v4.4 마지막 MOVE 의 송신자 시계 (게스트 보간 타임라인)
+    public byte fx;       // v4.4 에어쇼 연출 상태 (스모크)
     public int  boardedAircraftId = -1;
     public int hp = 100;
 

@@ -30,12 +30,12 @@ public class BulletController : MonoBehaviour
     {
         _myNick = NetworkManager.Instance?.socketClient?.myNickname ?? "";
         _lr = gameObject.AddComponent<LineRenderer>();
-        var mat = new Material(Shader.Find("Sprites/Default"));
-        _lr.material             = mat;
-        _lr.startColor           = new Color(1.00f, 0.95f, 0.70f, 1.0f);
-        _lr.endColor             = new Color(1.00f, 0.55f, 0.10f, 0.0f);
-        _lr.startWidth           = 0.18f;
-        _lr.endWidth             = 0.04f;
+        // HDR 가산 예광탄 (블룸으로 빛남) — 공유 머티리얼 (예전엔 탄마다 new Material 로 누수)
+        _lr.sharedMaterial       = FXLib.Tracer;
+        _lr.startColor           = new Color(1.00f, 0.80f, 0.45f, 1.0f);
+        _lr.endColor             = new Color(1.00f, 0.35f, 0.08f, 0.0f);
+        _lr.startWidth           = 0.32f;
+        _lr.endWidth             = 0.08f;
         _lr.positionCount        = 2;
         _lr.useWorldSpace        = true;
         _lr.shadowCastingMode    = UnityEngine.Rendering.ShadowCastingMode.Off;

@@ -109,7 +109,41 @@ public class EscortAI : MonoBehaviour
     bool    _formationTurnRate;   // 봇 회전 한계를 편대비행용으로 올린 상태
 
     // 현재 편대 슬롯 (좌우 맞바꿈 반영)
-    Vector3 SlotOffset => _formMirror ? new Vector3(-_formationOffset.x, _formationOffset.y, _formationOffset.z) : _formationOffset;
+    Vector3 SlotOffset
+    {
+        get
+        {
+            Vector3 o = _formationOffset;
+            // 대형 전환 중 리더 뒤를 좌우로 가로지르는 기체는 한 층 아래로 지나간다 (실제 편대의 크로스언더)
+            bool crossing = _offsetTarget.x * _formationOffset.x < 0f
+                         || (Mathf.Abs(_offsetTarget.x) < 0.5f) != (Mathf.Abs(_formationOffset.x) < 0.5f) && Mathf.Abs(_offsetTarget.x - _formationOffset.x) > 3f;
+            if (crossing) o.y -= Mathf.Clamp01(Mathf.Abs(_offsetTarget.x - _formationOffset.x) / 5f) * CrossunderDrop;
+            return _formMirror ? new Vector3(-o.x, o.y, o.z) : o;
+        }
+    }
+
+    // ── 에어쇼 대형 (v4.4) ────────────────────────────────────────────────
+    const float FormationShiftSpeed = 9f;    // 대형 전환 시 슬롯 이동 속도 (m/s)
+    const float CrossunderDrop      = 7f;
+    const float SlotHoldRate        = 1.4f;  // 에어쇼 밀집 대형 — 슬롯 횡·수직 오차 보정 (1/s)
+    Vector3 _offsetTarget, _baseOffset, _slotWorld, _prevSlot;
+    bool    _hasSlotWorld, _hasPrevSlot;
+    float   _slotSpeed;
+
+    /// <summary>에어쇼 대형: 날개를 리더와 나란히(외측 뱅크 없음), 짧은 리드 포인트, 슬롯 정밀 유지</summary>
+    public bool    AirshowStyle   { get; private set; }
+    /// <summary>씬 슬롯(EscortSlot)이 정한 본래 편대 위치 — 'ESCORT' 대형으로 돌아갈 때 사용</summary>
+    public Vector3 BaseOffset     => _baseOffset;
+    public bool    IsInFormation  => _phase == Phase.Escorting;
+
+    /// <summary>슬롯을 서서히 옮긴다 (대형 전환). airshowStyle 은 즉시 적용.</summary>
+    public void SetFormationTarget(Vector3 offset, bool airshowStyle)
+    {
+        _offsetTarget = offset;
+        AirshowStyle  = airshowStyle;
+    }
+
+    float BankOffsetFor(bool isLeft) => AirshowStyle ? 0f : Cfg.GetBankOffset(isLeft);
 
     // 마셜 대기 선회
     Vector3 _marshalCenter;
@@ -130,7 +164,8 @@ public class EscortAI : MonoBehaviour
     public bool    CanLaunch       => _phase == Phase.OnDeck || _phase == Phase.Landed;
     public bool    IsHolding       => _phase == Phase.Marshal && !_rejoinRequested;
     public bool    IsLeftSide      => _formationOffset.x < 0f;
-    public void    SetFormationOffset(Vector3 offset) => _formationOffset = offset;
+    // 편대 재배분(RecalculateEscortFormation) — 이 배치가 새 'ESCORT' 기본 대형이 된다
+    public void    SetFormationOffset(Vector3 offset) { _formationOffset = _offsetTarget = _baseOffset = offset; AirshowStyle = false; }
     public bool    IsLaunching     => _phase == Phase.Launching;
     public bool    IsLanded        => _phase == Phase.Landed || _phase == Phase.BeingArrested;
     // ArrestingWireSystem이 체결 시도 여부를 판단하는 프로퍼티
@@ -174,6 +209,16 @@ public class EscortAI : MonoBehaviour
 
     void LateUpdate()
     {
+        // 에어쇼 밀집 대형: 리드 포인트 추종만으로는 선회 중 수 m 씩 벌어진다 — 횡·수직 오차만 부드럽게 당겨
+        // 실제 편대처럼 날개 간격을 일정하게 유지한다 (전후 오차는 속도 제어가 맡으므로 건드리지 않음)
+        if (AirshowStyle && _hasSlotWorld && _phase == Phase.Escorting)
+        {
+            Vector3 err = _slotWorld - transform.position;
+            err -= Vector3.Project(err, transform.forward);
+            if (err.sqrMagnitude < 30f * 30f)
+                transform.position += err * (1f - Mathf.Exp(-SlotHoldRate * Time.deltaTime));
+        }
+
         if (!AirbornePhase || _ocean == null) return;
         Vector3 pos = transform.position;
         float floor = SeaFloorY;
@@ -203,6 +248,8 @@ public class EscortAI : MonoBehaviour
         _leader           = leader;
         _leaderPC         = leader != null ? leader.GetComponent<PlayerController>() : null;
         _formationOffset  = formationOffset;
+        _offsetTarget     = formationOffset;
+        _baseOffset       = formationOffset;
         _bot              = GetComponent<AIBotController>();
         _bot.PositionOverride = true;
         _bot.SetMaxSpeed(Cfg.maxSpeedOverride);
@@ -451,6 +498,10 @@ public class EscortAI : MonoBehaviour
 
     void Update()
     {
+        if (_formationOffset != _offsetTarget)
+            _formationOffset = Vector3.MoveTowards(_formationOffset, _offsetTarget, FormationShiftSpeed * Time.deltaTime);
+        _hasSlotWorld = false;
+
         // ── 매 프레임 leader zone 위치 기반 페이즈 보정 ──────────────────────
         // EscortZoneTrigger 이벤트가 발화되지 못한 케이스(이륙 첫 프레임 등) 폴백.
         // Launching은 6초 직진 유지가 의도라 제외 — Escorting 중 leader가 zone 안에 있으면
@@ -468,7 +519,7 @@ public class EscortAI : MonoBehaviour
 
         // 편대 기준 좌표계는 편대 비행·합류 중에만 이어간다 — 다시 편대에 들어올 때 수평에서 새로 시작
         if (_phase != Phase.Escorting && _phase != Phase.Rejoin) { _formUp = Vector3.zero; _formMirror = false; }
-        if (_phase != Phase.Escorting) _rollInit = false;
+        if (_phase != Phase.Escorting) { _rollInit = false; _hasPrevSlot = false; }
 
         // 편대비행 중에는 리더 배럴롤을 따라잡도록 기체 회전 한계를 올리고, 그 외 단계는 기본값
         bool fastTurn = _phase == Phase.Escorting;
@@ -567,13 +618,21 @@ public class EscortAI : MonoBehaviour
 
         float leaderSpeed = _leaderPC != null ? _leaderPC.CurrentSpeed : 62f;
         float baseSpeed   = Mathf.Max(leaderSpeed, 40f);
+        // 에어쇼 밀집 대형: 슬롯 자체의 속도를 기준으로 — 선회 바깥 슬롯은 리더보다 빨리 돈다 (안쪽은 느리게)
+        Vector3 slotNow = _leader.position + frame * localOffset;
+        if (_hasPrevSlot && Time.deltaTime > 1e-4f)
+            _slotSpeed = Mathf.Lerp(_slotSpeed, (slotNow - _prevSlot).magnitude / Time.deltaTime, 1f - Mathf.Exp(-Time.deltaTime * 4f));
+        else _slotSpeed = baseSpeed;
+        _prevSlot = slotNow; _hasPrevSlot = true;
+        if (AirshowStyle && _slotSpeed > 1f) baseSpeed = Mathf.Max(_slotSpeed, 40f);
 
         // ── 속도: 종방향(Z) 오차 비례 제어 ──────────────────────────────────
         // 앞서면 감속, 뒤처지면 가속 (리더 속도 ×0.75~×1.2). 지터는 기체별 고정 오프셋이라
         // 슬롯 앞뒤 ±1m 정도의 자연스러운 간격 차이만 만든다.
         Vector3 selfLocal = Quaternion.Inverse(frame) * (transform.position - _leader.position);
         float   zError    = selfLocal.z - localOffset.z;   // +: 슬롯보다 앞, -: 뒤
-        float   targetSpeed = Mathf.Clamp(baseSpeed - zError * Cfg.formationSpeedGain + _speedJitter * 0.2f,
+        float   gain        = AirshowStyle ? Cfg.formationSpeedGain * 1.6f : Cfg.formationSpeedGain;
+        float   targetSpeed = Mathf.Clamp(baseSpeed - zError * gain + (AirshowStyle ? 0f : _speedJitter * 0.2f),
                                           baseSpeed * 0.75f, baseSpeed * 1.2f);
 
         // ── 기수 방향: 리드 포인트 추종 ─────────────────────────────────────
@@ -582,9 +641,10 @@ public class EscortAI : MonoBehaviour
         // 슬롯의 횡·수직 위치에 있는 점을 겨눈다 — 목표 방향은 항상 전방이고,
         // 횡·수직 오차는 시정수 L/V 로 부드럽게 수렴, 종방향 오차는 위 속도 제어가 맡는다.
         // 슬롯은 롤을 뺀 편대 좌표계 기준 — 리더가 뒤집혀도 슬롯은 제자리, 기체만 그 자리에서 롤한다.
-        float   lead     = Mathf.Max(baseSpeed * Cfg.formationLeadTime, 80f);
+        float   lead     = AirshowStyle ? Mathf.Max(baseSpeed * 0.8f, 50f) : Mathf.Max(baseSpeed * Cfg.formationLeadTime, 80f);
         Vector3 aimPoint = LiftAboveSea(_leader.position + frame * new Vector3(localOffset.x, localOffset.y, selfLocal.z + lead));
         targetPos = LiftAboveSea(targetPos);
+        _slotWorld = targetPos; _hasSlotWorld = true;
         Vector3 frameUp  = frame * Vector3.up;
         Quaternion heading = Quaternion.LookRotation(aimPoint - transform.position, frameUp);
 
@@ -593,9 +653,10 @@ public class EscortAI : MonoBehaviour
         if (!_rollInit) _smoothFormationRot = Quaternion.LookRotation(transform.forward, frameUp);
         _smoothFormationRot = Quaternion.Slerp(_smoothFormationRot, heading, Cfg.rotSmoothSpeed * Time.deltaTime);
 
-        float roll = FollowLeaderRoll(frame, Cfg.GetBankOffset(isLeft));
+        float bank = BankOffsetFor(isLeft);
+        float roll = FollowLeaderRoll(frame, bank);
         _bot.PositionOverride = false;
-        _bot.SetTarget(targetPos, _smoothFormationRot * Quaternion.Euler(0f, 0f, roll + Cfg.GetBankOffset(isLeft)), targetSpeed);
+        _bot.SetTarget(targetPos, _smoothFormationRot * Quaternion.Euler(0f, 0f, roll + bank), targetSpeed);
 
         // ── 리더 정지 감지 → 자동 착함 시작 ────────────────────────────────────
         // FreeFlightZone과 동일한 보호 로직 — Escorting 상태에서도 leader가 멈추면

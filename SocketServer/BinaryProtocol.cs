@@ -3,8 +3,11 @@ using System.Text;
 /// <summary>
 /// 고빈도 UDP 패킷 바이너리 인코딩 (v4.3 N-1) — 클라이언트 Assets/Scripts/Network/BinaryProtocol.cs 와 같은 포맷.
 ///   [0]=Magic(0xB7) [1]=PacketType  이후 필드 (리틀 엔디언)
-///   MOVE  C→S : tick i32, pos 3×f32, rot 3×u16, flags u8, anim u8            = 26B (JSON ~190B)
-///   MOVE  S→C : tick i32, nick str, pos, rot, flags, anim
+///   MOVE  C→S : tick i32, pos 3×f32, rot 3×u16, flags u8, anim u8, [sendMs u32, fx u8]  = 31B (JSON ~190B)
+///   MOVE  S→C : tick i32, nick str, pos, rot, flags, anim, sendMs u32, fx u8
+///   AI_MOVE_BATCH (v4.4) : sendMs u32, count u8, count × { nick str, pos, rot, speed f32, flags u8, fx u8 }
+///     서버는 검증·풀 갱신만 하고 바이트를 그대로 중계한다 (재인코딩 없음)
+///   [ ] 는 v4.4 꼬리 필드 — 없으면 0, 구버전 클라이언트는 뒤에 붙은 바이트를 무시한다
 ///   MOVE_ACK  : tick i32, pos, rot
 ///   AI_MOVE   : nick str, pos, rot, speed f32, flags u8
 ///   MISSILE_MOVE : id str, pos, rot, speed f32
@@ -28,6 +31,8 @@ public static class BinaryProtocol
         w.Pose(p.posX, p.posY, p.posZ, p.rotX, p.rotY, p.rotZ);
         w.U8((byte)((p.isMove ? FlagMove : 0) | (p.isFlying ? FlagFlying : 0) | (p.isBoardedInCockpit ? FlagBoarded : 0)));
         w.U8((byte)p.animState);
+        w.I32((int)p.sendMs);
+        w.U8(p.fx);
         return w.ToArray();
     }
 
@@ -67,7 +72,31 @@ public static class BinaryProtocol
         byte f = r.U8();
         p.isMove = (f & FlagMove) != 0; p.isFlying = (f & FlagFlying) != 0; p.isBoardedInCockpit = (f & FlagBoarded) != 0;
         p.animState = r.U8();
-        return r.Ok ? p : null;
+        if (!r.Ok) return null;
+        if (r.Remaining >= 5) { p.sendMs = (uint)r.I32(); p.fx = r.U8(); }
+        return p;
+    }
+
+    public const int MaxBatchEntries = 32;
+
+    /// <summary>AI 배치 검증용 해석 — 항목을 out 에 채운다 (풀 갱신·피격 검증 위치 기록용)</summary>
+    public static bool DecodeAIBatch(byte[] d, List<AIMovePacket> outList)
+    {
+        var r = new Reader(d);
+        r.I32();                       // sendMs — 서버는 쓰지 않음 (그대로 중계)
+        int count = r.U8();
+        if (count > MaxBatchEntries) return false;
+        for (int i = 0; i < count; i++)
+        {
+            var p = new AIMovePacket { type = PacketType.AI_MOVE, nickname = r.Str() };
+            r.Pose(out p.posX, out p.posY, out p.posZ, out p.rotX, out p.rotY, out p.rotZ);
+            p.speed  = r.F32();
+            p.isMove = (r.U8() & FlagMove) != 0;
+            r.U8();                    // fx
+            if (!r.Ok) return false;
+            outList.Add(p);
+        }
+        return r.Ok && r.Remaining == 0;
     }
 
     public static AIMovePacket? DecodeAIMove(byte[] d)
@@ -120,6 +149,7 @@ public static class BinaryProtocol
         public bool Ok;
         public Reader(byte[] b) { _b = b; _n = 2; Ok = true; }
         bool Has(int k) { if (_n + k <= _b.Length) return true; Ok = false; return false; }
+        public int Remaining => _b.Length - _n;
         public byte   U8()  { if (!Has(1)) return 0; return _b[_n++]; }
         public ushort U16() { if (!Has(2)) return 0; var v = BitConverter.ToUInt16(_b, _n); _n += 2; return v; }
         public int    I32() { if (!Has(4)) return 0; var v = BitConverter.ToInt32(_b, _n); _n += 4; return v; }

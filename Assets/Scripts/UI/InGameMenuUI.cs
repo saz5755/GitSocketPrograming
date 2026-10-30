@@ -286,7 +286,7 @@ public class InGameMenuUI : MonoBehaviour
     void BuildControlsPanel(Transform parent)
     {
         var t = UITheme.Instance;
-        const float W = 640f, H = 860f;
+        const float W = 640f, H = 960f;   // v4.4 에어쇼 키 3줄 추가
         controlsPanel = NewRect("ControlsPanel", parent);
         controlsPanel.anchorMin = controlsPanel.anchorMax = new Vector2(0.5f, 0.5f);
         controlsPanel.sizeDelta = new Vector2(W, H);

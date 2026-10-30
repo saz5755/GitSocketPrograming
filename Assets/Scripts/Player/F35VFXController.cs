@@ -126,7 +126,7 @@ public class F35VFXController : MonoBehaviour
         public float innerLifetime    = 0.1f;
         public float innerSpeed       = 50f;
         public float innerSize        = 0.8f;
-        public Color innerColor       = new Color(0.7f, 0.9f, 1f, 1f);
+        public Color innerColor       = new Color(1f, 0.86f, 0.62f, 1f);   // 쇼크 다이아몬드 — 주간엔 백황색
         public float innerEmission    = 60f;
         public AnimationCurve innerSizeOverLifetime = new AnimationCurve(
             new Keyframe(0f,   1f),
@@ -201,6 +201,16 @@ public class F35VFXController : MonoBehaviour
     PlayerController playerController;
     Vector3 lastForward;
 
+    FXLib.Flare _nozzleGlow;
+    float       _glowLevel;
+    float       _flickSeed;
+    bool        _hazeFlightMode;
+
+    /// <summary>지상 프리플라이트 엔진 IDLE 상태 (엔진 사운드가 참조)</summary>
+    public bool EngineIdleOn => _engineIdleOn;
+    /// <summary>이번 프레임 애프터버너 연출이 켜져 있는가 (캐터펄트 자동 부스트 포함)</summary>
+    public bool AfterburnerOn { get; private set; }
+
     void Start()
     {
         playerController = GetComponent<PlayerController>();
@@ -211,6 +221,8 @@ public class F35VFXController : MonoBehaviour
         SetupAfterburner();
         SetupIdleExhaust();
         SetupHeatHaze();
+        SetupNozzleGlow();
+        _flickSeed = Random.Range(0f, 100f);
     }
 
     void EnsureEngineNozzle()
@@ -227,6 +239,8 @@ public class F35VFXController : MonoBehaviour
 
     void SetupContrails()
     {
+        // KF-21 은 VaporTrailRig(실측 날개 끝·물리 기반 응결 조건)가 맡는다 — 같은 자리에 흰 줄이 겹치지 않게
+        if (GetComponent<VaporTrailRig>() != null) return;
         if (leftWingtip == null)
         {
             GameObject lw = new GameObject("LeftWingtip");
@@ -276,8 +290,9 @@ public class F35VFXController : MonoBehaviour
         }
 
         // ── 절차적 폴백 (Inspector 수치 사용) ─────────────────────────────────
-        Material addMat     = _additiveMaterial     != null ? _additiveMaterial     : Resources.Load<Material>("VFX/Mat_Additive");
-        Material diamondMat = _shockDiamondMaterial != null ? _shockDiamondMaterial : Resources.Load<Material>("VFX/Mat_ShockDiamond");
+        // HDR 가산 화염 (블룸) — 인스펙터 지정이 없으면 FXLib 절차 셰이더
+        Material addMat     = _additiveMaterial     != null ? _additiveMaterial     : FXLib.Glow;
+        Material diamondMat = _shockDiamondMaterial != null ? _shockDiamondMaterial : FXLib.Spark;
 
         GameObject abObj = new GameObject("AfterburnerVFX");
         abObj.transform.SetParent(engineNozzle);
@@ -352,6 +367,25 @@ public class F35VFXController : MonoBehaviour
         _afterburnerAssembly.Configure(ab, core, light);
     }
 
+    // 노즐 안쪽 열기 — 엔진 가동 중 항상, AB 에서 강하게 (멀리서도 보이는 꼬리 불빛)
+    void SetupNozzleGlow()
+    {
+        if (engineNozzle == null) return;
+        _nozzleGlow = FXLib.MakeFlare("NozzleGlow", engineNozzle, new Vector3(0f, 0f, -0.2f), 0.9f, 0.0035f, 0.15f);
+    }
+
+    void UpdateNozzleGlow(bool running, bool ab, float dt)
+    {
+        if (_nozzleGlow == null) return;
+        float thr = playerController != null && playerController.isLocalPlayer ? playerController.Throttle01 : 0.6f;
+        float target = !running ? 0f : ab ? 1f : Mathf.Lerp(0.12f, 0.3f, thr);
+        _glowLevel = Mathf.MoveTowards(_glowLevel, target, dt * (target > _glowLevel ? 4f : 1.5f));
+        // 저출력은 검붉은 열기, AB 는 주황→백열
+        Color c = Color.Lerp(new Color(1f, 0.32f, 0.08f), new Color(1f, 0.72f, 0.42f), Mathf.InverseLerp(0.3f, 1f, _glowLevel));
+        float flick = 0.9f + 0.2f * Mathf.PerlinNoise(Time.time * 18f, _flickSeed);
+        _nozzleGlow.Set(c, _glowLevel * 7f * flick);
+    }
+
     void SetupIdleExhaust()
     {
         if (engineNozzle == null) return;
@@ -391,13 +425,8 @@ public class F35VFXController : MonoBehaviour
         sz.size            = new ParticleSystem.MinMaxCurve(1f, idleExhaust.sizeOverLifetime);
 
         var rend           = _idleExhaustPS.GetComponent<ParticleSystemRenderer>();
-        var addMat         = _additiveMaterial != null ? _additiveMaterial : Resources.Load<Material>("VFX/Mat_Additive");
-        if (addMat == null)
-        {
-            var sh2 = Shader.Find("Particles/Additive") ?? Shader.Find("Sprites/Default");
-            addMat  = new Material(sh2);
-        }
-        rend.material      = addMat;
+        // 아이들 배기는 불꽃이 아니라 희미한 열기 — 부드러운 저강도 글로우
+        rend.sharedMaterial = _additiveMaterial != null ? _additiveMaterial : FXLib.GlowSoft;
         rend.renderMode    = ParticleSystemRenderMode.Stretch;
         rend.velocityScale = 0.06f;
 
@@ -454,9 +483,12 @@ public class F35VFXController : MonoBehaviour
         noise.scrollSpeed  = new ParticleSystem.MinMaxCurve(heatHaze.noiseScrollSpeed);
         noise.damping      = true;
 
+        // 실제 굴절 아지랑이 (불투명 텍스처 왜곡) — 색이 아니라 배경이 일렁인다
+        m.startColor = Color.white;
+        col.color = FXLib.Grad(new[] { Color.white, Color.white }, new[] { 0f, 1f },
+                               new[] { 0f, 0.85f, 0.4f, 0f }, new[] { 0f, 0.12f, 0.5f, 1f });
         var rend           = _heatHazePS.GetComponent<ParticleSystemRenderer>();
-        Material alphaMat  = _alphaMaterial != null ? _alphaMaterial : Resources.Load<Material>("VFX/Mat_Alpha");
-        if (alphaMat != null) rend.material = alphaMat;
+        rend.sharedMaterial = _alphaMaterial != null ? _alphaMaterial : FXLib.HeatHaze;
         rend.renderMode    = ParticleSystemRenderMode.Billboard;
     }
 
@@ -491,12 +523,23 @@ public class F35VFXController : MonoBehaviour
         StopFlightVFX();
     }
 
+    // 열 아지랑이는 지상(갑판 아이들)에서만. 굴절 셰이더는 불투명 화면 사본을 쓰는데 구름층은 반투명이라
+    // 사본에 없다 — 비행 중 배기 뒤로 구름이 있으면 그 자리에 구름 빠진 짙은 남색 하늘이 패치처럼 드러났다.
+    void SetHazeFlightMode(bool flying)
+    {
+        if (_heatHazePS == null || flying == _hazeFlightMode) return;
+        _hazeFlightMode = flying;
+        if (flying) _heatHazePS.Stop(false, ParticleSystemStopBehavior.StopEmittingAndClear);
+        else if (_engineIdleOn && !_heatHazePS.isPlaying) _heatHazePS.Play();
+    }
+
     void StopFlightVFX()
     {
         _catapultBoostTimer = 0f;
         if (leftContrail  != null) leftContrail.emitting  = false;
         if (rightContrail != null) rightContrail.emitting = false;
         _afterburnerAssembly?.ForceOff();
+        AfterburnerOn = false;
         _flightVfxStopped = true;
     }
 
@@ -511,6 +554,8 @@ public class F35VFXController : MonoBehaviour
         if (!playerController.enabled)
         {
             if (!_flightVfxStopped) StopFlightVFX();
+            UpdateNozzleGlow(_engineIdleOn, false, dt);
+            SetHazeFlightMode(false);
             lastForward = transform.forward;
             return;
         }
@@ -521,16 +566,23 @@ public class F35VFXController : MonoBehaviour
         lastForward    = transform.forward;
 
         bool shouldEmitContrails = turnRate > contrailThreshold || playerController.CurrentSpeed > 70f;
-        leftContrail.emitting  = shouldEmitContrails;
-        rightContrail.emitting = shouldEmitContrails;
+        if (leftContrail  != null) leftContrail.emitting  = shouldEmitContrails;
+        if (rightContrail != null) rightContrail.emitting = shouldEmitContrails;
 
         if (_catapultBoostTimer > 0f) _catapultBoostTimer -= dt;
         bool catapultBoosting    = _catapultBoostTimer > 0f && playerController.CurrentSpeed > catapultCfg.minBoostSpeed;
         // Shift 홀드 애프터버너 (연료 있을 때)가 켜지면 VFX 강제 활성.
         // 폴백: 기존 로직 (고속 + W 홀드).
+        // SimInput 은 이 PC 의 조종 입력 — 원격 기체에 적용하면 내가 스로틀을 밀 때 남의 AB 가 켜진다
+        bool local = playerController.isLocalPlayer;
         bool isAfterburnerActive = catapultBoosting
             || playerController.AfterburnerActive
-            || (playerController.CurrentSpeed > catapultCfg.afterburnerMinSpeed && SimInput.Throttle > 0.5f);
+            || (local && playerController.CurrentSpeed > catapultCfg.afterburnerMinSpeed && SimInput.Throttle > 0.5f);
+        AfterburnerOn = isAfterburnerActive;
         _afterburnerAssembly?.SetActive(isAfterburnerActive, dt);
+
+        bool running = playerController.CurrentSpeed > 1f || _engineIdleOn;
+        UpdateNozzleGlow(running, isAfterburnerActive, dt);
+        SetHazeFlightMode(playerController.CurrentSpeed > 20f);
     }
 }

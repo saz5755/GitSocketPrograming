@@ -1,11 +1,16 @@
 using System;
+using System.Collections.Generic;
 using System.Text;
 
 /// <summary>
 /// 고빈도 UDP 패킷 바이너리 인코딩 (v4.3 N-1) — 서버 SocketServer/BinaryProtocol.cs 와 같은 포맷.
 ///   [0]=Magic(0xB7) [1]=PacketType  이후 필드 (리틀 엔디언)
-///   MOVE  C→S : tick i32, pos 3×f32, rot 3×u16, flags u8, anim u8            = 26B (JSON ~190B)
-///   MOVE  S→C : tick i32, nick str, pos, rot, flags, anim
+///   MOVE  C→S : tick i32, pos 3×f32, rot 3×u16, flags u8, anim u8, [sendMs u32, fx u8]  = 31B (JSON ~190B)
+///   MOVE  S→C : tick i32, nick str, pos, rot, flags, anim, [sendMs u32, fx u8]
+///   AI_MOVE_BATCH (v4.4) : sendMs u32, count u8, count × { nick str, pos, rot, speed f32, flags u8, fx u8 }
+///     호스트가 한 틱의 AI 전체를 한 패킷으로 — 편대 전원이 같은 송신 시각을 공유해 게스트 화면에서 함께 움직인다
+///   [ ] 는 v4.4 꼬리 필드 — 구버전은 읽지 않고 무시한다 (하위 호환)
+///   fx : bit0 스모크 ON, bit1~3 스모크 색 인덱스 (AirshowSmokeFX.Palette)
 ///   MOVE_ACK  : tick i32, pos, rot
 ///   AI_MOVE   : nick str, pos, rot, speed f32, flags u8
 ///   MISSILE_MOVE : id str, pos, rot, speed f32
@@ -23,14 +28,58 @@ public static class BinaryProtocol
 
     // ── 인코딩 (C→S) — buf 에 쓰고 길이 반환 ───────────────────────────────
     public static int WriteMove(byte[] buf, int tick, float px, float py, float pz, float rx, float ry, float rz,
-                                bool isMove, bool isFlying, bool boarded, int anim)
+                                bool isMove, bool isFlying, bool boarded, int anim, uint sendMs = 0, byte fx = 0)
     {
         int n = Header(buf, PacketType.MOVE);
         n = I32(buf, n, tick);
         n = Pose(buf, n, px, py, pz, rx, ry, rz);
         buf[n++] = (byte)((isMove ? FlagMove : 0) | (isFlying ? FlagFlying : 0) | (boarded ? FlagBoarded : 0));
         buf[n++] = (byte)anim;
+        n = I32(buf, n, (int)sendMs);
+        buf[n++] = fx;
         return n;
+    }
+
+    // ── AI 배치 (호스트) — Begin 으로 헤더를 쓰고 Append 를 반복, count 는 buf[6] ─────
+    public const int AIBatchCountIndex = 6;
+
+    public static int BeginAIBatch(byte[] buf, uint sendMs)
+    {
+        int n = Header(buf, PacketType.AI_MOVE_BATCH);
+        n = I32(buf, n, (int)sendMs);
+        buf[n++] = 0;   // count
+        return n;
+    }
+
+    public static int AppendAIBatch(byte[] buf, int n, string nick, float px, float py, float pz,
+                                    float rx, float ry, float rz, float speed, byte fx)
+    {
+        n = Str(buf, n, nick);
+        n = Pose(buf, n, px, py, pz, rx, ry, rz);
+        n = F32(buf, n, speed);
+        buf[n++] = speed > 0.5f ? FlagMove : (byte)0;
+        buf[n++] = fx;
+        buf[AIBatchCountIndex]++;
+        return n;
+    }
+
+    /// <summary>배치를 개별 AIMovePacket 으로 풀어 out 에 추가. 송신 시각은 공통.</summary>
+    public static bool ReadAIBatch(byte[] d, int len, List<AIMovePacket> outList, out uint sendMs)
+    {
+        var r = new Reader(d, len);
+        sendMs = (uint)r.I32();
+        int count = r.U8();
+        for (int i = 0; i < count && r.Ok; i++)
+        {
+            var p = new AIMovePacket { type = PacketType.AI_MOVE, nickname = r.Str() };
+            r.Pose(out p.posX, out p.posY, out p.posZ, out p.rotX, out p.rotY, out p.rotZ);
+            p.speed  = r.F32();
+            p.isMove = (r.U8() & FlagMove) != 0;
+            p.fx     = r.U8();
+            p.sendMs = sendMs;
+            if (r.Ok) outList.Add(p);
+        }
+        return r.Ok;
     }
 
     public static int WriteAIMove(byte[] buf, string nick, float px, float py, float pz, float rx, float ry, float rz, float speed)
@@ -60,7 +109,9 @@ public static class BinaryProtocol
         byte f = r.U8();
         p.isMove = (f & FlagMove) != 0; p.isFlying = (f & FlagFlying) != 0; p.isBoardedInCockpit = (f & FlagBoarded) != 0;
         p.animState = r.U8();
-        return r.Ok ? p : null;
+        if (!r.Ok) return null;
+        if (r.Remaining >= 5) { p.sendMs = (uint)r.I32(); p.fx = r.U8(); }   // v4.4 꼬리 필드
+        return p;
     }
 
     public static MoveAckPacket ReadMoveAck(byte[] d, int len)
@@ -126,6 +177,7 @@ public static class BinaryProtocol
         public bool Ok;
         public Reader(byte[] b, int len) { _b = b; _len = len; _n = 2; Ok = true; }
         bool Has(int k) { if (_n + k <= _len) return true; Ok = false; return false; }
+        public int Remaining => _len - _n;
         public byte   U8()  { if (!Has(1)) return 0; return _b[_n++]; }
         public ushort U16() { if (!Has(2)) return 0; var v = BitConverter.ToUInt16(_b, _n); _n += 2; return v; }
         public int    I32() { if (!Has(4)) return 0; var v = BitConverter.ToInt32(_b, _n); _n += 4; return v; }

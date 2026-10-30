@@ -343,6 +343,8 @@ public class FlightHUD : MonoBehaviour
         UpdateWarningCanvas();
 
         if (!cockpit) return;
+        // 콕핏 시점인데 HUD 유리(속도·고도 테이프)가 아직 없으면 먼저 만든다 — 없으면 테이프 갱신이 매 프레임 예외로 멈춘다
+        if (!_hudGlassBuilt) { BuildHUDGlass(localPlayer.transform); if (_hudGlassCanvas != null) _hudGlassCanvas.gameObject.SetActive(true); }
         UpdateHUD();
     }
 
@@ -1307,20 +1309,23 @@ public class FlightHUD : MonoBehaviour
             if (pc == lockedTarget) continue;
 
             Vector2 cp = targeting.WorldToCanvasPos(pc.transform.position, out bool onScreen);
-            bool  isEnemy = AIManager.IsEnemyBot(pc.nickname);
+            bool  isEnemy  = AIManager.IsEnemyBot(pc.nickname);
+            bool  isTanker = AIManager.IsTankerBot(pc.nickname);   // 급유기 — 화면 밖이어도 방향 화살표로 찾게
             Color col     = isEnemy ? MarkerEnemyColor : MarkerHumanColor;
 
             if (onScreen)
             {
                 _emRoots[mi].anchoredPosition = cp;
-                _emNicks[mi].text  = pc.nickname;
+                _emNicks[mi].text  = isTanker
+                    ? $"TANKER  {Vector3.Distance(pc.transform.position, targeting.LocalPlayer != null ? targeting.LocalPlayer.transform.position : pc.transform.position) / 1000f:F1}km"
+                    : pc.nickname;
                 _emIcons[mi].sprite = HudSprites.Get(isEnemy ? HudSprites.MarkerBox : HudSprites.MarkerTri);
                 _emIcons[mi].rectTransform.localRotation = Quaternion.identity;
             }
             else
             {
                 // 화면 밖 적기 — 가장자리 화살표 + 시계 방위·거리 (뒤에 붙은 적기를 놓치지 않게)
-                if (!isEnemy || targeting.LocalPlayer == null) continue;
+                if ((!isEnemy && !isTanker) || targeting.LocalPlayer == null) continue;
                 Vector2 dir = targeting.EdgeDirection(pc.transform.position);
                 const float maxX = 800f, maxY = 350f;
                 float sX = Mathf.Abs(dir.x) > 0.001f ? maxX / Mathf.Abs(dir.x) : float.MaxValue;
@@ -1334,7 +1339,7 @@ public class FlightHUD : MonoBehaviour
                 Vector3 fwd = me.forward; fwd.y = 0f; to.y = 0f;
                 int   clock = Mathf.RoundToInt(Mathf.Repeat(Vector3.SignedAngle(fwd, to, Vector3.up), 360f) / 30f) % 12;
                 float km    = (pc.transform.position - me.position).magnitude / 1000f;
-                _emNicks[mi].text = $"{(clock == 0 ? 12 : clock)}시  {(km >= 1f ? $"{km:F1}km" : $"{km * 1000f:F0}m")}";
+                _emNicks[mi].text = $"{(isTanker ? "TANKER  " : "")}{(clock == 0 ? 12 : clock)}시  {(km >= 1f ? $"{km:F1}km" : $"{km * 1000f:F0}m")}";
             }
 
             _emNicks[mi].color = new Color(col.r, col.g, col.b, 0.75f);

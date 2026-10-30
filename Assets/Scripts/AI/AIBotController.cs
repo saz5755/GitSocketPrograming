@@ -160,22 +160,40 @@ public class AIBotController : MonoBehaviour
         }
     }
 
+    /// <summary>v4.4: 호스트 AIManager 가 한 틱의 AI 전체를 AI_MOVE_BATCH 한 패킷으로 보낸다 — 개별 송신 끔</summary>
+    public static bool BatchedByManager = true;
+
     // 정지 상태에서 직전과 동일한 pose면 전송 생략 — 대역폭/CPU 절약.
     // 위치/회전이 미세하게라도 바뀌면 다시 전송 시작.
     void BroadcastMoveIfChanged()
     {
-        if (_skipBroadcastWhenStationary && Speed < _stationarySpeedThreshold && _hasLastBroadcast)
-        {
-            if ((transform.position - _lastBroadcastPos).sqrMagnitude < 0.001f &&
-                Quaternion.Angle(transform.rotation, _lastBroadcastRot) < 0.1f)
-                return;
-        }
+        if (BatchedByManager || !WantsBroadcast()) return;
 
         NetworkManager.Instance?.socketClient?.SendAIMove(
             Nickname, transform.position, transform.eulerAngles, Speed);
-
-        _lastBroadcastPos = transform.position;
-        _lastBroadcastRot = transform.rotation;
-        _hasLastBroadcast = true;
+        MarkBroadcast();
     }
+
+    /// <summary>정지 상태로 직전 송신과 같은 자세면 false. keepAlive 초가 지나면 그래도 한 번 보낸다.</summary>
+    public bool WantsBroadcast(float keepAlive = float.PositiveInfinity)
+    {
+        if (_skipBroadcastWhenStationary && Speed < _stationarySpeedThreshold && _hasLastBroadcast
+            && Time.unscaledTime - _lastBroadcastTime < keepAlive)
+        {
+            if ((transform.position - _lastBroadcastPos).sqrMagnitude < 0.001f &&
+                Quaternion.Angle(transform.rotation, _lastBroadcastRot) < 0.1f)
+                return false;
+        }
+        return true;
+    }
+
+    public void MarkBroadcast()
+    {
+        _lastBroadcastPos  = transform.position;
+        _lastBroadcastRot  = transform.rotation;
+        _lastBroadcastTime = Time.unscaledTime;
+        _hasLastBroadcast  = true;
+    }
+
+    float _lastBroadcastTime;
 }

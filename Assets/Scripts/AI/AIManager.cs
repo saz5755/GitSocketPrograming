@@ -76,6 +76,8 @@ public class AIManager : MonoBehaviour
     {
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this;
+        if (GetComponent<AirshowController>() == null) gameObject.AddComponent<AirshowController>();   // 에어쇼 편대장 지휘 (v4.4)
+        if (GetComponent<AerialRefuelSystem>() == null) gameObject.AddComponent<AerialRefuelSystem>(); // 공중급유 (로컬 조종사)
     }
 
     void Start()
@@ -141,6 +143,8 @@ public class AIManager : MonoBehaviour
         }
         // 에스코트: 갑판에서 대기하므로 localPlayer=null도 허용
         if (_spawnEscorts) SpawnEscorts(localPlayer);
+        // 급유기: 두 모드 모두 — 연료가 떨어지면 공중급유로 계속 비행
+        SpawnTanker();
         // 적 AI: 플레이어 항공기 위치가 필요하므로 SetLocalPlayerAircraft() 시점에 스폰
     }
 
@@ -208,7 +212,7 @@ public class AIManager : MonoBehaviour
         {
             if (bot == null) continue;
             sc.SendAISpawn(bot.Nickname, bot.transform.position, bot.transform.eulerAngles,
-                           IsEnemyBot(bot.Nickname) ? 1 : 0);
+                           IsEnemyBot(bot.Nickname) ? 1 : IsTankerBot(bot.Nickname) ? 2 : 0);
         }
         DevLog.Log($"[AIManager] Re-sent AI_SPAWN for {_bots.Count} bot(s) to new joiner");
     }
@@ -257,6 +261,26 @@ public class AIManager : MonoBehaviour
 
             DevLog.Log($"[AIManager] Escort spawned: {nick}  formation={slot.formationOffset}");
         }
+    }
+
+    // ── 급유기 (BOT_T1) ─────────────────────────────────────────────────────
+    const string TankerNick = "BOT_T1";
+
+    void SpawnTanker()
+    {
+        if (GetBot(TankerNick) != null) return;
+        float seaY = FindAnyObjectByType<OceanSurface>()?.seaLevel ?? 0f;
+        Vector3 pos  = TankerAI.PointAt(0f, seaY);
+        Vector3 next = TankerAI.PointAt(50f, seaY);
+        var rot = Quaternion.LookRotation((next - pos).normalized, Vector3.up);
+
+        var go  = BuildAIObject(TankerNick, pos, rot);
+        var bot = go.GetComponent<AIBotController>();
+        go.AddComponent<TankerAI>().Initialize(seaY, 0f);
+        TankerDrogueRig.Ensure(go);
+        _bots.Add(bot);
+        NetworkManager.Instance?.socketClient?.SendAISpawn(TankerNick, pos, rot.eulerAngles, aiType: 2);
+        DevLog.Log($"[AIManager] Tanker spawned on track at {pos}");
     }
 
     // EscortSlot 자동 수집 — 우선순위:
@@ -343,7 +367,7 @@ public class AIManager : MonoBehaviour
 
     public void DamageBot(string nick, float amount, string attacker, string weapon)
     {
-        if (!_isHost || IsEscortBot(nick)) return;
+        if (!_isHost || IsEscortBot(nick) || IsTankerBot(nick)) return;   // 아군 공유 기체·급유기는 피해 없음
         var bot = GetBot(nick);
         if (bot == null) return;
 
@@ -471,6 +495,7 @@ public class AIManager : MonoBehaviour
         foreach (var kv in _remoteBots)
         {
             if (!IsAIBot(kv.Key) || IsEnemyBot(kv.Key)) continue;
+            if (IsTankerBot(kv.Key)) { TakeOverTanker(kv.Key); continue; }
             escortKeys.Add(kv.Key);
         }
 
@@ -508,6 +533,18 @@ public class AIManager : MonoBehaviour
         }
 
         DevLog.Log($"[AIManager] Host takeover complete: {idx} escort bots now under local control");
+    }
+
+    // 이전 방장이 몰던 급유기를 이어받아 궤도 비행을 계속한다
+    void TakeOverTanker(string key)
+    {
+        if (!_remoteBots.TryGetValue(key, out var pc) || pc == null) return;
+        var bot = pc.gameObject.AddComponent<AIBotController>();
+        bot.SetConfig(_botConfig);
+        bot.SetNickname(key);
+        pc.gameObject.AddComponent<TankerAI>().InitializeFromCurrent(FindAnyObjectByType<OceanSurface>()?.seaLevel ?? 0f);
+        _bots.Add(bot);
+        DevLog.Log($"[AIManager] Host takeover: tanker {key}");
     }
 
     // 이전 방장이 시뮬레이션하던 적기(BOT_N*) 원격 뷰를 로컬 EnemyAI 제어로 전환.
@@ -553,6 +590,45 @@ public class AIManager : MonoBehaviour
         DevLog.Log($"[AIManager] Host takeover: {keys.Count} enemy view(s) → local EnemyAI ({CurrentEnemySkill})");
     }
 
+    // ── 호스트: AI 위치 배치 송신 (v4.4) ─────────────────────────────────
+    // 봇마다 따로 보내면 패킷마다 지연이 달라 게스트 화면에서 밀집 편대가 서로 출렁인다.
+    // 한 틱의 AI 전원을 같은 송신 시각으로 한 패킷에 묶는다 — 패킷 수도 봇 수 → 1 로 준다.
+    readonly byte[] _batchBuf = new byte[1400];
+    readonly Dictionary<AIBotController, PlayerController> _botPC = new();
+    float _batchTimer;
+    const int BatchSplitAt = 1200;   // MTU 여유 — 넘으면 같은 시각으로 패킷을 나눈다
+
+    void Update()
+    {
+        if (!_isHost || _bots.Count == 0) return;
+        var sc = NetworkManager.Instance?.socketClient;
+        if (sc == null) return;
+
+        float interval = _botConfig != null ? Mathf.Max(0.02f, _botConfig.netUpdateInterval) : 0.05f;
+        _batchTimer += Time.unscaledDeltaTime;
+        if (_batchTimer < interval) return;
+        _batchTimer = Mathf.Min(_batchTimer - interval, interval);
+
+        uint now = NetClock.FrameMs;
+        int n = BinaryProtocol.BeginAIBatch(_batchBuf, now);
+        foreach (var bot in _bots)
+        {
+            if (bot == null || !bot.isActiveAndEnabled || !bot.WantsBroadcast(1f)) continue;
+            if (n > BatchSplitAt)
+            {
+                sc.SendAIBatch(_batchBuf, n);
+                n = BinaryProtocol.BeginAIBatch(_batchBuf, now);
+            }
+            if (!_botPC.TryGetValue(bot, out var pc)) _botPC[bot] = pc = bot.GetComponent<PlayerController>();
+            var t = bot.transform;
+            Vector3 p = t.position, e = t.eulerAngles;
+            n = BinaryProtocol.AppendAIBatch(_batchBuf, n, bot.Nickname, p.x, p.y, p.z, e.x, e.y, e.z,
+                                             bot.Speed, pc != null ? pc.SmokeFx : (byte)0);
+            bot.MarkBroadcast();
+        }
+        if (_batchBuf[BinaryProtocol.AIBatchCountIndex] > 0) sc.SendAIBatch(_batchBuf, n);
+    }
+
     // ── 원격 클라이언트: AI 패킷 핸들러 ──────────────────────────────────
 
     void HandleRemoteAISpawn(AISpawnPacket p)
@@ -589,6 +665,8 @@ public class AIManager : MonoBehaviour
             pc.enabled = true;  // AircraftBoardingTrigger.Awake()가 PC를 비활성화하므로 재활성화
         }
 
+        if (IsTankerBot(p.nickname)) TankerDrogueRig.Ensure(go);   // 호스·드로그는 각자 그린다
+
         _remoteBots[p.nickname] = pc;
         DevLog.Log($"[AIManager] Remote AI view: {p.nickname} (aiType={p.aiType})");
     }
@@ -605,10 +683,11 @@ public class AIManager : MonoBehaviour
     void HandleRemoteAIMove(AIMovePacket p)
     {
         if (!_remoteBots.TryGetValue(p.nickname, out var pc) || pc == null) return;
+        // 시계 키 = 방장 — 리더(방장 MOVE)와 같은 타임라인·지연으로 보간해 편대 간격이 유지된다
         pc.AddSnapshot(
             new Vector3(p.posX, p.posY, p.posZ),
             Quaternion.Euler(p.rotX, p.rotY, p.rotZ),
-            isMove: p.isMove);
+            p.isMove, p.localTime, p.fx, NetworkManager.Instance?.socketClient?.roomHostNickname);
     }
 
     // ── 유틸리티 ──────────────────────────────────────────────────────────
@@ -1003,6 +1082,7 @@ public class AIManager : MonoBehaviour
     public static bool IsAIBot(string nickname)    => nickname.StartsWith("BOT_");
     public static bool IsEnemyBot(string nickname) => nickname.StartsWith("BOT_N");
     public static bool IsEscortBot(string nickname)=> nickname.StartsWith("BOT_E");
+    public static bool IsTankerBot(string nickname)=> nickname.StartsWith("BOT_T");
 
     public AIBotController GetBot(string nickname)
     {

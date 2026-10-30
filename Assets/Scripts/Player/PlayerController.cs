@@ -133,6 +133,14 @@ public class PlayerController : MonoBehaviour
     public bool  IsFuelLow   => CurrentFuel <= Cfg.maxFuel * Cfg.lowFuelThreshold;
     public bool  IsFuelEmpty => CurrentFuel <= 0.01f;
     public void  Refuel()    { _currentFuel = Cfg.maxFuel; }
+    /// <summary>연료 주입 (갑판 급유·공중급유) — 만탱크를 넘지 않는다. 실제로 들어간 양을 돌려준다</summary>
+    public float AddFuel(float amount)
+    {
+        float before = CurrentFuel;
+        _currentFuel = Mathf.Min(Cfg.maxFuel, before + Mathf.Max(0f, amount));
+        return _currentFuel - before;
+    }
+    public bool  IsFuelFull  => CurrentFuel >= Cfg.maxFuel - 0.5f;
 
     // ── 애프터버너 ──────────────────────────────────────────────────────────────
     bool _afterburner;
@@ -299,6 +307,11 @@ public class PlayerController : MonoBehaviour
     void Awake()
     {
         VaporTrailRig.Ensure(transform);   // 고속 유지 시 날개 끝 증기 꼬리 (KF21 기체만)
+        AircraftLightsFX.Ensure(transform);              // 항법등·스트로브 (KF21 기체만)
+        EngineContrailFX.Ensure(transform);              // 구름층 고도 이상에서 엔진 비행운 (KF21 기체만)
+        AirshowSmokeFX.Ensure(transform);                // 에어쇼 연막 — SmokeFx 상태를 따른다 (KF21 기체만)
+        RefuelProbe.Ensure(transform);                   // 공중급유 프로브 (KF21 기체만)
+        AircraftEngineAudio.Ensure(gameObject);          // 레이어·지향성·도플러 엔진음 (로컬·원격·AI 모두)
         anim = GetComponent<Animator>();
         if (anim != null)
         {
@@ -364,7 +377,7 @@ public class PlayerController : MonoBehaviour
                     arrestEuler.x, arrestEuler.y, arrestEuler.z,
                     currentSpeed > 0.5f,
                     GameModeManager.Instance != null && GameModeManager.Instance.IsFlying,
-                    localTick);
+                    localTick, fx: NetFx);
             }
             return;
         }
@@ -409,7 +422,7 @@ public class PlayerController : MonoBehaviour
                     catEuler.x, catEuler.y, catEuler.z,
                     true,
                     GameModeManager.Instance != null && GameModeManager.Instance.IsFlying,
-                    localTick);
+                    localTick, fx: NetFx);
             }
             return;
         }
@@ -634,7 +647,7 @@ public class PlayerController : MonoBehaviour
                 euler.x, euler.y, euler.z,
                 currentSpeed > 0.5f,
                 GameModeManager.Instance != null && GameModeManager.Instance.IsFlying,
-                localTick);
+                localTick, fx: NetFx);   // 스모크·급유 접속 상태 — 다른 화면에서도 같은 지점·같은 순간에
         }
     }
 
@@ -760,42 +773,120 @@ public class PlayerController : MonoBehaviour
         currentSpeed = spd;
     }
 
-    // ── 원격 플레이어: 스냅샷 보간 ────────────────────────────────────────────
+    // ── 원격 플레이어: 스냅샷 보간 (v4.4) ───────────────────────────────────────
+    // · 시간축: 송신자 시계(NetClock.ToLocal) — 네트워크 지터가 위치 떨림이 되지 않는다.
+    //   같은 호스트가 보낸 리더·편대는 같은 시계·같은 지연을 쓰므로 게스트 화면에서도 간격이 유지된다.
+    // · 위치: 큐빅 에르미트 (양 끝 속도를 이웃 스냅샷 차분으로) — 선회·루프가 꺾은선이 아니라 곡선으로.
+    // · 수신이 늦으면 마지막 속도·회전율로 최대 MaxExtrapolate 초 외삽 — 멈췄다 튀는 현상 방지.
+    const double MaxExtrapolate = 0.25;
+    const int    MaxSnapshots   = 16;
+
+    /// <summary>에어쇼 연출 상태 (bit0 스모크, bit1~3 색). 로컬은 AirshowController, 원격은 보간 시점의 스냅샷 값</summary>
+    public byte SmokeFx { get; set; }
+
+    /// <summary>fx bit4 — 공중급유 접속 중 (로컬: AerialRefuelSystem 이 설정해 MOVE 로 송신)</summary>
+    public const byte FxRefuelBit = 0x10;
+    public bool RefuelContact { get; set; }
+    /// <summary>접속 중인가 — 로컬은 자기 상태, 원격은 수신한 fx 비트</summary>
+    public bool FxRefuelContact => isLocalPlayer ? RefuelContact : (SmokeFx & FxRefuelBit) != 0;
+    /// <summary>MOVE 로 보내는 연출 바이트 — 비행·캐터펄트·어레스트 모든 송신 경로가 같은 값을 쓴다</summary>
+    byte NetFx => (byte)(SmokeFx | (RefuelContact ? FxRefuelBit : 0));
+
+    WreckController _wreck;
+    /// <summary>격추·조종 불능 잔해로 떨어지는 중. 호스트 AI 봇은 PlayerController 를 꺼 둔 채 날기 때문에
+    /// 원격·봇 기체의 '엔진 가동' 판정은 enabled 가 아니라 이 값으로 한다.</summary>
+    public bool IsWreck
+    {
+        get
+        {
+            if (_wreck == null) _wreck = GetComponent<WreckController>();
+            return _wreck != null && _wreck.enabled;
+        }
+    }
+
+    string _clockKey;          // 시계 추정 키 (원격 플레이어 = 닉네임, AI = 방장 닉네임)
+    float  _renderDelay = -1f;
+
     void RemoteUpdate()
     {
-        if (snapshots.Count == 0) return;
+        int n = snapshots.Count;
+        if (n == 0) return;
 
-        if (snapshots.Count == 1)
+        if (n == 1)
         {
-            transform.position = snapshots[0].position;
-            transform.rotation = snapshots[0].rotation;
+            transform.SetPositionAndRotation(snapshots[0].position, snapshots[0].rotation);
+            SmokeFx = snapshots[0].fx;
             return;
         }
 
-        float renderTime = Time.time - Cfg.interpolationDelay;
+        // 보간 지연 = 기본 + 송신자 지터 여유. 같은 송신자는 같은 값이라 편대가 함께 움직인다.
+        float wantDelay = Cfg.interpolationDelay + Mathf.Clamp(NetClock.JitterOf(_clockKey ?? nickname) * 2.5f, 0f, 0.2f);
+        _renderDelay = _renderDelay < 0f ? wantDelay : Mathf.MoveTowards(_renderDelay, wantDelay, Time.deltaTime * 0.05f);
+        double renderTime = NetClock.Now - _renderDelay;
 
-        while (snapshots.Count > 2 && snapshots[1].time <= renderTime)
-            snapshots.RemoveAt(0);
+        // 접선 계산용으로 구간 앞 스냅샷 하나는 남긴다
+        while (snapshots.Count > 3 && snapshots[2].time <= renderTime) snapshots.RemoveAt(0);
+        n = snapshots.Count;
 
-        Snapshot from = snapshots[0];
-        Snapshot to   = snapshots[1];
+        int i = 0;
+        while (i < n - 2 && snapshots[i + 1].time <= renderTime) i++;
+        Snapshot a = snapshots[i], b = snapshots[i + 1];
+        double span = b.time - a.time;
 
-        float t = to.time > from.time
-            ? Mathf.Clamp01(Mathf.InverseLerp(from.time, to.time, renderTime))
-            : 1f;
+        Vector3 pos; Quaternion rot;
+        if (span < 1e-4 || (b.position - a.position).sqrMagnitude > 600f * 600f * (float)(span * span) + 400f)
+        {
+            // 같은 시각이거나 순간이동(리스폰·탑승) — 보간하지 않고 최신 값으로
+            pos = b.position; rot = b.rotation; SmokeFx = b.fx;
+        }
+        else if (renderTime >= b.time)
+        {
+            double ex = System.Math.Min(renderTime - b.time, MaxExtrapolate);
+            pos = b.position + SnapshotVelocity(i + 1) * (float)ex;
+            rot = Quaternion.SlerpUnclamped(a.rotation, b.rotation, 1f + Mathf.Min((float)(ex / span), 3f));
+            SmokeFx = b.fx;
+        }
+        else
+        {
+            float t = Mathf.Clamp01((float)((renderTime - a.time) / span));
+            float s = (float)span;
+            Vector3 m0 = SnapshotVelocity(i) * s, m1 = SnapshotVelocity(i + 1) * s;
+            float t2 = t * t, t3 = t2 * t;
+            pos = (2f * t3 - 3f * t2 + 1f) * a.position + (t3 - 2f * t2 + t) * m0
+                + (-2f * t3 + 3f * t2) * b.position + (t3 - t2) * m1;
+            rot = Quaternion.Slerp(a.rotation, b.rotation, t);
+            SmokeFx = a.fx;
+        }
+        transform.SetPositionAndRotation(pos, rot);
 
-        transform.position = Vector3.Lerp(from.position, to.position, t);
-        transform.rotation = Quaternion.Slerp(from.rotation, to.rotation, t);
+        if (anim != null && _hasMoveParam) anim.SetBool(s_hashMove, b.isMove);
+    }
 
-        if (anim != null && _hasMoveParam) anim.SetBool(s_hashMove, to.isMove);
+    // 스냅샷 k 에서의 속도 — 양쪽 이웃이 있으면 중앙 차분, 아니면 한쪽 차분
+    Vector3 SnapshotVelocity(int k)
+    {
+        int n = snapshots.Count;
+        int lo = Mathf.Max(0, k - 1), hi = Mathf.Min(n - 1, k + 1);
+        if (hi == lo) return Vector3.zero;
+        double dt = snapshots[hi].time - snapshots[lo].time;
+        if (dt < 1e-4 || dt > 1.0) return Vector3.zero;   // 정지 후 재개 등 간격이 너무 길면 속도 추정 무의미
+        return (snapshots[hi].position - snapshots[lo].position) / (float)dt;
     }
 
     // ── 스냅샷 ────────────────────────────────────────────────────────────────
-    public void AddSnapshot(Vector3 pos, Quaternion rot, bool isMove)
+    /// <param name="localTime">NetClock 타임라인 시각 (수신 스레드에서 ToLocal 로 계산). 음수면 지금</param>
+    /// <param name="clockKey">송신자 시계 키 — AI 는 방장 닉네임 (리더와 같은 추정치를 쓰도록)</param>
+    public void AddSnapshot(Vector3 pos, Quaternion rot, bool isMove, double localTime = -1, byte fx = 0, string clockKey = null)
     {
-        snapshots.Add(new Snapshot
-            { position = pos, rotation = rot, isMove = isMove, time = Time.time });
-        if (snapshots.Count > 12) snapshots.RemoveAt(0);
+        if (clockKey != null) _clockKey = clockKey;
+        var snap = new Snapshot { position = pos, rotation = rot, isMove = isMove, fx = fx,
+                                  time = localTime >= 0 ? localTime : NetClock.Now };
+        // UDP 순서 뒤바뀜 — 시간순 위치에 끼워 넣는다 (같은 시각이면 교체)
+        int idx = snapshots.Count;
+        while (idx > 0 && snapshots[idx - 1].time > snap.time) idx--;
+        if (idx > 0 && System.Math.Abs(snapshots[idx - 1].time - snap.time) < 1e-5) snapshots[idx - 1] = snap;
+        else snapshots.Insert(idx, snap);
+        if (snapshots.Count > MaxSnapshots) snapshots.RemoveAt(0);
     }
 
     public void ClearSnapshots() => snapshots.Clear();

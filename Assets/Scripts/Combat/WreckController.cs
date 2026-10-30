@@ -127,7 +127,7 @@ public class WreckController : MonoBehaviour
         if (_impacted) return;
         _impacted = true;
         transform.position = point;
-        ExplosionEffect.Spawn(point);
+        ExplosionEffect.Spawn(point, null, 1.5f);
         FlightAudioSystem.NotifyExplosion(point, false);
         SetVisible(false);
         // 꼬리 연기는 기체에서 떼어 남은 입자가 자연스럽게 사라지게
@@ -137,58 +137,46 @@ public class WreckController : MonoBehaviour
     }
 
     // ── 화염·연기 꼬리 ─────────────────────────────────────────────────────
+    // 낙하 속도가 빨라도 끊기지 않게 거리 기준으로 방출 — 하늘에 검은 기둥이 길게 남는다
     void BuildTrail(bool onFire)
     {
         if (_smoke != null) return;
-        var alphaMat = Resources.Load<Material>("VFX/Mat_Alpha");
-        var addMat   = Resources.Load<Material>("VFX/Mat_Additive");
 
-        _smoke = MakeEmitter("WreckSmoke", alphaMat, 400);
+        _smoke = MakeEmitter("WreckSmoke", onFire ? FXLib.SmokeDark : FXLib.Smoke, 700);
         var m = _smoke.main;
-        m.startLifetime = new ParticleSystem.MinMaxCurve(3f, 6f);
+        m.startLifetime = new ParticleSystem.MinMaxCurve(5f, 8f);
         m.startSpeed    = new ParticleSystem.MinMaxCurve(0.5f, 2f);
-        m.startSize     = new ParticleSystem.MinMaxCurve(3f, 6f);
-        m.startColor    = onFire ? new Color(0.12f, 0.11f, 0.10f, 0.75f) : new Color(0.55f, 0.55f, 0.55f, 0.45f);
-        var e = _smoke.emission; e.rateOverTime = 45f;
-        var col = _smoke.colorOverLifetime; col.enabled = true;
-        var g = new Gradient();
-        g.SetKeys(new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(Color.white, 1f) },
-                  new[] { new GradientAlphaKey(0.9f, 0f), new GradientAlphaKey(0.5f, 0.4f), new GradientAlphaKey(0f, 1f) });
-        col.color = g;
-        var size = _smoke.sizeOverLifetime; size.enabled = true;
-        size.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(new Keyframe(0, 0.6f), new Keyframe(1, 3f)));
+        m.startSize     = new ParticleSystem.MinMaxCurve(2.5f, 4f);
+        m.startRotation = new ParticleSystem.MinMaxCurve(0f, Mathf.PI * 2f);
+        m.gravityModifier = -0.01f;
+        var e = _smoke.emission; e.rateOverTime = 20f; e.rateOverDistance = 0.6f;
+        FXLib.ColorOverLife(_smoke, FXLib.Grad(
+            new[] { new Color(0.8f, 0.7f, 0.6f), Color.white, new Color(0.85f, 0.85f, 0.85f) }, new[] { 0f, 0.15f, 1f },
+            new[] { 0f, 0.9f, 0.45f, 0f }, new[] { 0f, 0.04f, 0.5f, 1f }));
+        FXLib.SizeOverLife(_smoke, FXLib.Curve(0f, 0.5f, 0.2f, 1.2f, 1f, 4f));
         _smoke.Play();
 
         if (!onFire) return;
-        _fire = MakeEmitter("WreckFire", addMat, 200);
+        _fire = MakeEmitter("WreckFire", FXLib.Glow, 300);
         var fm = _fire.main;
-        fm.startLifetime = new ParticleSystem.MinMaxCurve(0.25f, 0.6f);
+        fm.startLifetime = new ParticleSystem.MinMaxCurve(0.25f, 0.55f);
         fm.startSpeed    = new ParticleSystem.MinMaxCurve(1f, 4f);
-        fm.startSize     = new ParticleSystem.MinMaxCurve(1.5f, 3.5f);
-        fm.startColor    = new Color(1f, 0.55f, 0.15f, 1f);
-        var fe = _fire.emission; fe.rateOverTime = 80f;
-        var fcol = _fire.colorOverLifetime; fcol.enabled = true;
-        var fg = new Gradient();
-        fg.SetKeys(new[] { new GradientColorKey(new Color(1f, 0.9f, 0.5f), 0f), new GradientColorKey(new Color(1f, 0.3f, 0.05f), 0.5f), new GradientColorKey(Color.black, 1f) },
-                   new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(0f, 1f) });
-        fcol.color = fg;
+        fm.startSize     = new ParticleSystem.MinMaxCurve(2f, 4f);
+        fm.startRotation = new ParticleSystem.MinMaxCurve(0f, Mathf.PI * 2f);
+        fm.startColor    = new Color(1f, 0.55f, 0.18f, 1f);
+        var fe = _fire.emission; fe.rateOverTime = 60f; fe.rateOverDistance = 0.5f;
+        FXLib.ColorOverLife(_fire, FXLib.Grad(
+            new[] { Color.white, new Color(1f, 0.45f, 0.1f), new Color(0.5f, 0.08f, 0.02f) }, new[] { 0f, 0.4f, 1f },
+            new[] { 1f, 0.7f, 0f }, new[] { 0f, 0.5f, 1f }));
+        FXLib.SizeOverLife(_fire, FXLib.Curve(0f, 0.7f, 1f, 1.4f));
         _fire.Play();
     }
 
     ParticleSystem MakeEmitter(string name, Material mat, int max)
     {
-        var go = new GameObject(name);
-        go.transform.SetParent(transform, false);
-        go.transform.localPosition = new Vector3(0f, 0.3f, -4f);   // 동체 후방
-        var ps = go.AddComponent<ParticleSystem>();
-        ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
-        var main = ps.main;
-        main.maxParticles    = max;
-        main.simulationSpace = ParticleSystemSimulationSpace.World;
-        var shape = ps.shape; shape.shapeType = ParticleSystemShapeType.Sphere; shape.radius = 0.8f;
-        var r = go.GetComponent<ParticleSystemRenderer>();
-        r.renderMode = ParticleSystemRenderMode.Billboard;
-        if (mat != null) r.material = mat;
+        var ps = FXLib.MakePS(name, transform, mat, max, worldSpace: true, loop: true);
+        ps.transform.localPosition = new Vector3(0f, 0.3f, -4f);   // 동체 후방
+        var shape = ps.shape; shape.enabled = true; shape.shapeType = ParticleSystemShapeType.Sphere; shape.radius = 0.8f;
         return ps;
     }
 }

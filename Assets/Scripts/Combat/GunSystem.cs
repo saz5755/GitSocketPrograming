@@ -30,6 +30,7 @@ public class GunSystem : MonoBehaviour
 
     // ── 오디오 ────────────────────────────────────────────────────────────────
     AudioSource _gunSrc;
+    FlightCamera _cam;
 
     // ── UI ────────────────────────────────────────────────────────────────────
     [SerializeField] Canvas _overlayCanvas;
@@ -63,10 +64,10 @@ public class GunSystem : MonoBehaviour
         _ammo = maxAmmo;
 
         _gunSrc              = gameObject.AddComponent<AudioSource>();
-        _gunSrc.clip         = MakeGunLoop(22050);
+        _gunSrc.clip         = FlightSounds.GunLoop;
         _gunSrc.spatialBlend = 0f;
         _gunSrc.loop         = true;
-        _gunSrc.volume       = 0.38f;
+        _gunSrc.volume       = 0.5f;
         _gunSrc.playOnAwake  = false;
         _gunSrc.priority     = 32;
     }
@@ -122,7 +123,13 @@ public class GunSystem : MonoBehaviour
         bool firing = SimInput.GunTrigger && _ammo > 0 && flying && RoomModeSO.WeaponsEnabled;
 
         if (firing && !_gunSrc.isPlaying) _gunSrc.Play();
-        else if (!firing && _gunSrc.isPlaying) _gunSrc.Stop();
+        else if (!firing && _gunSrc.isPlaying)
+        {
+            _gunSrc.Stop();
+            SfxPlayer.Play2D(FlightSounds.GunTail, 0.5f);   // 포신 감속 + 잔향 꼬리
+        }
+        if (_cam == null) _cam = FindAnyObjectByType<FlightCamera>();
+        if (firing && _cam != null) _cam.AddGunShake();
 
         if (!firing) { _fireTimer = 0f; return; }
 
@@ -143,6 +150,7 @@ public class GunSystem : MonoBehaviour
         Vector3 dir    = _local.transform.forward;
 
         BulletController.Spawn(muzzle, dir, bulletSpeed, isLocal: true);
+        AircraftGunFX.Ensure(_local.gameObject).Fire();
 
         var sc = NetworkManager.Instance?.socketClient;
         sc?.SendGunFire(sc.myNickname, muzzle, dir);
@@ -152,6 +160,15 @@ public class GunSystem : MonoBehaviour
     void HandleRemoteGunFire(GunFirePacket p)
     {
         if (p.shooterNickname == _myNick) return;
+
+        // 발사 기체의 총구 섬광 + 3D 기총음
+        foreach (var pc in PlayerController.All)
+        {
+            if (pc == null || pc.nickname != p.shooterNickname) continue;
+            AircraftGunFX.Ensure(pc.gameObject).Fire();
+            AircraftEngineAudio.Ensure(pc.gameObject).NotifyGunFire();
+            break;
+        }
 
         BulletController.Spawn(
             new Vector3(p.posX, p.posY, p.posZ),
@@ -192,7 +209,7 @@ public class GunSystem : MonoBehaviour
             if (enemies.Count >= MAX_LEAD) break;
             if (pc == null || pc == _local || pc.isLocalPlayer) continue;
             if (!pc.IsFlying) continue;
-            if (AIManager.IsEscortBot(pc.nickname)) continue;
+            if (AIManager.IsEscortBot(pc.nickname) || AIManager.IsTankerBot(pc.nickname)) continue;
             enemies.Add(pc);
         }
 
@@ -362,34 +379,5 @@ public class GunSystem : MonoBehaviour
             }
         tex.SetPixels32(px); tex.Apply(false);
         return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
-    }
-
-    // ── PCM: 개틀링 기총음 루프 (20Hz 펄스 트레인) ────────────────────────────
-    static AudioClip MakeGunLoop(int sr)
-    {
-        int period = sr / 20;
-        int n      = period * 4;
-        var buf    = new float[n];
-        var rng    = new System.Random(77);
-        for (int i = 0; i < n; i++)
-        {
-            float t   = (float)i / sr;
-            float ph  = (float)(i % period) / period;
-            float env = Mathf.Clamp01(ph / 0.008f) * Mathf.Exp(-ph * 38f);
-            float noise = (float)(rng.NextDouble() * 2 - 1);
-            float body  = Mathf.Sin(2f * Mathf.PI * 220f * t) * 0.38f
-                        + Mathf.Sin(2f * Mathf.PI * 390f * t) * 0.22f;
-            buf[i] = (noise * 0.48f + body * 0.52f) * env * 0.80f;
-        }
-        int fade = sr / 200;
-        for (int i = 0; i < fade && i < n; i++)
-        {
-            float f = (float)i / fade;
-            buf[i]         *= f;
-            buf[n - 1 - i] *= f;
-        }
-        var clip = AudioClip.Create("GunLoop", n, 1, sr, false);
-        clip.SetData(buf, 0);
-        return clip;
     }
 }

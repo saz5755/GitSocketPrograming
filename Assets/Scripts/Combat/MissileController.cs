@@ -105,9 +105,10 @@ public class MissileController : MonoBehaviour
     public static TrailRenderer AddSmokeTrail(GameObject go)
     {
         var tr = go.AddComponent<TrailRenderer>();
-        tr.time              = 2.4f;
-        tr.startWidth        = 0.55f;
-        tr.endWidth          = 0.05f;
+        // 가까운 구간을 촘촘히 잇는 리본 — 오래 남는 항적은 MissileExhaustFX 의 파티클 연기가 맡는다
+        tr.time              = 0.9f;
+        tr.startWidth        = 0.5f;
+        tr.endWidth          = 1.6f;
         tr.minVertexDistance = 0.3f;
         tr.textureMode       = LineTextureMode.Stretch;
         tr.shadowCastingMode = ShadowCastingMode.Off;
@@ -145,6 +146,7 @@ public class MissileController : MonoBehaviour
                 new GradientAlphaKey(0.00f, 1.00f),
             });
         tr.colorGradient = gc;
+        MissileExhaustFX.Attach(go, tr);
         return tr;
     }
 

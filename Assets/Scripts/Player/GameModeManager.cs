@@ -318,6 +318,14 @@ public class GameModeManager : MonoBehaviour
         _pc.isLocalPlayer = true;
         _pc.enabled = true;
 
+        // 갑판 급유 마무리 — 프리플라이트를 건너뛰었거나 급유가 덜 끝났어도 만탱크로 발진
+        if (_deckRefuel != null) { StopCoroutine(_deckRefuel); _deckRefuel = null; }
+        if (!_pc.IsFuelFull)
+        {
+            _pc.Refuel();
+            CombatFeedUI.Instance?.ShowNotice("DECK REFUEL COMPLETE  ·  FUEL 100%");
+        }
+
         // 캐리어 유무와 관계없이 프리플라이트 완료 후 발진이면 항상 카타펄트
         float catapultSpd = _boardingCarrier != null ? _boardingCarrier.CatapultSpeed : 72f;
         _boardingCarrier = null;
@@ -365,6 +373,10 @@ public class GameModeManager : MonoBehaviour
         // 프리플라이트 시퀀스 시작
         var vfx = _pc.GetComponent<F35VFXController>();
         PreflightSystem.Instance?.BeginCockpitPreflight(vfx);
+
+        // 갑판 급유 — 프리플라이트(APU·엔진 시동) 동안 갑판 요원이 연료를 채운다
+        if (_deckRefuel != null) StopCoroutine(_deckRefuel);
+        if (!_pc.IsFuelFull) _deckRefuel = StartCoroutine(DeckRefuelRoutine(_pc));
         CockpitInteractionSystem.Instance?.SetActive(true);
 
         // 커서 해제 — 스위치 클릭을 위해 마우스 이동 허용
@@ -427,14 +439,21 @@ public class GameModeManager : MonoBehaviour
         // 다음 사이클을 위해 캐리어 참조 초기화 (EnterCockpit에서 재할당)
         _boardingCarrier = null;
 
-        // 캐릭터를 착륙 위치에 배치
-        Vector3 spawnPos = landingPos + new Vector3(0f, 0.05f, 0f);
+        // 캐릭터를 기체 옆 갑판 위에 내린다.
+        // 예전엔 착함 존 중심(landingPos)에 그대로 놓았는데, 와이어 없이 감속 정지하면 기체가 그 자리에 서 있어
+        // 캐릭터 캡슐이 기체 콜라이더 안에 생기고 → 밀려나며 얇은 갑판 콜라이더를 뚫고 아래로 떨어졌다.
+        Vector3 spawnPos = FindDismountPoint(_pc.transform, landingPos);
         if (platform != null)
         {
             // 항모 갑판 위 착함: 캐릭터를 항모 좌표계 기준으로 부착
             _gc.transform.SetParent(platform, true);
         }
+        // CharacterController 가 켜진 채 순간이동하면 내부 위치가 어긋날 수 있다 — 끈 채 옮기고 물리에 즉시 반영
+        var gcc = _gc.GetComponent<CharacterController>();
+        if (gcc != null) gcc.enabled = false;
         _gc.transform.SetPositionAndRotation(spawnPos, Quaternion.Euler(0f, yaw, 0f));
+        Physics.SyncTransforms();
+        if (gcc != null) gcc.enabled = true;
         _gc.InitYaw(yaw);
         SetCharRenderers(true);
         _gc.enabled = true;
@@ -609,6 +628,78 @@ public class GameModeManager : MonoBehaviour
 
         _hud?.SetVisible(false);
         _fc?.SetGroundTarget(_gc.transform);
+    }
+
+    // ── 갑판 급유 ─────────────────────────────────────────────────────────
+    const float DeckRefuelSeconds = 6f;   // 빈 탱크 → 만탱크 (프리플라이트 시간과 비슷하게)
+    Coroutine _deckRefuel;
+
+    System.Collections.IEnumerator DeckRefuelRoutine(PlayerController pc)
+    {
+        CombatFeedUI.Instance?.ShowNotice($"DECK REFUELING  ·  FUEL {pc.CurrentFuel / pc.MaxFuel * 100f:F0}%");
+        float rate = pc.MaxFuel / DeckRefuelSeconds;
+        float noticeT = 0f;
+        while (pc != null && IsBoardedInCockpit && !pc.IsFuelFull)
+        {
+            pc.AddFuel(rate * Time.deltaTime);
+            noticeT += Time.deltaTime;
+            if (noticeT >= 1.2f) { noticeT = 0f; CombatFeedUI.Instance?.ShowNotice($"DECK REFUELING  ·  FUEL {pc.CurrentFuel / pc.MaxFuel * 100f:F0}%"); }
+            yield return null;
+        }
+        if (pc != null && pc.IsFuelFull) CombatFeedUI.Instance?.ShowNotice("DECK REFUEL COMPLETE  ·  FUEL 100%");
+        _deckRefuel = null;
+    }
+
+    // ── 하차 위치: 조종석 왼편(실제 조종사 사다리 쪽)부터 기체 주변 갑판의 빈 자리를 찾는다 ─────
+    static readonly Vector2[] DismountOffsets =
+    {
+        new(-4.5f, 1.5f), new(4.5f, 1.5f), new(-6.5f, -1f), new(6.5f, -1f),
+        new(-4f, 8f), new(4f, 8f), new(0f, -10f), new(-9f, 3f), new(9f, 3f),
+    };
+    readonly Collider[] _overlap = new Collider[16];
+
+    Vector3 FindDismountPoint(Transform aircraft, Vector3 fallback)
+    {
+        var cc = _gc.GetComponent<CharacterController>();
+        float r = cc != null ? cc.radius : 0.4f, h = cc != null ? cc.height : 1.8f;
+        float feetOffset = cc != null ? cc.center.y - h * 0.5f : 0f;   // 피벗 → 발바닥
+        Vector3 fwd = aircraft.forward; fwd.y = 0f;
+        if (fwd.sqrMagnitude < 1e-4f) fwd = Vector3.forward;
+        fwd.Normalize();
+        Vector3 right = Vector3.Cross(Vector3.up, fwd);
+
+        foreach (var o in DismountOffsets)
+        {
+            Vector3 probe = aircraft.position + right * o.x + fwd * o.y;
+            if (!TryDeck(probe, aircraft, out Vector3 ground)) continue;
+            Vector3 feet = ground + Vector3.up * 0.08f;
+            // 캡슐이 기체·구조물과 겹치지 않는 자리만
+            int n = Physics.OverlapCapsuleNonAlloc(feet + Vector3.up * (r + 0.02f), feet + Vector3.up * (h - r), r * 0.95f,
+                                                   _overlap, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+            bool blocked = false;
+            for (int i = 0; i < n; i++)
+                if (!_overlap[i].transform.IsChildOf(_gc.transform)) { blocked = true; break; }
+            if (!blocked) return feet - Vector3.up * feetOffset;
+        }
+        Debug.LogWarning("[GameMode] 하차: 기체 주변에 빈 갑판을 찾지 못해 존 위치 사용");
+        return fallback + Vector3.up * 0.05f;
+    }
+
+    // probe 위에서 아래로 — 기체·캐릭터 자신을 제외한 첫 지면 (해수면 근처는 갑판 아님)
+    bool TryDeck(Vector3 probe, Transform aircraft, out Vector3 ground)
+    {
+        ground = default;
+        var hits = Physics.RaycastAll(probe + Vector3.up * 12f, Vector3.down, 30f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+        float best = float.MaxValue;
+        bool found = false;
+        foreach (var hit in hits)
+        {
+            if (hit.transform.IsChildOf(aircraft) || hit.transform.IsChildOf(_gc.transform)) continue;
+            if (hit.distance < best) { best = hit.distance; ground = hit.point; found = true; }
+        }
+        var ocean = OceanSurface.Instance;
+        if (found && ocean != null && ground.y < ocean.seaLevel + 1f) return false;
+        return found;
     }
 
     void SetCharRenderers(bool visible)

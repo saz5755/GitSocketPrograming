@@ -4,26 +4,18 @@ public class HitEffectSystem : MonoBehaviour
 {
     public static HitEffectSystem Instance { get; private set; }
 
-    [SerializeField] AudioClip explosionClip;
-
     // 데미지 값은 GameplayConfigSO (Resources/GameplayConfig.asset)에서 중앙 관리.
+    // 폭발 사운드는 FlightAudioSystem 이 거리별(근거리/원거리·음속 지연)로 재생한다.
 
-    [Header("VFX 프리팹/머티리얼 (미할당 시 Resources 폴백)")]
-    [Tooltip("미사일 피격 폭발 프리팹")]
-    [SerializeField] GameObject _explosionPrefab;
+    [Header("VFX 머티리얼 (미할당 시 Resources 폴백)")]
     [Tooltip("Bullet impact의 가산 머티리얼 (Mat_Additive)")]
     [SerializeField] Material _vfxAdditive;
     [Tooltip("Bullet impact의 알파 머티리얼 (Mat_Alpha — 연기)")]
     [SerializeField] Material _vfxAlpha;
 
     FlightCamera _cam;
-    AudioSource  _audio;
 
-    void Awake()
-    {
-        Instance = this;
-        _audio   = gameObject.AddComponent<AudioSource>();
-    }
+    void Awake() => Instance = this;
 
     void Start() => _cam = FindAnyObjectByType<FlightCamera>();
 
@@ -32,12 +24,13 @@ public class HitEffectSystem : MonoBehaviour
     // 미사일 피격 (강한 폭발 이펙트)
     public void TriggerHit(Vector3 worldPos, bool hitLocalPlayer)
     {
-        ExplosionEffect.Spawn(worldPos, _explosionPrefab);
+        ExplosionEffect.Spawn(worldPos);
 
-        if (_audio != null && explosionClip != null)
-            _audio.PlayOneShot(explosionClip, hitLocalPlayer ? 1.0f : 0.6f);
-
-        if (hitLocalPlayer) _cam?.TriggerShake(0.38f, 0.75f);
+        if (_cam != null)
+        {
+            if (hitLocalPlayer) { _cam.TriggerShake(0.38f, 0.75f); FlightPostFX.Impact(1f); }
+            else _cam.AddExplosionShake(worldPos, 1f);   // 가까운 폭발은 충격파가 기체를 흔든다
+        }
 
         FlightAudioSystem.NotifyExplosion(worldPos, hitLocalPlayer);
     }
@@ -47,25 +40,13 @@ public class HitEffectSystem : MonoBehaviour
     {
         BulletImpactEffect.Spawn(worldPos, _vfxAdditive, _vfxAlpha);
 
-        if (_audio != null)
-            _audio.PlayOneShot(MakeBulletImpactClip(), hitLocalPlayer ? 0.55f : 0.3f);
-
-        if (hitLocalPlayer) _cam?.TriggerShake(0.10f, 0.18f);
-    }
-
-    static AudioClip MakeBulletImpactClip()
-    {
-        int sr = 22050, n = (int)(sr * 0.12f);
-        var buf = new float[n];
-        var rng = new System.Random();
-        for (int i = 0; i < n; i++)
+        if (hitLocalPlayer)
         {
-            float t   = (float)i / n;
-            float env = Mathf.Exp(-t * 30f);
-            buf[i] = (float)(rng.NextDouble() * 2 - 1) * env * 0.9f;
+            // 외피를 때리는 금속음은 콕핏 안에서 직접 들린다
+            SfxPlayer.Play2D(FlightSounds.HitMetal, 0.8f, Random.Range(0.9f, 1.1f));
+            _cam?.TriggerShake(0.10f, 0.18f);
         }
-        var clip = AudioClip.Create("BulletImpact", n, 1, sr, false);
-        clip.SetData(buf, 0);
-        return clip;
+        else
+            SfxPlayer.Play(FlightSounds.HitFar, worldPos, 0.6f, 15f, 1500f, true, Random.Range(0.85f, 1.15f));
     }
 }
