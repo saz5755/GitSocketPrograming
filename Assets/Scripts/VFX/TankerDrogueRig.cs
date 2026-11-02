@@ -18,6 +18,8 @@ public class TankerDrogueRig : MonoBehaviour
     static readonly Vector3 PodPos      = new Vector3(0f, 0.45f, -1.2f);
     static readonly Vector3 HoseExit    = new Vector3(0f, 0.30f, -3.0f);
     static readonly Vector3 BasketRest  = new Vector3(0f, -2.4f, -19.5f);   // 호스 약 17m 전개
+    /// <summary>급유기 루트 로컬 기준 바스켓 정위치 (TankerStationKeeper 가 급유기 위치를 역산할 때 쓴다)</summary>
+    public static Vector3 BasketRestLocal => BasketRest;
 
     const int HosePoints = 18;
 

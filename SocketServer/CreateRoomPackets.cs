@@ -28,3 +28,11 @@ public class RoomSettingPacket : Packet
 {
     public int enemySkill = 1;
 }
+
+// TANKER_CALL (TCP): 누구나 급유기를 호출 — 서버가 caller 를 세션 닉네임으로 덮어쓰고 방 전체(발신자 포함)에 중계
+public class TankerCallPacket : Packet
+{
+    public string? caller;
+    public float posX, posY, posZ;   // 호출 당시 위치
+    public float fwdX, fwdZ;         // 수평 진행 방향
+}

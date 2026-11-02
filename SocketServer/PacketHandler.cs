@@ -38,6 +38,8 @@ class PacketHandler
             = MissileHandler.HandleCountermeasure;
         handlers[PacketType.ROOM_SETTING]
             = RoomSettingHandler.Handle;
+        handlers[PacketType.TANKER_CALL]
+            = TankerCallHandler.Handle;
 
         // TCP Move는 제거 예정
         /*handlers[PacketType.MOVE]

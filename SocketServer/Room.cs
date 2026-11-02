@@ -9,6 +9,8 @@ public class Room
     public bool   IsCombat => mode == RoomModes.Combat;
     /// <summary>적 AI 숙련도 (0=ROOKIE 1=VETERAN 2=ACE) — 방장이 게임 중 ESC 메뉴에서 변경</summary>
     public int    enemySkill = 1;
+    /// <summary>마지막 급유기 호출 시각 — 방 단위 쿨다운</summary>
+    public DateTime lastTankerCall = DateTime.MinValue;
 
     List<Player> players = new();
 

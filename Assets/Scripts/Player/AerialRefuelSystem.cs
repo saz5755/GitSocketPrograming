@@ -12,7 +12,14 @@ using UnityEngine.UI;
 ///   5. 분리     — 만탱크 후 감속해 빠지거나, 범위를 벗어나면 자동 분리
 /// 연료는 각자 로컬 상태라 별도 패킷 없이, 접속 여부만 MOVE fx 비트로 알려 다른 화면에서도 바스켓이 물려 보인다.
 /// AIManager 가 같은 오브젝트에 붙인다.
+///
+/// 급유기 호출 (SimAction.CallTanker, 기본 K):
+///   TANKER_CALL → 서버(호출자 확인·방 쿨다운) → 방 전체 중계 → 방장의 TankerAI 가 호출자에게 날아와 동행한다
+///   (TankerStationKeeper — 앞에 합류해 같은 속도로 날며 바스켓을 프로브에 가져다 댄다. 수급기는 수평 직진만).
+///   게스트가 호출자면 급유기 위치가 네트워크 지연(수십 m)만큼 어긋나므로, 호출자 화면에서는 같은 로직으로
+///   급유기를 내 기체 기준으로 직접 그린다(로컬 표시 보정). 다른 사람 화면은 방장 위치 그대로.
 /// </summary>
+[DefaultExecutionOrder(-50)]   // LateUpdate 의 급유기 표시 보정이 TankerDrogueRig(기본 순서)보다 먼저
 public class AerialRefuelSystem : MonoBehaviour
 {
     const float ProbeOutRange      = 1200f;
@@ -40,10 +47,49 @@ public class AerialRefuelSystem : MonoBehaviour
     public const float MaxClosure = MaxContactClosure;
     public const float ProbeRange = ProbeOutRange;
 
+    // ── 급유기 호출 ─────────────────────────────────────────────────────
+    const float CallMinDistance = 6000f;   // 이보다 가까우면 호출할 필요 없음
+    const float CallCooldown    = 20f;     // 서버 방 쿨다운과 같게
+    const float InboundShowMax  = 420f;    // 안내 최대 유지 시간
+    float  _callCooldownT;
+    string _inboundCaller;                 // 호출 진행 중이면 호출자 닉네임
+    float  _inboundT;
+    public bool   TankerInbound => _inboundCaller != null;
+    public string InboundCaller => _inboundCaller;
+
+    // ── 동행 (게스트 호출자의 로컬 표시 보정) ───────────────────────────
+    TankerStationKeeper _localKeeper;
+    Transform _ovTanker;
+    float _ovBlend, _ovT;
+    bool  _ovReleasing;
+    /// <summary>내가 부른 급유기가 지금 나와 동행 중이면 그 상태 (방장은 TankerAI 것, 게스트는 로컬 것)</summary>
+    public TankerStationKeeper EscortKeeper
+    {
+        get
+        {
+            if (_localKeeper != null && !_ovReleasing) return _localKeeper;
+            var tk = HostTanker;
+            return tk != null && tk.Escorting && tk.Caller == MyNick ? tk.Keeper : null;
+        }
+    }
+    static string MyNick => NetworkManager.Instance?.socketClient?.myNickname;
+    static TankerAI HostTanker
+    {
+        get
+        {
+            var am = AIManager.Instance;
+            if (am == null || !am.IsHost) return null;
+            var bot = am.GetBot(AIManager.TankerNick);
+            return bot != null ? bot.GetComponent<TankerAI>() : null;
+        }
+    }
+
     PlayerController _pc;
+    PlayerManager    _pm;
     RefuelProbe      _probe;
     TankerDrogueRig  _rig;
     float _prevDist = -1f, _closure, _bounceT, _fullT, _lowFuelT;
+    int   _hitchFrames;
     Vector3 _err;   // 바스켓(현재) − 프로브 끝, 급유기 좌표계 (x 우, y 위, z 앞)
 
     // ── HUD ──────────────────────────────────────────────────────────────
@@ -60,14 +106,151 @@ public class AerialRefuelSystem : MonoBehaviour
     Image _reticleImg, _bar;
 
     void Awake() => Instance = this;
-    void OnDestroy() { if (Instance == this) Instance = null; }
-    void Start() => BuildHud();
+    void Start()
+    {
+        BuildHud();
+        var sc = NetworkManager.Instance?.socketClient;
+        if (sc != null) sc.OnTankerCall += HandleTankerCall;
+    }
+    void OnDestroy()
+    {
+        if (Instance == this) Instance = null;
+        var sc = NetworkManager.Instance?.socketClient;
+        if (sc != null) sc.OnTankerCall -= HandleTankerCall;
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // 급유기 호출
+    // ════════════════════════════════════════════════════════════════════════
+    void TryCallTanker()
+    {
+        var esc = EscortKeeper;
+        if (esc != null)
+        {
+            // 동행 중 다시 누르면 그만 — 급유기가 비켜 나 궤도로 돌아간다 (게스트 호출자는 내 화면에서 먼저 비켜 나고,
+            // 방장 쪽 급유기는 접속 없이 45초가 지나면 같은 판단으로 돌아간다)
+            if (esc.State < TankerStationKeeper.Phase.Backoff && !InContact)
+            {
+                esc.Dismiss();
+                Notice("TANKER DISMISSED  ·  급유기가 이탈합니다");
+            }
+            return;
+        }
+        if (TankerInbound)
+        {
+            Notice($"TANKER INBOUND  ·  {TankerDistance / 1000f:F1} km");
+            return;
+        }
+        if (_callCooldownT > 0f)
+        {
+            Notice($"TANKER CALL  ·  {_callCooldownT:F0}초 후 다시 호출 가능", true);
+            return;
+        }
+        var sc = NetworkManager.Instance?.socketClient;
+        if (sc == null) return;
+        _callCooldownT = CallCooldown;
+        Vector3 fwd = _pc.transform.forward; fwd.y = 0f;
+        sc.SendTankerCall(_pc.transform.position, fwd.sqrMagnitude > 0.01f ? fwd.normalized : Vector3.forward);
+        SfxPlayer.Play2D(FlightSounds.SwitchClick, 0.5f, 0.8f);
+    }
+
+    // 모든 클라이언트가 받는다 — 안내 표시, 방장만 급유기를 실제로 보낸다
+    void HandleTankerCall(TankerCallPacket p)
+    {
+        if (p == null || string.IsNullOrEmpty(p.caller)) return;
+        var am = AIManager.Instance;
+        var bot = am != null ? am.GetBot(AIManager.TankerNick) : null;
+        var rig = TankerDrogueRig.All.Count > 0 ? TankerDrogueRig.All[0] : null;
+        string me = NetworkManager.Instance?.socketClient?.myNickname;
+        bool mine = p.caller == me;
+
+        // 누가 급유 중이면 급유기는 궤도를 지킨다 (드로그 접속은 모든 클라이언트에서 같은 fx 비트로 보인다)
+        if (rig != null && rig.Attached != null)
+        {
+            if (mine) Notice("TANKER BUSY  ·  다른 기체 급유 중 — 궤도로 오세요", true);
+            return;
+        }
+
+        _inboundCaller = p.caller;
+        _inboundT = 0f;
+        Notice(mine ? "TANKER CALLED  ·  급유기가 오는 중 — 도착하면 앞에 붙어 같이 납니다"
+                    : $"TANKER CALLED BY {p.caller}");
+
+        if (am != null && am.IsHost && bot != null)
+        {
+            var tk = bot.GetComponent<TankerAI>();
+            if (tk != null) tk.Call(p.caller, new Vector3(p.posX, p.posY, p.posZ), new Vector3(p.fwdX, 0f, p.fwdZ));
+        }
+    }
+
+    void UpdateInboundState(float dt, float tankerDist)
+    {
+        if (_inboundCaller == null) return;
+        _inboundT += dt;
+        string me = MyNick;
+        bool mine = _inboundCaller == me;
+        var tk = HostTanker;
+        bool arrived;
+        if (tk != null) arrived = !tk.Inbound;                       // 방장: TankerAI 상태가 정확
+        else if (mine)
+        {
+            // 게스트 호출자: 급유기가 가까이 와 비슷한 방위면 로컬 동행 시작 (방장 TankerAI 와 같은 조건)
+            float hdg = Mathf.Abs(Mathf.DeltaAngle(_rig.transform.eulerAngles.y, _pc.transform.eulerAngles.y));
+            arrived = tankerDist < TankerAI.EscortRange && hdg < TankerAI.EscortHeading || tankerDist < 700f;
+            if (arrived) BeginLocalEscort();
+        }
+        else
+        {
+            if (_pm == null) _pm = FindAnyObjectByType<PlayerManager>();
+            var cpc = _pm != null ? _pm.GetRemoteAircraft(_inboundCaller) : null;
+            arrived = cpc != null && _rig != null && (_rig.transform.position - cpc.transform.position).sqrMagnitude < 2500f * 2500f;
+        }
+        if (arrived || _inboundT > InboundShowMax)
+        {
+            if (arrived && mine)
+                Notice("TANKER JOINING  ·  수평 직진 유지 — 급유기가 앞에 붙어 바스켓을 맞춥니다");
+            _inboundCaller = null;
+        }
+    }
+
+    void BeginLocalEscort()
+    {
+        if (_rig == null || _pc == null || _probe == null) return;
+        _ovTanker = _rig.transform;
+        _localKeeper = new TankerStationKeeper();
+        _localKeeper.Begin(_ovTanker, _rig.Velocity, _pc.transform, _pc.transform.forward * _pc.CurrentSpeed, _probe.DeployedTipWorld);
+        _ovBlend = 0f; _ovT = 0f; _ovReleasing = false;
+    }
+
+    // 게스트 호출자 — 급유기를 내 기체 기준으로 직접 그린다. 네트워크 위치(방장)에서 서서히 넘어오고, 끝나면 서서히 돌려준다
+    void LateUpdate()
+    {
+        if (_localKeeper == null) return;
+        float dt = Time.deltaTime;
+        if (dt <= 0f) return;
+        bool flying = _pc != null && _probe != null && GameModeManager.Instance != null && GameModeManager.Instance.IsFlying
+                      && !GameModeManager.Instance.IsDead && _ovTanker != null && _ovTanker.gameObject.activeInHierarchy;
+        if (!flying) { _localKeeper = null; _ovTanker = null; return; }
+
+        _ovT += dt;
+        _localKeeper.Step(dt, _pc.transform, _probe.DeployedTipWorld, InContact, TankerStationKeeper.TankDone(_pc), out Vector3 pos, out Quaternion rot);
+        if (!_ovReleasing && (_localKeeper.State == TankerStationKeeper.Phase.Done || _ovT > 600f
+                              || _pc.transform.position.y - FXLib.SeaY < 250f))
+            _ovReleasing = true;
+        _ovBlend = Mathf.MoveTowards(_ovBlend, _ovReleasing ? 0f : 1f, dt / 2.5f);
+        if (_ovReleasing && _ovBlend <= 0f) { _localKeeper = null; _ovTanker = null; return; }
+
+        float w = _ovBlend * _ovBlend * (3f - 2f * _ovBlend);
+        // _ovTanker 는 이번 프레임 원격 보간(PlayerController.Update)이 놓은 네트워크 위치에 있다
+        _ovTanker.SetPositionAndRotation(Vector3.Lerp(_ovTanker.position, pos, w), Quaternion.Slerp(_ovTanker.rotation, rot, w));
+    }
 
     void Update()
     {
         var gm = GameModeManager.Instance;
         PlayerController pc = gm != null && gm.LocalAircraft != null ? gm.LocalAircraft.GetComponent<PlayerController>() : null;
         bool flying = pc != null && gm.IsFlying && !gm.IsDead && pc.enabled;
+        _callCooldownT -= Time.deltaTime;
         if (pc != _pc) { Disconnect(null); _pc = pc; _probe = pc != null ? pc.GetComponent<RefuelProbe>() : null; }
         if (!flying || _probe == null)
         {
@@ -90,6 +273,9 @@ public class AerialRefuelSystem : MonoBehaviour
         TankerBearing  = Bearing(_rig.transform.position);
         TankerAltDiff  = _rig.transform.position.y - _pc.transform.position.y;
 
+        UpdateInboundState(Time.deltaTime, tankerDist);
+        if (SimInput.Pressed(SimAction.CallTanker)) TryCallTanker();
+
         float dt = Mathf.Max(Time.deltaTime, 1e-4f);
         _bounceT -= dt;
         _probe.Extended = tankerDist < ProbeOutRange || _state == State.Contact;
@@ -106,7 +292,9 @@ public class AerialRefuelSystem : MonoBehaviour
         else
         {
             _state = tankerDist > ProbeOutRange ? State.Rendezvous : State.Precontact;
-            if (_probe.Ready && dist < CaptureRadius && _bounceT <= 0f)
+            var escK = EscortKeeper;
+            // 다가오는 중에만 물린다 (바스켓이 뒤로 스쳐 지나가며 물리지 않게)
+            if (_probe.Ready && dist < CaptureRadius && _bounceT <= 0f && _closure > 0.1f && (escK == null || escK.AllowsCapture))
             {
                 if (_closure <= MaxContactClosure) Connect();
                 else
@@ -123,7 +311,11 @@ public class AerialRefuelSystem : MonoBehaviour
         if (_pc.IsFuelLow && _state != State.Contact && tankerDist > 1500f && _lowFuelT <= 0f)
         {
             _lowFuelT = 30f;
-            Notice($"LOW FUEL  ·  TANKER {Bearing(tk.position):000}°  {tankerDist / 1000f:F1} km  ALT {(tk.position.y - FXLib.SeaY):F0} m", true);
+            Notice(TankerInbound
+                ? $"LOW FUEL  ·  TANKER INBOUND  {tankerDist / 1000f:F1} km"
+                : tankerDist > CallMinDistance
+                    ? $"LOW FUEL  ·  TANKER {Bearing(tk.position):000}°  {tankerDist / 1000f:F1} km  ·  [{SimInput.KeyFor(SimAction.CallTanker)}] 급유기 호출"
+                    : $"LOW FUEL  ·  TANKER {Bearing(tk.position):000}°  {tankerDist / 1000f:F1} km  ALT {(tk.position.y - FXLib.SeaY):F0} m", true);
         }
 
         UpdateHud(tankerDist, tk);
@@ -137,13 +329,19 @@ public class AerialRefuelSystem : MonoBehaviour
         bool outLat  = Mathf.Abs(rel.x) > LateralEnvelope || Mathf.Abs(rel.y) > LateralEnvelope;
         bool outFore = rel.z > PushInMax;
         bool outAft  = rel.z < -PullBackMax;
-        if (outLat || outFore || outAft)
+        // 프레임이 크게 끊기면(로딩·GC 히치) 그 프레임과 다음 프레임의 위치 차이로는 분리하지 않는다
+        if (Time.unscaledDeltaTime > 0.15f) _hitchFrames = 2;
+        bool hitch = _hitchFrames > 0;
+        if (hitch) _hitchFrames--;
+        if (!hitch && (outLat || outFore || outAft))
         {
             Disconnect(outAft ? (_pc.IsFuelFull ? "DISCONNECT  ·  FUEL FULL" : "DISCONNECT") : "BREAKAWAY — OUT OF ENVELOPE");
             return;
         }
 
-        if (!_pc.IsFuelFull)
+        // 만탱크가 된 뒤엔 엔진 소모로 경계(99.8%)를 오르내려도 타이머를 다시 세지 않는다 (99% 아래로 떨어질 때만)
+        bool needFuel = _fullT > 0f ? _pc.CurrentFuel < _pc.MaxFuel * 0.99f : !_pc.IsFuelFull;
+        if (needFuel)
         {
             _pc.AddFuel(FlowRate * dt);
             _rig.Flowing = true;
@@ -267,7 +465,7 @@ public class AerialRefuelSystem : MonoBehaviour
 
     void UpdateHud(float tankerDist, Transform tk)
     {
-        bool show = tankerDist < HudRange || _state == State.Contact || (_pc.IsFuelLow && tankerDist < 25000f);
+        bool show = tankerDist < HudRange || _state == State.Contact || _pc.IsFuelLow || TankerInbound;
         ShowHud(show);
         if (!show) return;
 
@@ -282,14 +480,21 @@ public class AerialRefuelSystem : MonoBehaviour
         float altDiff = tk.position.y - _pc.transform.position.y;
         float spdDiff = (_rig.Velocity.magnitude - _pc.CurrentSpeed) * 3.6f;
 
+        var esc = EscortKeeper;
+        if (esc != null && _state != State.Contact && UpdateEscortHud(esc)) { UpdateReticle(); return; }
+
         switch (_state)
         {
             case State.Rendezvous:
-                _title.text = "AAR  ·  RENDEZVOUS"; _title.color = HG;
+                _title.text = TankerInbound ? "AAR  ·  TANKER INBOUND" : "AAR  ·  RENDEZVOUS"; _title.color = HG;
                 _l1.text = $"TANKER  {tankerDist / 1000f:F1} km   BRG {Bearing(tk.position):000}°   ALT {(altDiff >= 0 ? "+" : "")}{altDiff:F0} m";
                 _l2.text = $"TANKER SPD {_rig.Velocity.magnitude * 3.6f:F0} km/h   Δ {(spdDiff >= 0 ? "+" : "")}{spdDiff:F0}";
                 _l2.color = INK;
-                _l3.text = $"FUEL {_pc.CurrentFuel:F0} / {_pc.MaxFuel:F0}   ·   뒤쪽 아래에서 접근";
+                _l3.text = TankerInbound
+                    ? $"FUEL {_pc.CurrentFuel:F0} / {_pc.MaxFuel:F0}   ·   급유기가 전방으로 오는 중"
+                    : tankerDist > CallMinDistance
+                        ? $"FUEL {_pc.CurrentFuel:F0} / {_pc.MaxFuel:F0}   ·   [{SimInput.KeyFor(SimAction.CallTanker)}] 급유기 호출"
+                        : $"FUEL {_pc.CurrentFuel:F0} / {_pc.MaxFuel:F0}   ·   뒤쪽 아래에서 접근";
                 break;
             case State.Precontact:
             {
@@ -319,6 +524,44 @@ public class AerialRefuelSystem : MonoBehaviour
             }
         }
 
+        UpdateReticle();
+    }
+
+    // 동행 중 안내 — 조종사는 수평 직진만, 급유기가 맞춘다
+    bool UpdateEscortHud(TankerStationKeeper esc)
+    {
+        _l1.color = INK; _l2.color = INK; _title.color = HG;
+        _l1.text = $"DROGUE {_prevDist:F0} m   CLOSURE {(_closure >= 0 ? "+" : "")}{_closure:F1} m/s";
+        _l2.text = $"FUEL {_pc.CurrentFuel:F0} / {_pc.MaxFuel:F0}   ·   TANKER SPD {_rig.Velocity.magnitude * 3.6f:F0} km/h";
+        switch (esc.State)
+        {
+            case TankerStationKeeper.Phase.Join:
+                _title.text = "AAR  ·  TANKER JOINING";
+                _l3.text = "수평 직진 유지 — 급유기가 앞으로 들어옵니다";
+                break;
+            case TankerStationKeeper.Phase.Precontact:
+                _title.text = "AAR  ·  PRECONTACT";
+                _l3.text = "자세 유지 — 급유기가 바스켓을 맞춥니다";
+                break;
+            case TankerStationKeeper.Phase.Approach:
+                _title.text = "AAR  ·  CONTACT 접근";
+                _l3.text = "그대로 — 바스켓이 프로브에 물립니다";
+                break;
+            case TankerStationKeeper.Phase.Backoff:
+            case TankerStationKeeper.Phase.Done:
+                _title.text = "AAR  ·  COMPLETE";
+                _l3.text = "급유기가 이탈합니다";
+                break;
+            default:
+                return false;
+        }
+        _l3.color = esc.Holding ? WARN : DIM;
+        if (esc.Holding) _l3.text = "급기동 중 — 수평으로 돌아오면 다시 맞춥니다";
+        return true;
+    }
+
+    void UpdateReticle()
+    {
         // 바스켓 레티클 — 350m 이내, 화면 안에 있을 때
         var cam = Camera.main;
         bool ret = cam != null && _prevDist < 350f && _state != State.Rendezvous;

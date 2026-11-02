@@ -15,6 +15,15 @@ public class RoomSettingPacket : Packet
     public int enemySkill;           // 0=ROOKIE 1=VETERAN 2=ACE
 }
 
+/// <summary>TANKER_CALL — 급유기 호출. caller 는 서버가 채운다</summary>
+[System.Serializable]
+public class TankerCallPacket : Packet
+{
+    public string caller;
+    public float posX, posY, posZ;
+    public float fwdX, fwdZ;
+}
+
 public class RoomListResultPacket : Packet
 {
     public List<RoomInfo> rooms = new();

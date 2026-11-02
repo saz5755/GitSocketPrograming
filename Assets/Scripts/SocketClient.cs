@@ -65,6 +65,7 @@ public class SocketClient : MonoBehaviour
     public event Action<GunHitPacket>           OnGunHit;
     public event Action<CountermeasurePacket>   OnCountermeasure;
     public event Action<RoomSettingPacket>      OnRoomSetting;
+    public event Action<TankerCallPacket>       OnTankerCall;
     public event Action<CreateRoomResultPacket> OnCreateRoomResult;
     public event Action<EnterRoomResultPacket>  OnEnterRoomResult;
     public event Action<QuestUpdatePacket>      OnQuestUpdate;
@@ -222,6 +223,14 @@ public class SocketClient : MonoBehaviour
                 if (p == null) break;
                 roomEnemySkill = p.enemySkill;
                 UnityMainThreadDispatcher.Instance.Enqueue(() => OnRoomSetting?.Invoke(p));
+                break;
+            }
+
+            case PacketType.TANKER_CALL:
+            {
+                var p = JsonConvert.DeserializeObject<TankerCallPacket>(json);
+                if (p == null) break;
+                UnityMainThreadDispatcher.Instance.Enqueue(() => OnTankerCall?.Invoke(p));
                 break;
             }
 
@@ -588,6 +597,11 @@ public class SocketClient : MonoBehaviour
     /// <summary>방장 전용 — 서버가 권한 검증 후 방 전체에 중계</summary>
     public void SendRoomSetting(int enemySkill)
         => SendTCP(new RoomSettingPacket { type = PacketType.ROOM_SETTING, enemySkill = enemySkill });
+
+    /// <summary>급유기 호출 — 서버가 쿨다운 확인 후 방 전체에 중계, 방장이 급유기를 보낸다</summary>
+    public void SendTankerCall(Vector3 pos, Vector3 fwd)
+        => SendTCP(new TankerCallPacket { type = PacketType.TANKER_CALL,
+            posX = pos.x, posY = pos.y, posZ = pos.z, fwdX = fwd.x, fwdZ = fwd.z });
 
     public void SendCountermeasure(string owner, int cmType, Vector3 pos, Vector3 vel)
         => SendTCP(new CountermeasurePacket {

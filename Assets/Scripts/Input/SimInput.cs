@@ -14,6 +14,7 @@ public enum SimAction
     ViewToggle, TargetCam, MissileCam,
     WeaponSelect,
     SmokeToggle, SmokeColor, Formation,   // v4.4 에어쇼 (끝에 추가 — 저장된 키 인덱스 유지)
+    CallTanker,                           // 급유기 호출
 }
 
 /// <summary>
@@ -39,6 +40,7 @@ public static class SimInput
         KeyCode.C, KeyCode.T, KeyCode.V,
         KeyCode.R,
         KeyCode.H, KeyCode.J, KeyCode.G,
+        KeyCode.K,
     };
 
     static readonly string[] Labels =
@@ -50,6 +52,7 @@ public static class SimInput
         "VIEW (COCKPIT/CHASE)", "TARGET CAM (HOLD)", "MISSILE CAM",
         "WEAPON SELECT (AIM-9X/AIM-120)",
         "AIRSHOW SMOKE ON/OFF", "AIRSHOW SMOKE COLORS", "AIRSHOW FORMATION",
+        "CALL TANKER",
     };
 
     public static int ActionCount => Defaults.Length;

@@ -39,4 +39,5 @@ public enum PacketType
     COUNTERMEASURE       = 37,
     ROOM_SETTING         = 38,
     AI_MOVE_BATCH        = 39,   // v4.4 호스트 AI 위치 묶음 (바이너리 UDP 전용)
+    TANKER_CALL          = 40,   // 급유기 호출 — 서버가 호출자 확인·쿨다운 후 방 전체에 중계, 방장이 급유기를 보낸다
 }

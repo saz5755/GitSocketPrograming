@@ -264,7 +264,7 @@ public class AIManager : MonoBehaviour
     }
 
     // ── 급유기 (BOT_T1) ─────────────────────────────────────────────────────
-    const string TankerNick = "BOT_T1";
+    public const string TankerNick = "BOT_T1";
 
     void SpawnTanker()
     {

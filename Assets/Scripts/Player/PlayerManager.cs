@@ -895,4 +895,19 @@ public class PlayerManager : MonoBehaviour
         players.TryGetValue(nickname, out var p);
         return p;
     }
+
+    /// <summary>
+    /// 원격 플레이어가 타고 있는 기체 — 공유 항공기(BOARD_AIRCRAFT) 우선, 없으면 폴백 RemoteAircraft.
+    /// (players 딕셔너리는 로컬 플레이어만 담으므로 원격 기체 조회는 이걸 쓴다)
+    /// </summary>
+    public PlayerController GetRemoteAircraft(string nickname)
+    {
+        if (string.IsNullOrEmpty(nickname)) return null;
+        if (_boardedAircraftId.TryGetValue(nickname, out int id))
+        {
+            var na = NetworkAircraft.GetById(id);
+            if (na != null && na.PC != null) return na.PC;
+        }
+        return _remoteAircraft.TryGetValue(nickname, out var pc) && pc != null && pc.gameObject.activeInHierarchy ? pc : null;
+    }
 }

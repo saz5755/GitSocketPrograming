@@ -140,7 +140,8 @@ public class PlayerController : MonoBehaviour
         _currentFuel = Mathf.Min(Cfg.maxFuel, before + Mathf.Max(0f, amount));
         return _currentFuel - before;
     }
-    public bool  IsFuelFull  => CurrentFuel >= Cfg.maxFuel - 0.5f;
+    // 0.2% 여유 — 급유 로직과 엔진 소모가 같은 프레임에 번갈아 돌면 소모량(프레임당 1 안팎)만큼 늘 모자라 '만탱크'가 안 된다
+    public bool  IsFuelFull  => CurrentFuel >= Cfg.maxFuel * 0.998f;
 
     // ── 애프터버너 ──────────────────────────────────────────────────────────────
     bool _afterburner;
