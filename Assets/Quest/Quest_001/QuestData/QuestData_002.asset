@@ -1,0 +1,23 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 550c1f8fc0774c547a64ccbad2b0c175, type: 3}
+  m_Name: QuestData_002
+  m_EditorClassIdentifier: Assembly-CSharp::QuestData
+  questId: Quest_02
+  questName: Quest02
+  description: This is Quest description
+  steps:
+  - {fileID: 11400000, guid: c82a48a6338664148a3f26137e9ba416, type: 2}
+  - {fileID: 11400000, guid: 6c52658a0e1a263458556380956fa3a0, type: 2}
+  - {fileID: 11400000, guid: 705a0642d622a6848af3ba567b6d08ed, type: 2}
+  rewardDescription: "Reward Description :: \uCD95\uD558\uD569\uB2C8\uB2E4 \uD018\uC2A4\uD2B8
+    \uC644\uB8CC\uD588\uC2B5\uB2C8\uB2E4."
