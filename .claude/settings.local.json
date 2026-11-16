@@ -90,7 +90,13 @@
       "Bash(git rm *)",
       "Bash(grep -v \"Awake\\\\|Start\\\\|Init\\\\|//\")",
       "Bash(where unity *)",
-      "Bash(\"/c/Program Files/Unity/Hub/Editor/6000.4.1f1/Editor/Unity.exe\" -batchmode -nographics -projectPath \"C:/Unity/GitSocketPrograming\" -quit -logFile -)"
+      "Bash(\"/c/Program Files/Unity/Hub/Editor/6000.4.1f1/Editor/Unity.exe\" -batchmode -nographics -projectPath \"C:/Unity/GitSocketPrograming\" -quit -logFile -)",
+      "Bash(git *)",
+      "Bash(Select-String -Pattern \"error CS|Build succeeded|FAILED\")",
+      "mcp__coplay-mcp__stop_game",
+      "mcp__coplay-mcp__list_unity_project_roots",
+      "Bash(grep -E '\\\\.cs$')",
+      "mcp__coplay-mcp__capture_ui_canvas"
     ]
   }
 }
